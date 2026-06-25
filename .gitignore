@@ -1,0 +1,34 @@
+# Environment & secrets
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.development
+!frontend/.env.production
+
+# Dependencies
+backend/vendor/
+frontend/node_modules/
+
+# Build & deploy artifacts
+frontend/dist/
+deploy/
+backend/public/hot
+backend/public/storage
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Logs & cache
+backend/storage/logs/*.log
+backend/bootstrap/cache/*.php
+!backend/bootstrap/cache/.gitignore
+
+# Test output
+frontend/test-results/
+frontend/playwright-report/

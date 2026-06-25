@@ -1,0 +1,34 @@
+import axios from 'axios';
+
+const apiBase = import.meta.env.VITE_API_URL || '/api';
+const storageBase = import.meta.env.VITE_STORAGE_URL
+  || apiBase.replace(/\/api\/?$/, '');
+
+/** Turn /storage/... paths into full URLs on live (frontend and API are on different hosts). */
+export function storageUrl(path) {
+  if (!path) return '';
+  if (/^https?:\/\//i.test(path)) return path;
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${storageBase.replace(/\/$/, '')}${normalized}`;
+}
+
+const api = axios.create({
+  baseURL: apiBase,
+  headers: {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+  },
+});
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token && token !== 'undefined' && token !== 'null') {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+  return config;
+});
+
+export default api;
