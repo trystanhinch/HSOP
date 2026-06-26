@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
+    allowedHosts: ['serviceop-vbstp.ondigitalocean.app'],
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
@@ -16,4 +17,7 @@ export default defineConfig({
       },
     },
   },
+preview: {
+  allowedHosts: ['serviceop-vbstp.ondigitalocean.app'],
+    },
 })
