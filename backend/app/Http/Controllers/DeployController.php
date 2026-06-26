@@ -16,6 +16,29 @@ class DeployController extends Controller
         return $this->ok('db:seed --class=SettingsSeeder --force');
     }
 
+    public function release(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $steps = [];
+        foreach ([
+            'config:clear' => 'config:clear',
+            'cache:clear' => 'cache:clear',
+            'config:cache' => 'config:cache',
+            'migrate --force' => 'migrate',
+        ] as $label => $command) {
+            $args = $command === 'migrate' ? ['--force' => true] : [];
+            Artisan::call($command, $args);
+            $steps[$label] = trim(Artisan::output());
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Production release completed.',
+            'steps' => $steps,
+        ]);
+    }
+
     public function migrate(string $secret): JsonResponse
     {
         $this->authorizeDeploy($secret);
