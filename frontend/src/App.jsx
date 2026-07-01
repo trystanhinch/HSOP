@@ -28,6 +28,8 @@ import Reports from './pages/Reports';
 import Settings from './pages/Settings';
 import Unauthorized from './pages/Unauthorized';
 import CustomerQuoteView from './pages/CustomerQuoteView';
+import CustomerPortal from './pages/CustomerPortal';
+import PaymentPage from './pages/PaymentPage';
 
 export default function App() {
   return (
@@ -38,6 +40,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/quote/view/:token" element={<CustomerQuoteView />} />
+          <Route path="/portal/:token" element={<CustomerPortal />} />
+          <Route path="/payment/:jobId" element={<PaymentPage />} />
 
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>

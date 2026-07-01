@@ -88,9 +88,15 @@ class JobUpdateController extends Controller
 
         if ($job->status === 'scheduled') {
             $job->update(['status' => 'in_progress']);
+        } elseif (in_array($job->status, ['in_progress', 'progress_updated'], true)) {
+            $job->update(['status' => 'progress_updated']);
         }
 
-        $this->notifications->progressUpdate($job->fresh(), $user, $update->visibility);
+        if ($update->visibility === 'customer_visible') {
+            $this->notifications->progressUpdateCustomer($job->fresh(['lead', 'customer']), $update);
+        } else {
+            $this->notifications->progressUpdate($job->fresh(), $user, $update->visibility);
+        }
 
         return response()->json($update->load(['postedBy:id,name,role', 'photos']), 201);
     }

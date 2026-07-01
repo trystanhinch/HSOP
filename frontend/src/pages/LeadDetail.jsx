@@ -17,20 +17,28 @@ export default function LeadDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [lead, setLead] = useState(null);
+  const [contractors, setContractors] = useState([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [converting, setConverting] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [siteVisit, setSiteVisit] = useState({ site_visit_date: '', site_visit_time: '' });
+  const [siteVisitSaved, setSiteVisitSaved] = useState(false);
+  const [visitDate, setVisitDate] = useState('');
+  const [visitTime, setVisitTime] = useState('');
+  const [contractorId, setContractorId] = useState('');
+  const [visitNotes, setVisitNotes] = useState('');
 
   const load = () => api.get(`/leads/${id}`).then(({ data }) => {
     setLead(data);
-    setSiteVisit({
-      site_visit_date: data.site_visit_date?.split('T')[0] || '',
-      site_visit_time: data.site_visit_time?.slice(0, 5) || '',
-    });
+    setVisitDate(data.site_visit_date?.split('T')[0] || '');
+    setVisitTime(data.site_visit_time?.slice(0, 5) || '');
+    setContractorId(data.site_visit_contractor_id ? String(data.site_visit_contractor_id) : '');
+    setVisitNotes(data.site_visit_notes || '');
   }).catch(() => {});
 
   useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    api.get('/users/contractors').then(({ data }) => setContractors(data)).catch(() => setContractors([]));
+  }, []);
 
   const updateStatus = async (status) => {
     if (status === lead.status) return;
@@ -51,19 +59,31 @@ export default function LeadDetail() {
   };
 
   const saveSiteVisit = async () => {
+    if (!visitDate || !visitTime || !contractorId) return;
+
     const ok = await confirmAction({
-      title: 'Save site visit?',
-      text: 'Save the scheduled site visit date and time?',
-      confirmText: 'Yes, save',
+      title: 'Schedule site visit?',
+      text: 'Customer and contractor will be notified by SMS and email.',
+      confirmText: 'Yes, schedule',
     });
     if (!ok) return;
 
+    setSaving(true);
+    setSiteVisitSaved(false);
     try {
-      await api.put(`/leads/${id}`, siteVisit);
-      await showSuccess('Site visit saved.');
+      await api.post(`/leads/${id}/schedule-site-visit`, {
+        site_visit_date: visitDate,
+        site_visit_time: visitTime,
+        site_visit_contractor_id: contractorId,
+        site_visit_notes: visitNotes || undefined,
+      });
+      setSiteVisitSaved(true);
+      await showSuccess('Site visit scheduled.');
       load();
     } catch (e) {
-      await showError(e.response?.data?.message || 'Failed to save site visit.');
+      await showError(e.response?.data?.message || 'Failed to schedule site visit.');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -123,8 +143,8 @@ export default function LeadDetail() {
     assigned_pm_id: lead.assigned_pm_id,
     project_description: lead.project_description || lead.notes,
     internal_notes: lead.internal_notes,
-    site_visit_date: siteVisit.site_visit_date,
-    site_visit_time: siteVisit.site_visit_time,
+    site_visit_date: visitDate,
+    site_visit_time: visitTime,
   };
 
   return (
@@ -175,15 +195,61 @@ export default function LeadDetail() {
           <p className="text-sm text-slate-600 whitespace-pre-wrap">{lead.project_description || lead.notes || '—'}</p>
         </div>
 
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <h3 className="font-semibold text-slate-800 mb-3">Site Visit</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <input type="date" value={siteVisit.site_visit_date} onChange={(e) => setSiteVisit({ ...siteVisit, site_visit_date: e.target.value })}
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-            <input type="time" value={siteVisit.site_visit_time} onChange={(e) => setSiteVisit({ ...siteVisit, site_visit_time: e.target.value })}
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
+          <div className="space-y-4">
+            <h3 className="font-semibold text-slate-800">Schedule Site Visit</h3>
+
+            {lead.site_visit_contractor && (
+              <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
+                Currently assigned: <strong>{lead.site_visit_contractor?.name}</strong>
+                {lead.site_visit_date && <> · {lead.site_visit_date?.split('T')[0]} at {lead.site_visit_time?.slice(0, 5)}</>}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Visit Date *</label>
+                <input type="date" value={visitDate} onChange={(e) => setVisitDate(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Visit Time *</label>
+                <input type="time" value={visitTime} onChange={(e) => setVisitTime(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Attending Contractor *</label>
+              <select value={contractorId} onChange={(e) => setContractorId(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm">
+                <option value="">Select contractor...</option>
+                {contractors.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">
+                The contractor will be notified by SMS and email when you save.
+              </p>
+            </div>
+
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Internal Notes (optional)</label>
+              <textarea value={visitNotes} onChange={(e) => setVisitNotes(e.target.value)} rows={2}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+
+            <button onClick={saveSiteVisit} disabled={!visitDate || !visitTime || !contractorId || saving}
+              className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium">
+              {saving ? 'Scheduling...' : 'Save Site Visit & Notify'}
+            </button>
+
+            {siteVisitSaved && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-700">
+                ✓ Site visit scheduled. Customer and contractor have been notified.
+              </div>
+            )}
           </div>
-          <button onClick={saveSiteVisit} className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Save Site Visit</button>
         </div>
 
         {lead.activity?.length > 0 && (

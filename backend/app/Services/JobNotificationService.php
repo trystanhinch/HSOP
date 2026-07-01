@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Mail\ProgressUpdateMail;
 use App\Models\AuditLog;
 use App\Models\Invoice;
 use App\Models\Job;
@@ -274,6 +275,45 @@ class JobNotificationService
                     'actionUrl' => $portal,
                     'actionLabel' => 'View Update',
                 ],
+                'progress_update_customer',
+                $job->customer_id,
+                $job->id
+            );
+        }
+
+        $this->audit('progress_update_submitted', 'job', $job->id);
+    }
+
+    public function progressUpdateCustomer(Job $job, \App\Models\JobUpdate $update): void
+    {
+        $job->loadMissing(['pm', 'customer', 'lead']);
+        $pm = $job->pm;
+        $admin = User::where('role', 'owner')->first();
+
+        $this->sms->sendToUser(
+            $pm ?? $admin,
+            "New progress update for {$job->job_title}.",
+            'progress_update',
+            $job->id
+        );
+
+        $portalToken = $job->lead?->customer_portal_token;
+        $portalUrl = $portalToken
+            ? $this->frontendUrl('portal/'.$portalToken)
+            : $this->frontendUrl('jobs/'.$job->id);
+
+        $this->sms->sendToUser(
+            $job->customer,
+            "Hi {$job->customer?->name}, there is a new progress update for your project at {$job->address}. View it here: {$portalUrl}",
+            'progress_update_customer',
+            $job->customer_id,
+            $job->id
+        );
+
+        if ($job->customer?->email) {
+            $this->email->sendMailable(
+                $job->customer->email,
+                new ProgressUpdateMail($job, $update, $portalUrl),
                 'progress_update_customer',
                 $job->customer_id,
                 $job->id

@@ -6,7 +6,7 @@ import PageHeader from '../components/PageHeader';
 import DatabaseStructure from './DatabaseStructure';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
-const tabs = ['Company', 'Users & Roles', 'Notifications', 'GST & Markup', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure'];
+const tabs = ['Company', 'Users & Roles', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure'];
 
 const smsStatusColor = { sent: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-700', disabled: 'bg-slate-100 text-slate-600' };
 
@@ -19,6 +19,7 @@ export default function Settings() {
   const [companyForm, setCompanyForm] = useState({});
   const [notifForm, setNotifForm] = useState({ sms_globally_enabled: false, email_globally_enabled: false });
   const [pricingForm, setPricingForm] = useState({ gst_rate: '5', markup_divisor: '0.80' });
+  const [splitForm, setSplitForm] = useState({ split_contractor_pct: '80', split_pm_pct: '10', split_company_pct: '10' });
   const [paymentForm, setPaymentForm] = useState({ payment_instructions: '' });
   const [smsLogs, setSmsLogs] = useState([]);
   const [emailLogs, setEmailLogs] = useState([]);
@@ -37,6 +38,11 @@ export default function Settings() {
       setPricingForm({
         gst_rate: data.gst_rate || '5',
         markup_divisor: data.markup_divisor || '0.80',
+      });
+      setSplitForm({
+        split_contractor_pct: data.split_contractor_pct || '80',
+        split_pm_pct: data.split_pm_pct || '10',
+        split_company_pct: data.split_company_pct || '10',
       });
       setPaymentForm({ payment_instructions: data.payment?.instructions || '' });
     }).catch(() => {});
@@ -93,6 +99,15 @@ export default function Settings() {
   const savePricing = (e) => {
     e.preventDefault();
     saveSettings(pricingForm, 'GST and markup settings saved.');
+  };
+
+  const splitTotal = parseFloat(splitForm.split_contractor_pct || 0) + parseFloat(splitForm.split_pm_pct || 0) + parseFloat(splitForm.split_company_pct || 0);
+  const splitValid = Math.abs(splitTotal - 100) < 0.01;
+
+  const saveSplit = (e) => {
+    e.preventDefault();
+    if (!splitValid) return;
+    saveSettings(splitForm, 'Payout split settings saved.');
   };
 
   const savePayment = (e) => {
@@ -255,6 +270,42 @@ export default function Settings() {
           </div>
           <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
             {saving ? 'Saving...' : 'Save Pricing Settings'}
+          </button>
+        </form>
+      )}
+
+      {activeTab === 'Payouts & Split' && (
+        <form onSubmit={saveSplit} className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
+          <h3 className="font-semibold text-slate-800">Default Payout Split (80/10/10)</h3>
+          <p className="text-sm text-slate-500">Customer price = contractor price ÷ contractor %. PM and company shares are calculated from customer subtotal.</p>
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Changing these values only affects NEW jobs. Existing jobs keep their saved split.
+          </p>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Contractor %</label>
+              <input type="number" step="0.01" value={splitForm.split_contractor_pct}
+                onChange={(e) => setSplitForm({ ...splitForm, split_contractor_pct: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">PM %</label>
+              <input type="number" step="0.01" value={splitForm.split_pm_pct}
+                onChange={(e) => setSplitForm({ ...splitForm, split_pm_pct: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Company %</label>
+              <input type="number" step="0.01" value={splitForm.split_company_pct}
+                onChange={(e) => setSplitForm({ ...splitForm, split_company_pct: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+          </div>
+          {!splitValid && (
+            <p className="text-sm text-red-600">Split must add up to 100. Current total: {splitTotal.toFixed(1)}</p>
+          )}
+          <button type="submit" disabled={saving || !splitValid} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
+            {saving ? 'Saving...' : 'Save Split Settings'}
           </button>
         </form>
       )}

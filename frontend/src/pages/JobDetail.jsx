@@ -12,7 +12,7 @@ import { getStatusLabel } from '../utils/statusLabels';
 
 const roleLabel = { owner: 'Admin', pm: 'PM', contractor: 'Contractor', customer: 'Customer' };
 
-const jobStatuses = ['new_job','contractor_assigned','quote_sent','quote_approved','scheduled','in_progress','waiting_on_customer','ready_for_review','corrections_required','completed_by_contractor','final_review','completed','invoiced','paid','cancelled'];
+const jobStatuses = ['new_job','contractor_assigned','site_visit_scheduled','quote_sent','quote_approved','scheduled','in_progress','progress_updated','waiting_on_customer','ready_for_review','pending_customer_approval','corrections_required','revision_requested','payment_pending','etransfer_pending_confirmation','paid_completed','completed','invoiced','paid','cancelled'];
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
@@ -39,6 +39,11 @@ export default function JobDetail() {
   const [sendSms, setSendSms] = useState(false);
   const [correctionsNotes, setCorrectionsNotes] = useState('');
   const [showCorrections, setShowCorrections] = useState(false);
+  const [splitForm, setSplitForm] = useState({ split_contractor_pct: '80', split_pm_pct: '10', split_company_pct: '10' });
+  const [paymentRef, setPaymentRef] = useState('');
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [customerRevision, setCustomerRevision] = useState('');
+  const [showCustomerRevision, setShowCustomerRevision] = useState(false);
 
   const isCustomer = user?.role === 'customer';
   const canManage = ['owner', 'pm'].includes(user?.role);
@@ -58,6 +63,11 @@ export default function JobDetail() {
           scheduled_start_time: data.scheduled_start_time || '',
           estimated_completion_date: data.estimated_completion_date?.split('T')[0] || data.scheduled_end_date?.split('T')[0] || '',
           schedule_notes: data.schedule_notes || '',
+        });
+        setSplitForm({
+          split_contractor_pct: String(data.split_contractor_pct ?? 80),
+          split_pm_pct: String(data.split_pm_pct ?? 10),
+          split_company_pct: String(data.split_company_pct ?? 10),
         });
       })
       .catch((err) => {
@@ -285,9 +295,19 @@ export default function JobDetail() {
       {/* Overview */}
       {activeTab === 'Overview' && (
         <div className="space-y-6">
+          {job.status === 'paid_completed' && job.payment_confirmed_at && (
+            <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm">
+              Payment confirmed on {new Date(job.payment_confirmed_at).toLocaleDateString()}
+            </div>
+          )}
           {job.status === 'completed' && job.completed_at && (
             <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm">
               Job completed on {new Date(job.completed_at).toLocaleDateString()}
+            </div>
+          )}
+          {job.status === 'revision_requested' && job.revision_description && (
+            <div className="bg-orange-50 border border-orange-200 text-orange-900 rounded-xl p-4 text-sm">
+              <strong>Revision requested:</strong> {job.revision_description}
             </div>
           )}
           {job.status === 'corrections_required' && job.corrections_notes && (
@@ -295,16 +315,55 @@ export default function JobDetail() {
               <strong>Corrections requested:</strong> {job.corrections_notes}
             </div>
           )}
-          {isContractor && job.status === 'in_progress' && (
+          {isContractor && ['in_progress', 'progress_updated', 'revision_requested', 'corrections_required'].includes(job.status) && (
             <button type="button" onClick={async () => {
               try {
-                await api.post(`/jobs/${id}/mark-ready-for-review`);
-                await showSuccess('Marked ready for review.');
+                await api.post(`/jobs/${id}/contractor-complete`);
+                await showSuccess('Marked complete — customer notified for review.');
                 loadJob(true);
               } catch (err) { await showError(err.response?.data?.message || 'Failed'); }
             }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700">
-              Mark Ready for Review
+              Mark Job Complete
             </button>
+          )}
+          {isCustomer && job.status === 'pending_customer_approval' && (
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={async () => {
+                try {
+                  const { data } = await api.post(`/jobs/${id}/accept-completion`);
+                  window.location.href = data.payment_url;
+                } catch (err) { await showError(err.response?.data?.message || 'Failed'); }
+              }} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
+                Accept Completion
+              </button>
+              <button type="button" onClick={() => setShowCustomerRevision(true)}
+                className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700">
+                Request Revision
+              </button>
+            </div>
+          )}
+          {isCustomer && job.status === 'payment_pending' && (
+            <a href={`/payment/${id}`} className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">
+              Go to Payment
+            </a>
+          )}
+          {isAdmin && job.status === 'etransfer_pending_confirmation' && (
+            <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+              <h4 className="font-semibold text-slate-800 text-sm">Confirm E-Transfer Payment</h4>
+              <input type="text" value={paymentRef} onChange={(e) => setPaymentRef(e.target.value)} placeholder="Reference number (optional)"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              <input type="date" value={paymentDate} onChange={(e) => setPaymentDate(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              <button type="button" onClick={async () => {
+                try {
+                  await api.post(`/jobs/${id}/confirm-payment`, { payment_reference: paymentRef, payment_date: paymentDate });
+                  await showSuccess('Payment confirmed.');
+                  loadJob(true);
+                } catch (err) { await showError(err.response?.data?.message || 'Failed'); }
+              }} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700">
+                Confirm Payment
+              </button>
+            </div>
           )}
           {canManage && job.status === 'ready_for_review' && (
             <div className="flex flex-wrap gap-2">
@@ -330,6 +389,38 @@ export default function JobDetail() {
                 className="w-full mt-3 border border-slate-200 rounded-lg px-3 py-2 text-sm" rows={3} placeholder="Edit scope..." />
             )}
           </div>
+
+          {isAdmin && (
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h3 className="font-semibold text-slate-800 mb-3">Override Split for This Job</h3>
+              <div className="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Contractor %</label>
+                  <input type="number" value={splitForm.split_contractor_pct} onChange={(e) => setSplitForm({ ...splitForm, split_contractor_pct: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">PM %</label>
+                  <input type="number" value={splitForm.split_pm_pct} onChange={(e) => setSplitForm({ ...splitForm, split_pm_pct: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 block mb-1">Company %</label>
+                  <input type="number" value={splitForm.split_company_pct} onChange={(e) => setSplitForm({ ...splitForm, split_company_pct: e.target.value })}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <button type="button" onClick={async () => {
+                try {
+                  await api.put(`/jobs/${id}/split`, splitForm);
+                  await showSuccess('Split updated.');
+                  loadJob(true);
+                } catch (err) { await showError(err.response?.data?.message || 'Failed'); }
+              }} className="px-4 py-2 bg-slate-700 text-white text-sm rounded-lg hover:bg-slate-800">
+                Save Split Override
+              </button>
+            </div>
+          )}
 
           {canManage && (
             <div className="bg-white rounded-xl border border-slate-200 p-6">
@@ -463,6 +554,12 @@ export default function JobDetail() {
                 <div><p className="text-slate-500">Subtotal</p><p className="font-medium">${parseFloat(job.quote.subtotal || job.quote.customer_price_before_gst || 0).toFixed(2)}</p></div>
                 <div><p className="text-slate-500">GST</p><p className="font-medium">${parseFloat(job.quote.gst || 0).toFixed(2)}</p></div>
                 <div><p className="text-slate-500">Total</p><p className="font-bold">${parseFloat(job.quote.customer_total || 0).toFixed(2)}</p></div>
+                {isAdmin && job.quote.pm_amount != null && (
+                  <div><p className="text-slate-500">PM Share</p><p className="font-medium">${parseFloat(job.quote.pm_amount).toFixed(2)}</p></div>
+                )}
+                {isAdmin && job.quote.company_amount != null && (
+                  <div><p className="text-slate-500">Company Share</p><p className="font-medium">${parseFloat(job.quote.company_amount).toFixed(2)}</p></div>
+                )}
               </div>
               {job.quote.items?.length > 0 && (
                 <div className="overflow-x-auto">
@@ -520,6 +617,27 @@ export default function JobDetail() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {showCustomerRevision && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md">
+            <h3 className="font-semibold mb-3">Request Revision</h3>
+            <textarea value={customerRevision} onChange={(e) => setCustomerRevision(e.target.value)} rows={4}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4" placeholder="Describe what needs to be changed..." />
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setShowCustomerRevision(false)} className="flex-1 border rounded-lg py-2 text-sm">Cancel</button>
+              <button type="button" onClick={async () => {
+                try {
+                  await api.post(`/jobs/${id}/request-revision`, { description: customerRevision });
+                  await showSuccess('Revision request submitted.');
+                  setShowCustomerRevision(false);
+                  loadJob(true);
+                } catch (err) { await showError(err.response?.data?.message || 'Failed'); }
+              }} className="flex-1 bg-orange-600 text-white rounded-lg py-2 text-sm font-medium">Submit</button>
+            </div>
+          </div>
         </div>
       )}
 

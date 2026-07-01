@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\QuoteResource;
 use App\Models\Job;
 use App\Models\Quote;
 use App\Models\QuoteItem;
 use App\Services\JobNotificationService;
+use App\Services\PayoutWorkflowService;
 use App\Services\PricingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,7 +18,8 @@ class QuoteController extends Controller
 {
     public function __construct(
         protected PricingService $pricing,
-        protected JobNotificationService $notifications
+        protected JobNotificationService $notifications,
+        protected PayoutWorkflowService $payouts
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -36,7 +39,7 @@ class QuoteController extends Controller
             $query->where('status', $request->status);
         }
 
-        return response()->json($query->latest()->paginate(20));
+        return response()->json(QuoteResource::collection($query->latest()->paginate(20)));
     }
 
     public function store(Request $request): JsonResponse
@@ -48,6 +51,7 @@ class QuoteController extends Controller
         $request->validate([
             'job_id' => 'required|exists:jobs,id',
             'scope_of_work' => 'required|string',
+            'contractor_price' => 'nullable|numeric|min:1',
             'subtotal' => 'nullable|numeric|min:0',
             'gst_enabled' => 'boolean',
             'gst_rate' => 'nullable|numeric',
@@ -67,27 +71,40 @@ class QuoteController extends Controller
         }
 
         if (! $job->customer_id) {
-            return response()->json(['message' => 'This job has no customer attached. Please fix the job before creating a quote.'], 422);
+            return response()->json(['message' => 'Cannot create estimate: no customer attached to this job.'], 422);
         }
 
-        if ($job->contractor_id && ! $job->contractor_submitted_price) {
-            return response()->json(['message' => 'Contractor has not submitted a price yet. Quote cannot be finalized.'], 422);
-        }
-
-        $contractorBase = (float) ($job->contractor_submitted_price ?? 0);
+        $contractorBase = (float) ($request->contractor_price ?? $job->contractor_submitted_price ?? 0);
         $gstEnabled = $request->boolean('gst_enabled', true);
 
         if ($request->filled('subtotal')) {
             $subtotal = (float) $request->subtotal;
-            $markup = max(0, $subtotal - $contractorBase);
+            $split = $this->pricing->splitFromJob($job);
+            $pmAmount = round($subtotal * ($split['pm_pct'] / 100), 2);
+            $companyAmount = round($subtotal * ($split['company_pct'] / 100), 2);
+            $markup = $pmAmount + $companyAmount;
             $totals = $this->pricing->calculateTotals($subtotal, $gstEnabled, $request->gst_rate);
+            $splitFields = [
+                'contractor_pct' => $split['contractor_pct'],
+                'pm_pct' => $split['pm_pct'],
+                'company_pct' => $split['company_pct'],
+                'pm_amount' => $pmAmount,
+                'company_amount' => $companyAmount,
+            ];
         } elseif ($contractorBase > 0) {
-            $calc = $this->pricing->fromContractorPrice($contractorBase, $gstEnabled);
+            $calc = $this->pricing->fromContractorPrice($contractorBase, $gstEnabled, $job);
             $subtotal = $calc['customer_subtotal'];
             $markup = $calc['hsop_markup'];
             $totals = $calc;
+            $splitFields = [
+                'contractor_pct' => $calc['contractor_pct'],
+                'pm_pct' => $calc['pm_pct'],
+                'company_pct' => $calc['company_pct'],
+                'pm_amount' => $calc['pm_amount'],
+                'company_amount' => $calc['company_amount'],
+            ];
         } else {
-            return response()->json(['message' => 'Please provide a subtotal or ensure contractor price is submitted.'], 422);
+            return response()->json(['message' => 'Please provide contractor_price or ensure contractor price is submitted.'], 422);
         }
 
         $quote = Quote::create([
@@ -100,6 +117,7 @@ class QuoteController extends Controller
             'customer_price_before_gst' => $subtotal,
             'contractor_base_price' => $contractorBase,
             'hsop_markup' => $markup,
+            ...$splitFields,
             'gst_enabled' => $gstEnabled,
             'gst_rate' => $totals['gst_rate'],
             'gst' => $totals['gst'],
@@ -108,6 +126,13 @@ class QuoteController extends Controller
             'customer_notes' => $request->customer_notes,
             'status' => 'draft',
         ]);
+
+        if ($contractorBase > 0) {
+            $job->update([
+                'contractor_submitted_price' => $contractorBase,
+                'contractor_price_status' => 'submitted',
+            ]);
+        }
 
         if ($request->items) {
             foreach ($request->items as $i => $item) {
@@ -126,7 +151,7 @@ class QuoteController extends Controller
 
         $this->notifications->audit('quote_created', 'quote', $quote->id);
 
-        return response()->json($quote->load('items'), 201);
+        return response()->json(new QuoteResource($quote->load('items')), 201);
     }
 
     public function show(Request $request, string $id): JsonResponse
@@ -138,7 +163,7 @@ class QuoteController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        return response()->json($quote);
+        return response()->json(new QuoteResource($quote));
     }
 
     public function update(Request $request, string $id): JsonResponse
@@ -220,6 +245,7 @@ class QuoteController extends Controller
 
         $quote->update(['status' => 'approved', 'accepted_at' => now()]);
         $quote->job->update(['status' => 'quote_approved']);
+        $this->payouts->createPayoutsOnQuoteApproval($quote->fresh());
         $this->notifications->quoteApproved($quote->fresh());
 
         return response()->json(['message' => 'Quote approved']);
@@ -299,6 +325,7 @@ class QuoteController extends Controller
 
         $quote->update(['status' => 'approved', 'accepted_at' => now()]);
         $quote->job->update(['status' => 'quote_approved']);
+        $this->payouts->createPayoutsOnQuoteApproval($quote->fresh());
         $this->notifications->quoteApproved($quote->fresh());
 
         return response()->json(['message' => 'Quote approved. Thank you!']);

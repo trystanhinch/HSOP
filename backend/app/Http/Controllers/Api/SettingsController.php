@@ -37,6 +37,9 @@ class SettingsController extends Controller
             ],
             'gst_rate' => $settings['gst_rate'] ?? '5',
             'markup_divisor' => $settings['markup_divisor'] ?? '0.80',
+            'split_contractor_pct' => $settings['split_contractor_pct'] ?? '80',
+            'split_pm_pct' => $settings['split_pm_pct'] ?? '10',
+            'split_company_pct' => $settings['split_company_pct'] ?? '10',
         ]);
     }
 
@@ -48,6 +51,9 @@ class SettingsController extends Controller
             'company_phone' => 'nullable|string|max:20',
             'gst_rate' => 'nullable|numeric|min:0|max:100',
             'markup_divisor' => 'nullable|numeric|min:0.01|max:1',
+            'split_contractor_pct' => 'nullable|numeric|min:1|max:99',
+            'split_pm_pct' => 'nullable|numeric|min:0|max:99',
+            'split_company_pct' => 'nullable|numeric|min:0|max:99',
             'sms_globally_enabled' => 'nullable|boolean',
             'email_globally_enabled' => 'nullable|boolean',
             'payment_instructions' => 'nullable|string',
@@ -58,7 +64,7 @@ class SettingsController extends Controller
             'gst_number' => 'nullable|string|max:50',
         ]);
 
-        foreach (['company_name', 'company_email', 'company_phone', 'gst_rate', 'markup_divisor', 'sms_globally_enabled', 'email_globally_enabled', 'sms_enabled', 'email_enabled', 'payment_instructions'] as $key) {
+        foreach (['company_name', 'company_email', 'company_phone', 'gst_rate', 'markup_divisor', 'split_contractor_pct', 'split_pm_pct', 'split_company_pct', 'sms_globally_enabled', 'email_globally_enabled', 'sms_enabled', 'email_enabled', 'payment_instructions'] as $key) {
             if (array_key_exists($key, $data) && $data[$key] !== null) {
                 $val = is_bool($data[$key]) ? ($data[$key] ? 'true' : 'false') : (string) $data[$key];
                 Setting::set($key, $val);

@@ -26,6 +26,9 @@ class Lead extends Model
         'status',
         'site_visit_date',
         'site_visit_time',
+        'site_visit_contractor_id',
+        'site_visit_notes',
+        'customer_portal_token',
     ];
 
     protected function casts(): array
@@ -58,5 +61,15 @@ class Lead extends Model
     public function job(): HasOne
     {
         return $this->hasOne(Job::class);
+    }
+
+    public function siteVisitContractor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'site_visit_contractor_id');
+    }
+
+    public function siteVisit(): HasOne
+    {
+        return $this->hasOne(SiteVisit::class);
     }
 }

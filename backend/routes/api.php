@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\CustomerPortalController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyController;
@@ -30,6 +31,14 @@ Route::get('/quote/view/{token}', [QuoteController::class, 'viewByToken']);
 Route::post('/quote/view/{token}/approve', [QuoteController::class, 'approveByToken']);
 Route::post('/quote/view/{token}/reject', [QuoteController::class, 'rejectByToken']);
 
+Route::get('/portal/{token}', [CustomerPortalController::class, 'show']);
+Route::post('/portal/{token}/accept-quote', [CustomerPortalController::class, 'acceptQuote']);
+Route::post('/portal/{token}/reject-quote', [CustomerPortalController::class, 'rejectQuote']);
+Route::post('/portal/{token}/accept-completion', [CustomerPortalController::class, 'acceptCompletion']);
+Route::post('/portal/{token}/request-revision', [CustomerPortalController::class, 'requestRevision']);
+Route::post('/portal/{token}/notify-payment', [CustomerPortalController::class, 'notifyPayment']);
+Route::get('/portal/{token}/payment-details', [CustomerPortalController::class, 'paymentDetails']);
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
@@ -57,6 +66,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/leads/{lead}', [LeadController::class, 'update'])->middleware('role:owner,pm');
     Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])->middleware('role:owner');
     Route::post('/leads/{lead}/convert-to-job', [LeadController::class, 'convertToJob'])->middleware('role:owner,pm');
+    Route::post('/leads/{lead}/schedule-site-visit', [LeadController::class, 'scheduleSiteVisit'])->middleware('role:owner,pm');
 
     Route::get('/jobs/search', [JobController::class, 'search']);
     Route::get('/jobs', [JobController::class, 'index']);
@@ -69,8 +79,15 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/jobs/{job}/submit-price', [JobController::class, 'submitPrice'])->middleware('role:contractor');
     Route::post('/jobs/{job}/approve-price', [JobController::class, 'approvePrice'])->middleware('role:owner,pm');
     Route::post('/jobs/{job}/mark-ready-for-review', [JobController::class, 'markReadyForReview'])->middleware('role:contractor');
+    Route::post('/jobs/{job}/contractor-complete', [JobController::class, 'contractorComplete'])->middleware('role:contractor');
     Route::post('/jobs/{job}/mark-complete', [JobController::class, 'markComplete'])->middleware('role:owner,pm');
+    Route::post('/jobs/{job}/accept-completion', [JobController::class, 'acceptCompletion'])->middleware('role:customer,owner,pm');
+    Route::post('/jobs/{job}/request-revision', [JobController::class, 'requestRevision'])->middleware('role:customer');
     Route::post('/jobs/{job}/request-corrections', [JobController::class, 'requestCorrections'])->middleware('role:owner,pm');
+    Route::post('/jobs/{job}/notify-etransfer-sent', [JobController::class, 'notifyEtransferSent'])->middleware('role:customer,owner');
+    Route::post('/jobs/{job}/confirm-payment', [JobController::class, 'confirmPayment'])->middleware('role:owner');
+    Route::get('/jobs/{job}/payment-details', [JobController::class, 'paymentDetails'])->middleware('role:customer,owner,pm');
+    Route::put('/jobs/{job}/split', [JobController::class, 'updateSplit'])->middleware('role:owner');
     Route::get('/jobs/{job}/activity-log', [JobController::class, 'activityLog']);
 
     Route::get('/jobs/{job}/updates', [JobUpdateController::class, 'index']);

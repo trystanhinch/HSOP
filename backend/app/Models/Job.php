@@ -36,6 +36,16 @@ class Job extends Model
         'ready_for_review_at',
         'completed_at',
         'corrections_notes',
+        'split_contractor_pct',
+        'split_pm_pct',
+        'split_company_pct',
+        'pending_customer_approval_at',
+        'customer_accepted_completion_at',
+        'revision_description',
+        'payment_method',
+        'payment_confirmed_at',
+        'payment_confirmed_by',
+        'payment_reference',
     ];
 
     protected function casts(): array
@@ -49,7 +59,13 @@ class Job extends Model
             'contractor_price_submitted_at' => 'datetime',
             'ready_for_review_at' => 'datetime',
             'completed_at' => 'datetime',
+            'pending_customer_approval_at' => 'datetime',
+            'customer_accepted_completion_at' => 'datetime',
+            'payment_confirmed_at' => 'datetime',
             'contractor_submitted_price' => 'decimal:2',
+            'split_contractor_pct' => 'decimal:2',
+            'split_pm_pct' => 'decimal:2',
+            'split_company_pct' => 'decimal:2',
         ];
     }
 
@@ -88,9 +104,24 @@ class Job extends Model
         return $this->hasOne(Invoice::class);
     }
 
+    public function payouts(): HasMany
+    {
+        return $this->hasMany(Payout::class);
+    }
+
     public function payout(): HasOne
     {
-        return $this->hasOne(Payout::class);
+        return $this->hasOne(Payout::class)->where('payout_type', 'contractor');
+    }
+
+    public function pmPayout(): HasOne
+    {
+        return $this->hasOne(Payout::class)->where('payout_type', 'pm');
+    }
+
+    public function revisionRequests(): HasMany
+    {
+        return $this->hasMany(RevisionRequest::class);
     }
 
     public function messages(): HasMany

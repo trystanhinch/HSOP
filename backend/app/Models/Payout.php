@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class Payout extends Model
 {
     protected $fillable = [
+        'payout_type',
         'job_id',
         'contractor_id',
         'payout_amount',

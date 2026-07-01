@@ -6,13 +6,25 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Job;
 use App\Models\Lead;
+use App\Models\User;
+use App\Mail\SiteVisitScheduledContractorMail;
+use App\Mail\SiteVisitScheduledCustomerMail;
+use App\Services\EmailService;
 use App\Services\LeadCustomerResolver;
+use App\Services\PricingService;
+use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class LeadController extends Controller
 {
+    public function __construct(
+        protected SmsService $sms,
+        protected EmailService $email,
+        protected PricingService $pricing
+    ) {}
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -103,7 +115,7 @@ class LeadController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $lead = Lead::with(['assignedPm:id,name', 'customer:id,name', 'company:id,name', 'photos', 'job:id,status'])
+        $lead = Lead::with(['assignedPm:id,name', 'customer:id,name', 'company:id,name', 'photos', 'job:id,status', 'siteVisitContractor:id,name'])
             ->findOrFail($id);
 
         if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
@@ -218,6 +230,12 @@ class LeadController extends Controller
                 'status' => 'new_job',
             ]);
 
+            $this->pricing->seedSplitOntoJob($job);
+
+            if (! $lead->customer_portal_token) {
+                $lead->update(['customer_portal_token' => Str::random(64)]);
+            }
+
             $lead->update(['status' => 'converted']);
 
             AuditLog::create([
@@ -233,5 +251,116 @@ class LeadController extends Controller
         });
 
         return response()->json(['message' => 'Lead converted to job', 'job_id' => $jobId], 201);
+    }
+
+    public function scheduleSiteVisit(Request $request, Lead $lead): JsonResponse
+    {
+        $user = $request->user();
+        if (! in_array($user->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $request->validate([
+            'site_visit_date' => 'required|date',
+            'site_visit_time' => 'required|date_format:H:i',
+            'site_visit_contractor_id' => 'required|exists:users,id',
+            'site_visit_notes' => 'nullable|string',
+        ]);
+
+        $contractor = User::where('id', $request->site_visit_contractor_id)
+            ->where('role', 'contractor')->firstOrFail();
+
+        $resolver = app(LeadCustomerResolver::class);
+        $customerId = $lead->customer_id;
+        if (! $customerId) {
+            $customerId = $resolver->resolveForLead($lead->fresh());
+            $lead->refresh();
+        }
+
+        if (! $lead->customer_portal_token) {
+            $lead->update(['customer_portal_token' => Str::random(64)]);
+            $lead->refresh();
+        }
+
+        $lead->update([
+            'site_visit_date' => $request->site_visit_date,
+            'site_visit_time' => $request->site_visit_time,
+            'site_visit_contractor_id' => $contractor->id,
+            'site_visit_notes' => $request->site_visit_notes,
+            'status' => 'site_visit_scheduled',
+        ]);
+
+        $siteVisit = \App\Models\SiteVisit::updateOrCreate(
+            ['lead_id' => $lead->id],
+            [
+                'pm_id' => $lead->assigned_pm_id,
+                'contractor_id' => $contractor->id,
+                'customer_id' => $customerId,
+                'visit_date' => $request->site_visit_date,
+                'visit_time' => $request->site_visit_time,
+                'notes' => $request->site_visit_notes,
+                'status' => 'scheduled',
+            ]
+        );
+
+        $customerPortalUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/portal/'.$lead->customer_portal_token;
+        $contractorPortalUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/dashboard/contractor';
+
+        $customerUser = User::find($customerId);
+        $this->sms->send(
+            SmsService::phoneForUser($customerUser) ?? $lead->phone,
+            "Hi {$lead->contact_name}, your site visit with ".config('app.company_name', 'HSOP')." is scheduled for {$request->site_visit_date} at {$request->site_visit_time}. View details: {$customerPortalUrl}",
+            'site_visit_scheduled',
+            $customerId,
+            null
+        );
+
+        $this->email->sendMailable(
+            $customerUser->email ?? $lead->email,
+            new SiteVisitScheduledCustomerMail($lead->fresh(), $siteVisit, $customerPortalUrl),
+            'site_visit_scheduled',
+            $customerId,
+            null
+        );
+
+        $this->sms->send(
+            SmsService::phoneForUser($contractor),
+            "You have a site visit scheduled: {$lead->contact_name}, {$lead->address} on {$request->site_visit_date} at {$request->site_visit_time}. View: {$contractorPortalUrl}",
+            'site_visit_contractor_assigned',
+            $contractor->id,
+            null
+        );
+
+        $this->email->sendMailable(
+            $contractor->email,
+            new SiteVisitScheduledContractorMail($lead->fresh(), $siteVisit, $contractorPortalUrl),
+            'site_visit_contractor_assigned',
+            $contractor->id,
+            null
+        );
+
+        AuditLog::create([
+            'user_id' => auth()->id(),
+            'user_role' => auth()->user()->role,
+            'object_type' => 'lead',
+            'object_id' => $lead->id,
+            'action_type' => 'site_visit_scheduled',
+            'new_value' => json_encode([
+                'date' => $request->site_visit_date,
+                'time' => $request->site_visit_time,
+                'contractor_id' => $contractor->id,
+            ]),
+        ]);
+
+        return response()->json([
+            'message' => 'Site visit scheduled',
+            'lead' => $lead->fresh()->load('siteVisitContractor:id,name'),
+            'site_visit' => $siteVisit,
+            'customer_portal' => $customerPortalUrl,
+        ]);
     }
 }

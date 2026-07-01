@@ -31,6 +31,11 @@ class Quote extends Model
         'sent_at',
         'viewed_at',
         'accepted_at',
+        'contractor_pct',
+        'pm_pct',
+        'company_pct',
+        'pm_amount',
+        'company_amount',
     ];
 
     protected function casts(): array
@@ -43,6 +48,11 @@ class Quote extends Model
             'gst_rate' => 'decimal:2',
             'gst' => 'decimal:2',
             'customer_total' => 'decimal:2',
+            'contractor_pct' => 'decimal:2',
+            'pm_pct' => 'decimal:2',
+            'company_pct' => 'decimal:2',
+            'pm_amount' => 'decimal:2',
+            'company_amount' => 'decimal:2',
             'gst_enabled' => 'boolean',
             'sent_at' => 'datetime',
             'viewed_at' => 'datetime',

@@ -61,6 +61,18 @@ export default function AdminDashboard() {
       </section>
 
       <section>
+        <h3 className="text-sm font-semibold text-slate-700 mb-3">Milestone 3 Pipeline</h3>
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+          <KPICard title="Site Visits Today" value={data.site_visits_today ?? 0} icon={Clock} color="#6366F1" />
+          <KPICard title="Site Visits This Week" value={data.site_visits_this_week ?? 0} icon={Clock} color="#8B5CF6" />
+          <KPICard title="Pending Approval" value={data.pending_approval ?? 0} icon={Briefcase} color="#F97316" />
+          <KPICard title="Revisions" value={data.revision_requested ?? 0} icon={Briefcase} color="#EF4444" />
+          <KPICard title="Payment Pending" value={data.payment_pending ?? 0} icon={DollarSign} color="#EAB308" />
+          <KPICard title="E-Transfer to Confirm" value={data.etransfer_to_confirm ?? 0} icon={DollarSign} color="#3B82F6" />
+        </div>
+      </section>
+
+      <section>
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Financial</h3>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <KPICard title="Awaiting Payment" value={data.jobs_awaiting_payment ?? 0} icon={DollarSign} color="#EF4444" />
