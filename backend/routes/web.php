@@ -1,14 +1,10 @@
 <?php
 
 use App\Http\Controllers\DeployController;
-use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 
 $liveApi = rtrim(config('app.url'), '/');
 $liveApp = rtrim(config('app.frontend_url'), '/');
-
-// No DB session required — works before migrations create `sessions` table.
-$withoutDbSession = [StartSession::class];
 
 Route::get('/', function () use ($liveApi, $liveApp) {
     return response()->json([
@@ -26,9 +22,9 @@ Route::get('/', function () use ($liveApi, $liveApp) {
             'repair' => $liveApi.'/deploy/repair/{secret}',
         ],
     ]);
-})->withoutMiddleware($withoutDbSession);
+});
 
-Route::prefix('deploy')->withoutMiddleware($withoutDbSession)->group(function () {
+Route::prefix('deploy')->group(function () {
     Route::get('/release/{secret}', [DeployController::class, 'release']);
     Route::get('/seed-settings/{secret}', [DeployController::class, 'seedSettings']);
     Route::get('/migrate/{secret}', [DeployController::class, 'migrate']);
