@@ -10,8 +10,18 @@ const allowedHosts = [
   'localhost',
 ]
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
+  ...(mode === 'production' && {
+    define: {
+      'import.meta.env.VITE_API_URL': JSON.stringify(
+        process.env.VITE_API_URL || 'https://api.serviceop.ca/api',
+      ),
+      'import.meta.env.VITE_STORAGE_URL': JSON.stringify(
+        process.env.VITE_STORAGE_URL || 'https://api.serviceop.ca',
+      ),
+    },
+  }),
   server: {
     allowedHosts,
     proxy: {
@@ -28,4 +38,4 @@ export default defineConfig({
   preview: {
     allowedHosts,
   },
-})
+}))

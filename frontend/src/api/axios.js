@@ -12,7 +12,8 @@ function isProductionFrontendHost(hostname) {
   );
 }
 
-function resolveApiBase() {
+/** Resolve at request time so production host detection works in the browser bundle. */
+export function resolveApiBase() {
   const fromEnv = import.meta.env.VITE_API_URL?.trim();
   if (fromEnv && !fromEnv.startsWith('/')) {
     return fromEnv.replace(/\/$/, '');
@@ -34,19 +35,15 @@ function resolveStorageBase(apiBase) {
   return apiBase.replace(/\/api\/?$/, '');
 }
 
-const apiBase = resolveApiBase();
-const storageBase = resolveStorageBase(apiBase);
-
 /** Turn /storage/... paths into full URLs on live (frontend and API are on different hosts). */
 export function storageUrl(path) {
   if (!path) return '';
   if (/^https?:\/\//i.test(path)) return path;
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  return `${storageBase.replace(/\/$/, '')}${normalized}`;
+  return `${resolveStorageBase(resolveApiBase())}${normalized}`;
 }
 
 const api = axios.create({
-  baseURL: apiBase,
   headers: {
     'Content-Type': 'application/json',
     Accept: 'application/json',
@@ -54,6 +51,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  config.baseURL = resolveApiBase();
   const token = localStorage.getItem('token');
   if (token && token !== 'undefined' && token !== 'null') {
     config.headers.Authorization = `Bearer ${token}`;
