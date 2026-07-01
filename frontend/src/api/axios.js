@@ -1,8 +1,41 @@
 import axios from 'axios';
 
-const apiBase = import.meta.env.VITE_API_URL || '/api';
-const storageBase = import.meta.env.VITE_STORAGE_URL
-  || apiBase.replace(/\/api\/?$/, '');
+const PRODUCTION_API = 'https://api.serviceop.ca/api';
+const PRODUCTION_STORAGE = 'https://api.serviceop.ca';
+
+function isProductionFrontendHost(hostname) {
+  return (
+    hostname === 'serviceop-vbstp.ondigitalocean.app'
+    || hostname === 'serviceop.ca'
+    || hostname === 'www.serviceop.ca'
+    || hostname.endsWith('.serviceop.ca')
+  );
+}
+
+function resolveApiBase() {
+  const fromEnv = import.meta.env.VITE_API_URL?.trim();
+  if (fromEnv && !fromEnv.startsWith('/')) {
+    return fromEnv.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && isProductionFrontendHost(window.location.hostname)) {
+    return PRODUCTION_API;
+  }
+  return fromEnv || '/api';
+}
+
+function resolveStorageBase(apiBase) {
+  const fromEnv = import.meta.env.VITE_STORAGE_URL?.trim();
+  if (fromEnv && !fromEnv.startsWith('/')) {
+    return fromEnv.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && isProductionFrontendHost(window.location.hostname)) {
+    return PRODUCTION_STORAGE;
+  }
+  return apiBase.replace(/\/api\/?$/, '');
+}
+
+const apiBase = resolveApiBase();
+const storageBase = resolveStorageBase(apiBase);
 
 /** Turn /storage/... paths into full URLs on live (frontend and API are on different hosts). */
 export function storageUrl(path) {
