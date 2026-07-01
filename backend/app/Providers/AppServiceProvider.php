@@ -11,7 +11,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // App Platform may still have SESSION_DRIVER=database in env before migrations run.
+        if ($this->app->environment('production')) {
+            config(['session.driver' => 'file']);
+        }
     }
 
     /**
