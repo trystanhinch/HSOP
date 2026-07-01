@@ -2,10 +2,18 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
+const allowedHosts = [
+  'serviceop-vbstp.ondigitalocean.app',
+  'api.serviceop.ca',
+  'serviceop.ca',
+  'www.serviceop.ca',
+  'localhost',
+]
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
-    allowedHosts: ['serviceop-vbstp.ondigitalocean.app'],
+    allowedHosts,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
@@ -17,7 +25,7 @@ export default defineConfig({
       },
     },
   },
-preview: {
-  allowedHosts: ['serviceop-vbstp.ondigitalocean.app'],
-    },
+  preview: {
+    allowedHosts,
+  },
 })
