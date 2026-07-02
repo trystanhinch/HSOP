@@ -252,7 +252,7 @@ class LeadController extends Controller
             $customerId = $resolver->resolveForLead($lead->fresh());
             $category = str_replace('_', ' ', $lead->service_category ?? 'service');
 
-            $job = Job::create([
+            $jobPayload = [
                 'lead_id' => $lead->id,
                 'company_id' => $lead->company_id,
                 'customer_id' => $customerId,
@@ -263,7 +263,15 @@ class LeadController extends Controller
                 'scope_of_work' => $lead->project_description ?? $lead->notes,
                 'internal_notes' => $lead->internal_notes,
                 'status' => 'new_job',
-            ]);
+            ];
+
+            if ($lead->site_visit_contractor_id) {
+                $jobPayload['contractor_id'] = $lead->site_visit_contractor_id;
+                $jobPayload['contractor_price_status'] = 'pending';
+                $jobPayload['status'] = 'contractor_assigned';
+            }
+
+            $job = Job::create($jobPayload);
 
             $this->pricing->seedSplitOntoJob($job);
 
