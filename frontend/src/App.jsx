@@ -54,7 +54,7 @@ export default function App() {
               <Route path="/dashboard/customer" element={<RoleGuard roles={['customer']}><CustomerDashboard /></RoleGuard>} />
 
               <Route path="/leads" element={<RoleGuard roles={['owner', 'pm']}><Leads /></RoleGuard>} />
-              <Route path="/leads/:id" element={<RoleGuard roles={['owner', 'pm']}><LeadDetail /></RoleGuard>} />
+              <Route path="/leads/:id" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><LeadDetail /></RoleGuard>} />
               <Route path="/jobs" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><Jobs /></RoleGuard>} />
               <Route path="/jobs/:id" element={<RoleGuard roles={['owner', 'pm', 'contractor', 'customer']}><JobDetail /></RoleGuard>} />
               <Route path="/contractors" element={<RoleGuard roles={['owner', 'pm']}><Contractors /></RoleGuard>} />

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Job;
 use App\Models\Lead;
+use App\Models\SiteVisit;
 use App\Models\User;
 use App\Mail\SiteVisitScheduledContractorMail;
 use App\Mail\SiteVisitScheduledCustomerMail;
@@ -110,26 +111,59 @@ class LeadController extends Controller
     public function show(Request $request, string $id): JsonResponse
     {
         $user = $request->user();
+        $lead = Lead::with([
+            'assignedPm:id,name,email,phone',
+            'customer:id,name',
+            'company:id,name',
+            'photos',
+            'job:id,status',
+            'siteVisitContractor:id,name,email,phone',
+            'siteVisit',
+        ])->findOrFail($id);
 
-        if (! in_array($user->role, ['owner', 'pm'])) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        if (in_array($user->role, ['owner', 'pm'], true)) {
+            if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+
+            $activity = AuditLog::where('object_type', 'lead')
+                ->where('object_id', $lead->id)
+                ->with('user:id,name,role')
+                ->latest()
+                ->take(20)
+                ->get();
+
+            return response()->json(array_merge($lead->toArray(), ['activity' => $activity]));
         }
 
-        $lead = Lead::with(['assignedPm:id,name', 'customer:id,name', 'company:id,name', 'photos', 'job:id,status', 'siteVisitContractor:id,name'])
-            ->findOrFail($id);
+        if ($user->role === 'contractor') {
+            $siteVisit = SiteVisit::where('lead_id', $lead->id)
+                ->where('contractor_id', $user->id)
+                ->first();
 
-        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+            if (! $siteVisit) {
+                abort(403, 'You are not assigned to this appointment.');
+            }
+
+            return response()->json([
+                'id' => $lead->id,
+                'contact_name' => $lead->contact_name,
+                'phone' => $lead->phone,
+                'email' => $lead->email,
+                'address' => $lead->address,
+                'service_category' => $lead->service_category,
+                'project_description' => $lead->project_description ?? $lead->notes,
+                'status' => $lead->status,
+                'site_visit_date' => $lead->site_visit_date,
+                'site_visit_time' => $lead->site_visit_time,
+                'site_visit_notes' => $lead->site_visit_notes,
+                'assigned_pm' => $lead->assignedPm?->only(['id', 'name', 'email', 'phone']),
+                'company' => $lead->company?->only(['id', 'name']),
+                'job' => $lead->job?->only(['id', 'status']),
+            ]);
         }
 
-        $activity = AuditLog::where('object_type', 'lead')
-            ->where('object_id', $lead->id)
-            ->with('user:id,name,role')
-            ->latest()
-            ->take(20)
-            ->get();
-
-        return response()->json(array_merge($lead->toArray(), ['activity' => $activity]));
+        abort(403, 'Access denied.');
     }
 
     public function update(Request $request, string $id): JsonResponse

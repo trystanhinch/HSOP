@@ -5,6 +5,7 @@ import api from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
 import SlideOverPanel from '../components/SlideOverPanel';
 import LeadForm from '../components/LeadForm';
+import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
 const statuses = ['new', 'contacted', 'site_visit_scheduled', 'quote_needed', 'converted', 'lost'];
@@ -13,10 +14,25 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
+function formatVisitDate(date) {
+  if (!date) return '—';
+  return date.split('T')[0];
+}
+
+function formatVisitTime(time) {
+  if (!time) return '';
+  return time.slice(0, 5);
+}
+
 export default function LeadDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isContractor = user?.role === 'contractor';
+  const isAdminOrPm = ['owner', 'pm'].includes(user?.role);
+
   const [lead, setLead] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [contractors, setContractors] = useState([]);
   const [panelOpen, setPanelOpen] = useState(false);
   const [converting, setConverting] = useState(false);
@@ -27,18 +43,28 @@ export default function LeadDetail() {
   const [contractorId, setContractorId] = useState('');
   const [visitNotes, setVisitNotes] = useState('');
 
-  const load = () => api.get(`/leads/${id}`).then(({ data }) => {
-    setLead(data);
-    setVisitDate(data.site_visit_date?.split('T')[0] || '');
-    setVisitTime(data.site_visit_time?.slice(0, 5) || '');
-    setContractorId(data.site_visit_contractor_id ? String(data.site_visit_contractor_id) : '');
-    setVisitNotes(data.site_visit_notes || '');
-  }).catch(() => {});
+  const load = () => {
+    setLoadError(null);
+    return api.get(`/leads/${id}`)
+      .then(({ data }) => {
+        setLead(data);
+        setVisitDate(data.site_visit_date?.split('T')[0] || '');
+        setVisitTime(data.site_visit_time?.slice(0, 5) || '');
+        setContractorId(data.site_visit_contractor_id ? String(data.site_visit_contractor_id) : '');
+        setVisitNotes(data.site_visit_notes || '');
+      })
+      .catch((e) => {
+        setLead(null);
+        setLoadError(e.response?.data?.message || 'Failed to load lead.');
+      });
+  };
 
   useEffect(() => { load(); }, [id]);
   useEffect(() => {
-    api.get('/users/contractors').then(({ data }) => setContractors(data)).catch(() => setContractors([]));
-  }, []);
+    if (isAdminOrPm) {
+      api.get('/users/contractors').then(({ data }) => setContractors(data)).catch(() => setContractors([]));
+    }
+  }, [isAdminOrPm]);
 
   const updateStatus = async (status) => {
     if (status === lead.status) return;
@@ -129,7 +155,132 @@ export default function LeadDetail() {
     }
   };
 
+  if (loadError) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-red-600 mb-4">{loadError}</p>
+        <button type="button" onClick={() => navigate(-1)} className="text-sm text-blue-600 hover:underline">
+          ← Go back
+        </button>
+      </div>
+    );
+  }
+
   if (!lead) return <div className="text-center py-12 text-slate-500">Loading lead...</div>;
+
+  if (isContractor) {
+    return (
+      <div className="max-w-3xl mx-auto space-y-6">
+        <button type="button" onClick={() => navigate('/schedule')}
+          className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
+          <ArrowLeft size={16} /> Back to Schedule
+        </button>
+
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-bold text-slate-800">Your Appointment</h1>
+          <StatusBadge status={lead.status} />
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h2 className="font-semibold text-slate-800 mb-4">Appointment Details</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+            <div>
+              <p className="text-slate-400 text-xs mb-0.5">Date & Time</p>
+              <p className="font-medium text-slate-800">
+                {formatVisitDate(lead.site_visit_date)}
+                {lead.site_visit_time && ` at ${formatVisitTime(lead.site_visit_time)}`}
+              </p>
+            </div>
+            <div>
+              <p className="text-slate-400 text-xs mb-0.5">Address</p>
+              <p className="font-medium text-slate-800">{lead.address}</p>
+            </div>
+            <div>
+              <p className="text-slate-400 text-xs mb-0.5">Service Category</p>
+              <p className="font-medium text-slate-800 capitalize">{formatCategory(lead.service_category)}</p>
+            </div>
+            <div>
+              <p className="text-slate-400 text-xs mb-0.5">Status</p>
+              <StatusBadge status={lead.status} />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h2 className="font-semibold text-slate-800 mb-4">Customer Contact</h2>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-400">Name</span>
+              <span className="font-medium">{lead.contact_name}</span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-400">Phone</span>
+              {lead.phone ? (
+                <a href={`tel:${lead.phone}`} className="font-medium text-blue-600">{lead.phone}</a>
+              ) : (
+                <span>—</span>
+              )}
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-400">Email</span>
+              {lead.email ? (
+                <a href={`mailto:${lead.email}`} className="font-medium text-blue-600 text-xs">{lead.email}</a>
+              ) : (
+                <span>—</span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {(lead.project_description || lead.notes) && (
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <h2 className="font-semibold text-slate-800 mb-2">Project Description</h2>
+            <p className="text-sm text-slate-600 whitespace-pre-wrap">{lead.project_description || lead.notes}</p>
+          </div>
+        )}
+
+        {lead.site_visit_notes && (
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <p className="text-xs font-semibold text-blue-700 mb-1">Notes for this appointment</p>
+            <p className="text-sm text-blue-800">{lead.site_visit_notes}</p>
+          </div>
+        )}
+
+        {lead.assigned_pm && (
+          <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <h2 className="font-semibold text-slate-800 mb-3">Your Project Manager</h2>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold">
+                {lead.assigned_pm.name?.charAt(0)}
+              </div>
+              <div>
+                <p className="font-medium text-slate-800">{lead.assigned_pm.name}</p>
+                {lead.assigned_pm.phone && (
+                  <a href={`tel:${lead.assigned_pm.phone}`} className="text-sm text-blue-600">{lead.assigned_pm.phone}</a>
+                )}
+                {lead.assigned_pm.email && !lead.assigned_pm.phone && (
+                  <a href={`mailto:${lead.assigned_pm.email}`} className="text-sm text-blue-600">{lead.assigned_pm.email}</a>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {['site_visit_completed', 'contractor_pricing_pending'].includes(lead.status) && lead.job?.id && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+            <p className="text-sm font-medium text-yellow-800 mb-1">Site visit complete — please submit your price</p>
+            <p className="text-xs text-yellow-700 mb-3">
+              Once you submit your price, the PM will review and prepare the customer estimate.
+            </p>
+            <button type="button" onClick={() => navigate(`/jobs/${lead.job.id}`)}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded-lg px-4 py-2 font-medium">
+              Submit My Price
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const formInitial = {
     id: lead.id,
@@ -202,7 +353,7 @@ export default function LeadDetail() {
             {lead.site_visit_contractor && (
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
                 Currently assigned: <strong>{lead.site_visit_contractor?.name}</strong>
-                {lead.site_visit_date && <> · {lead.site_visit_date?.split('T')[0]} at {lead.site_visit_time?.slice(0, 5)}</>}
+                {lead.site_visit_date && <> · {formatVisitDate(lead.site_visit_date)} at {formatVisitTime(lead.site_visit_time)}</>}
               </div>
             )}
 

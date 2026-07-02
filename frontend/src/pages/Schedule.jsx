@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
@@ -7,10 +7,10 @@ import PageHeader from '../components/PageHeader';
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 function eventClass(item) {
-  if (item.type === 'site_visit') {
+  if (item.color === 'indigo' || item.type === 'site_visit') {
     return 'bg-indigo-100 text-indigo-700 border-indigo-200';
   }
-  if (item.status === 'in_progress' || item.status === 'progress_updated') {
+  if (item.status === 'in_progress' || item.status === 'progress_updated' || item.color === 'blue') {
     return 'bg-blue-100 text-blue-700 border-blue-200';
   }
   if (item.status === 'completed' || item.status === 'paid_completed') {
@@ -20,6 +20,7 @@ function eventClass(item) {
 }
 
 export default function Schedule() {
+  const navigate = useNavigate();
   const [month, setMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -68,9 +69,9 @@ export default function Schedule() {
       </div>
       <div className="bg-white rounded-xl border border-slate-200 p-4">
         <div className="flex items-center justify-between mb-4">
-          <button onClick={prevMonth} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
+          <button type="button" onClick={prevMonth} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
           <h2 className="font-semibold text-slate-800">{monthLabel}</h2>
-          <button onClick={nextMonth} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-5 h-5" /></button>
+          <button type="button" onClick={nextMonth} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-5 h-5" /></button>
         </div>
 
         <div className="grid grid-cols-7 gap-1">
@@ -83,10 +84,18 @@ export default function Schedule() {
                 <>
                   <p className="text-xs font-medium text-slate-600 mb-1">{day}</p>
                   {eventsOnDay(day).map((item) => (
-                    <Link key={`${item.type}-${item.id}`} to={item.url}
-                      className={`block text-xs border rounded px-1 py-0.5 mb-0.5 hover:opacity-80 truncate ${eventClass(item)}`}>
-                      {item.type === 'site_visit' ? 'Site Visit' : item.customer_name?.split(' ')[0] || item.title}
-                    </Link>
+                    <button
+                      key={`${item.type}-${item.id}`}
+                      type="button"
+                      onClick={() => navigate(item.url)}
+                      className={`w-full text-left text-xs border rounded px-2 py-1 mb-1 truncate font-medium hover:opacity-80 ${eventClass(item)}`}
+                    >
+                      {item.time && <span className="opacity-70">{item.time} </span>}
+                      {item.title}
+                      {item.type === 'site_visit' && (
+                        <span className="ml-1 opacity-60 text-xs">· Visit</span>
+                      )}
+                    </button>
                   ))}
                 </>
               )}
