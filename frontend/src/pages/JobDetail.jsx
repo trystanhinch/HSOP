@@ -19,6 +19,20 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
+function calcPriceBreakdown(job) {
+  const contractorPct = Number(job?.split_contractor_pct ?? 80);
+  const pmPct = Number(job?.split_pm_pct ?? 10);
+  const companyPct = Number(job?.split_company_pct ?? 10);
+  const contractorPrice = Number(job?.contractor_submitted_price ?? 0);
+  if (!contractorPrice || !contractorPct) return null;
+  const customerSubtotal = contractorPrice / (contractorPct / 100);
+  const pmAmount = customerSubtotal * (pmPct / 100);
+  const companyAmount = customerSubtotal * (companyPct / 100);
+  const gst = customerSubtotal * 0.05;
+  const customerTotal = customerSubtotal + gst;
+  return { contractorPrice, contractorPct, pmPct, companyPct, customerSubtotal, pmAmount, companyAmount, gst, customerTotal };
+}
+
 export default function JobDetail() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -34,6 +48,7 @@ export default function JobDetail() {
   const [scheduleForm, setScheduleForm] = useState({ scheduled_start_date: '', scheduled_start_time: '', estimated_completion_date: '', schedule_notes: '' });
   const [quoteUrl, setQuoteUrl] = useState('');
   const [sendingQuote, setSendingQuote] = useState(false);
+  const [approving, setApproving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activityLog, setActivityLog] = useState([]);
@@ -54,6 +69,8 @@ export default function JobDetail() {
   const needsPricing = job && ['pending', 'not_requested', null, undefined].includes(job.contractor_price_status);
   const priceSubmitted = job?.contractor_price_status === 'submitted';
   const priceApproved = job?.contractor_price_status === 'approved';
+  const hasQuote = !!job?.quote;
+  const priceBreakdown = job ? calcPriceBreakdown(job) : null;
 
   const loadJob = (silent = false) => {
     if (!silent) {
@@ -178,9 +195,9 @@ export default function JobDetail() {
   const sendQuote = async () => {
     if (!job?.quote?.id) return;
     const ok = await confirmAction({
-      title: 'Send quote to customer?',
-      text: 'The customer will receive a link to review and approve this quote.',
-      confirmText: 'Yes, send quote',
+      title: 'Send estimate to customer?',
+      text: 'The customer will receive SMS and email with a link to review and approve this estimate.',
+      confirmText: 'Yes, send estimate',
     });
     if (!ok) return;
 
@@ -188,12 +205,35 @@ export default function JobDetail() {
     try {
       const { data } = await api.post(`/quotes/${job.quote.id}/send`);
       setQuoteUrl(data.quote_url);
-      await showSuccess('Quote sent to customer.');
+      await showSuccess('Estimate sent to customer.');
       loadJob(true);
     } catch (err) {
-      await showError(err.response?.data?.message || 'Failed to send quote.');
+      await showError(err.response?.data?.message || 'Failed to send estimate.');
     } finally {
       setSendingQuote(false);
+    }
+  };
+
+  const approvePriceAndCreateQuote = async () => {
+    setApproving(true);
+    try {
+      await api.post(`/jobs/${id}/approve-price`);
+
+      if (!job?.quote) {
+        await api.post('/quotes', {
+          job_id: job.id,
+          scope_of_work: job.scope_of_work || job.lead?.project_description || 'Scope of work',
+          contractor_price: job.contractor_submitted_price,
+          gst_enabled: true,
+        });
+      }
+
+      await showSuccess('Estimate created. Review it and send to the customer.');
+      await loadJob(true);
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to approve price.');
+    } finally {
+      setApproving(false);
     }
   };
 
@@ -312,6 +352,88 @@ export default function JobDetail() {
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {canManage && priceSubmitted && priceBreakdown && (
+        <div className="bg-white rounded-xl border-2 border-orange-300 p-5 mb-6">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="text-2xl">💰</span>
+            <div>
+              <h3 className="font-semibold text-slate-800">Contractor Price Submitted</h3>
+              {job.contractor_price_submitted_at && (
+                <p className="text-xs text-slate-500">
+                  Submitted {new Date(job.contractor_price_submitted_at).toLocaleString()}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-slate-50 rounded-lg p-4 mb-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Contractor price (submitted)</span>
+              <span className="font-semibold text-slate-800">${priceBreakdown.contractorPrice.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>Customer subtotal ({priceBreakdown.contractorPct}% split = ÷{(priceBreakdown.contractorPct / 100).toFixed(2)})</span>
+              <span>${priceBreakdown.customerSubtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>PM share ({priceBreakdown.pmPct}%)</span>
+              <span>${priceBreakdown.pmAmount.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>Company share ({priceBreakdown.companyPct}%)</span>
+              <span>${priceBreakdown.companyAmount.toFixed(2)}</span>
+            </div>
+            <div className="border-t pt-2 flex justify-between font-medium">
+              <span className="text-slate-600">Customer total (inc. 5% GST)</span>
+              <span className="text-slate-800">${priceBreakdown.customerTotal.toFixed(2)}</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={approvePriceAndCreateQuote}
+            disabled={approving}
+            className="w-full bg-orange-600 hover:bg-orange-700 text-white rounded-lg py-2.5 font-medium text-sm disabled:opacity-60"
+          >
+            {approving ? 'Approving...' : 'Approve Price & Create Estimate'}
+          </button>
+        </div>
+      )}
+
+      {canManage && priceApproved && hasQuote && ['draft', 'revised'].includes(job.quote.status) && (
+        <div className="bg-green-50 border border-green-200 rounded-xl p-5 mb-6">
+          <h3 className="font-semibold text-green-800 mb-2">Estimate Ready to Send</h3>
+          <div className="text-sm space-y-1 mb-4">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Customer total</span>
+              <span className="font-bold text-slate-800">
+                ${Number(job.quote.customer_total || 0).toFixed(2)}
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={sendQuote}
+            disabled={sendingQuote}
+            className="w-full bg-green-600 hover:bg-green-700 text-white rounded-lg py-2.5 font-medium text-sm disabled:opacity-60"
+          >
+            {sendingQuote ? 'Sending...' : 'Send Estimate to Customer via SMS + Email'}
+          </button>
+        </div>
+      )}
+
+      {canManage && priceApproved && hasQuote && !['draft', 'revised'].includes(job.quote.status) && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6">
+          <p className="text-sm font-medium text-blue-800">✓ Estimate sent to customer</p>
+          {job.quote.sent_at && (
+            <p className="text-xs text-blue-600 mt-1">
+              Sent {new Date(job.quote.sent_at).toLocaleString()}
+            </p>
+          )}
+          <p className="text-xs text-blue-600">Status: {job.quote.status}</p>
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Users, Briefcase, FileText, Clock } from 'lucide-react';
 import api from '../api/axios';
 import KPICard from '../components/KPICard';
@@ -12,6 +12,7 @@ function formatCategory(cat) {
 
 export default function PMDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -44,6 +45,35 @@ export default function PMDashboard() {
           View My Schedule
         </Link>
       </div>
+
+      {(data.jobs_needing_quote_approval || []).length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="font-semibold text-slate-800 mb-3">Prices Submitted — Needs Your Review</h3>
+          <div className="space-y-3">
+            {data.jobs_needing_quote_approval.map((job) => (
+              <div
+                key={job.id}
+                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-orange-50 border border-orange-200 rounded-xl p-4"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-orange-800">{job.address}</p>
+                  <p className="text-xs text-orange-700">
+                    Contractor price: ${Number(job.contractor_submitted_price || 0).toFixed(2)}
+                  </p>
+                  <p className="text-xs text-orange-600">{job.customer?.name}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                  className="bg-orange-600 hover:bg-orange-700 text-white text-xs rounded-lg px-4 py-2 font-medium whitespace-nowrap"
+                >
+                  Review & Approve
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-lg shadow-sm border border-[#E2E8F0] overflow-hidden">
         <div className="px-4 py-3 border-b border-[#E2E8F0] bg-slate-50">

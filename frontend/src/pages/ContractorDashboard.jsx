@@ -114,6 +114,38 @@ export default function ContractorDashboard() {
         </div>
       )}
 
+      {(data.site_visits || []).length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="font-semibold text-slate-800 mb-3">Upcoming Site Visits</h3>
+          <div className="space-y-3">
+            {data.site_visits.map((sv) => (
+              <div
+                key={sv.id}
+                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-indigo-50 border border-indigo-200 rounded-xl p-4"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-indigo-800">{sv.customer_name}</p>
+                  <p className="text-xs text-indigo-700">{sv.address}</p>
+                  <p className="text-xs text-indigo-600">
+                    {new Date(sv.visit_date).toLocaleDateString('en-CA', {
+                      weekday: 'short', month: 'short', day: 'numeric',
+                    })}
+                    {sv.visit_time && ` at ${String(sv.visit_time).slice(0, 5)}`}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(sv.url)}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded-lg px-4 py-2 font-medium whitespace-nowrap"
+                >
+                  View Details
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-3">Document Status</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
