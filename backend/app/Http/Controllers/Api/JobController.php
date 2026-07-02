@@ -350,14 +350,39 @@ class JobController extends Controller
 
     public function approvePrice(Request $request, string $id): JsonResponse
     {
-        if (! in_array($request->user()->role, ['owner', 'pm'])) {
+        $user = $request->user();
+        if (! in_array($user->role, ['owner', 'pm'], true)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
         $job = Job::findOrFail($id);
+
+        if ($user->role === 'pm' && $job->pm_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if (! $job->contractor_submitted_price) {
+            return response()->json(['message' => 'No price submitted yet.'], 422);
+        }
+
+        if ($job->contractor_price_status === 'approved') {
+            return response()->json(['message' => 'Price has already been approved.'], 422);
+        }
+
         $job->update(['contractor_price_status' => 'approved']);
 
-        return response()->json(['message' => 'Contractor price approved']);
+        AuditLog::create([
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'object_type' => 'job',
+            'object_id' => $job->id,
+            'action_type' => 'contractor_price_approved',
+        ]);
+
+        return response()->json([
+            'message' => 'Price approved. You can now create the customer estimate.',
+            'job' => $job->fresh(),
+        ]);
     }
 
     public function updateSplit(Request $request, Job $job): JsonResponse

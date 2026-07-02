@@ -127,7 +127,7 @@ class QuoteController extends Controller
             'status' => 'draft',
         ]);
 
-        if ($contractorBase > 0) {
+        if ($contractorBase > 0 && $job->contractor_price_status !== 'approved') {
             $job->update([
                 'contractor_submitted_price' => $contractorBase,
                 'contractor_price_status' => 'submitted',

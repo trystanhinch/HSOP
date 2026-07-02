@@ -8,6 +8,7 @@ use App\Models\Job;
 use App\Models\Lead;
 use App\Models\Payout;
 use App\Models\Quote;
+use App\Models\SiteVisit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 
@@ -65,6 +66,10 @@ class DashboardController extends Controller
             'pending_quotes' => Quote::where('status', 'draft')->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count(),
             'awaiting_approval' => Quote::where('status', 'sent')->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count(),
             'jobs_in_progress' => Job::where('pm_id', $id)->where('status', 'in_progress')->count(),
+            'jobs_needing_quote_approval' => Job::where('pm_id', $id)
+                ->where('contractor_price_status', 'submitted')
+                ->with(['customer:id,name'])
+                ->get(['id', 'address', 'contractor_submitted_price', 'customer_id', 'contractor_price_submitted_at']),
             'recent_leads' => Lead::where('assigned_pm_id', $id)->latest()->take(5)->get(),
             'recent_jobs' => Job::where('pm_id', $id)->with(['contractor:id,name', 'customer:id,name'])->latest()->take(5)->get(),
             'my_leads_list' => Lead::where('assigned_pm_id', $id)->latest()->take(5)->get(['id', 'contact_name', 'address', 'service_category', 'status', 'site_visit_date']),
@@ -79,15 +84,44 @@ class DashboardController extends Controller
     {
         $id = auth()->id();
         $contractor = \App\Models\Contractor::where('user_id', $id)->first();
+        $jobs = Job::where('contractor_id', $id)->with(['customer:id,name', 'pm:id,name'])->latest()->get();
+
+        $siteVisits = SiteVisit::where('contractor_id', $id)
+            ->where('status', 'scheduled')
+            ->whereDate('visit_date', '>=', now()->toDateString())
+            ->with(['lead:id,contact_name,address,service_category,project_description,status'])
+            ->orderBy('visit_date')
+            ->get()
+            ->map(fn ($sv) => [
+                'type' => 'site_visit',
+                'id' => $sv->id,
+                'lead_id' => $sv->lead_id,
+                'address' => $sv->lead->address ?? '',
+                'customer_name' => $sv->lead->contact_name ?? '',
+                'service' => $sv->lead->service_category ?? '',
+                'description' => $sv->lead->project_description ?? '',
+                'visit_date' => $sv->visit_date,
+                'visit_time' => $sv->visit_time,
+                'status' => 'site_visit_scheduled',
+                'url' => '/leads/'.$sv->lead_id,
+            ])
+            ->values();
 
         return response()->json([
-            'assigned_jobs' => Job::where('contractor_id', $id)->count(),
-            'active_jobs' => Job::where('contractor_id', $id)->where('status', 'in_progress')->count(),
-            'upcoming_jobs' => Job::where('contractor_id', $id)->where('status', 'scheduled')->count(),
-            'needs_pricing' => Job::where('contractor_id', $id)->where('contractor_price_status', 'pending')->count(),
-            'pending_payout' => (float) Payout::where('contractor_id', $id)->whereIn('status', ['pending', 'ready_for_payout', 'approved'])->sum('payout_amount'),
-            'paid_payout_total' => (float) Payout::where('contractor_id', $id)->where('status', 'paid')->sum('payout_amount'),
-            'jobs_list' => Job::where('contractor_id', $id)->with(['customer:id,name', 'pm:id,name'])->latest()->get(),
+            'assigned_jobs' => $jobs->count(),
+            'active_jobs' => $jobs->where('status', 'in_progress')->count(),
+            'upcoming_jobs' => $jobs->whereIn('status', ['scheduled', 'contractor_assigned'])->count(),
+            'needs_pricing' => $jobs->where('contractor_price_status', 'pending')->count(),
+            'pending_payout' => (float) Payout::where('contractor_id', $id)
+                ->whereIn('status', ['pending', 'ready_for_payout', 'approved'])
+                ->where('payout_type', 'contractor')
+                ->sum('payout_amount'),
+            'paid_payout_total' => (float) Payout::where('contractor_id', $id)
+                ->where('status', 'paid')
+                ->where('payout_type', 'contractor')
+                ->sum('payout_amount'),
+            'jobs_list' => $jobs,
+            'site_visits' => $siteVisits,
             'document_status' => [
                 'wcb' => $contractor->wcb_status ?? 'not_uploaded',
                 'insurance' => $contractor->liability_insurance_status ?? 'not_uploaded',
