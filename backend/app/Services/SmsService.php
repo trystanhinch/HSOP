@@ -45,9 +45,11 @@ class SmsService
 
     public function send(?string $toPhone, string $message, string $triggerEvent, $userId = null, $jobId = null): array
     {
+        $toPhone = $this->formatPhone($toPhone);
+
         if (! Setting::isGloballyEnabled('sms')) {
             SmsLog::create([
-                'to_phone' => $toPhone ?: 'MISSING',
+                'to_phone' => $toPhone ?: 'MISSING_OR_INVALID',
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
                 'related_job_id' => $jobId,
@@ -61,13 +63,13 @@ class SmsService
 
         if (! $toPhone) {
             SmsLog::create([
-                'to_phone' => 'MISSING',
+                'to_phone' => 'MISSING_OR_INVALID',
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
                 'related_job_id' => $jobId,
                 'message_body' => $message,
                 'status' => 'failed',
-                'error_message' => 'No phone number on file',
+                'error_message' => 'No valid phone number — could not format to E.164',
             ]);
 
             return ['success' => false, 'reason' => 'no_phone'];
@@ -147,5 +149,41 @@ class SmsService
             $user?->id,
             $jobId
         );
+    }
+
+    /**
+     * Normalize any phone number to E.164 format for Twilio.
+     * Handles: 7782556370, 778-255-6370, (778) 255-6370, +17782556370, 17782556370
+     */
+    private function formatPhone(?string $phone): ?string
+    {
+        if (! $phone) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D/', '', $phone);
+
+        if (empty($digits)) {
+            return null;
+        }
+
+        if (strlen($digits) === 11 && $digits[0] === '1') {
+            return '+'.$digits;
+        }
+
+        if (strlen($digits) === 10) {
+            return '+1'.$digits;
+        }
+
+        if (str_starts_with($phone, '+') && strlen($digits) >= 10) {
+            return '+'.$digits;
+        }
+
+        Log::warning('SmsService: unrecognizable phone format', [
+            'original' => $phone,
+            'digits' => $digits,
+        ]);
+
+        return null;
     }
 }
