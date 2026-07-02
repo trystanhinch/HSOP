@@ -10,6 +10,4 @@ Route::prefix('deploy')->group(function () {
     Route::get('/seed/{secret}', [DeployController::class, 'seed']);
     Route::get('/setup/{secret}', [DeployController::class, 'setup']);
     Route::get('/repair/{secret}', [DeployController::class, 'repair']);
-    Route::get('/update-contractor-phone/{secret}', [DeployController::class, 'updateContractorPhone']);
-    Route::get('/fix-customer-assignments/{secret}', [DeployController::class, 'fixCustomerAssignments']);
 });
