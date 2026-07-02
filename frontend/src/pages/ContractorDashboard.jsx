@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Briefcase, Hammer, Calendar, Wallet, CheckCircle, AlertTriangle } from 'lucide-react';
 import api from '../api/axios';
 import KPICard from '../components/KPICard';
@@ -34,6 +34,7 @@ function DocStatus({ label, status }) {
 
 export default function ContractorDashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [priceJob, setPriceJob] = useState(null);
@@ -79,12 +80,39 @@ export default function ContractorDashboard() {
   }
 
   const profile = data.contractor_profile || data.document_status || {};
+  const jobsNeedingPrice = (data.jobs_list || []).filter((job) =>
+    ['pending', 'not_requested', null, undefined].includes(job.contractor_price_status)
+  );
 
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <h2 className="text-xl font-semibold text-slate-900">Welcome back, {user?.name?.split(' ')[0] || 'Contractor'}</h2>
       </div>
+
+      {jobsNeedingPrice.length > 0 && (
+        <div className="space-y-3">
+          {jobsNeedingPrice.map((job) => (
+            <div
+              key={job.id}
+              className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
+            >
+              <div>
+                <p className="text-sm font-semibold text-orange-800">Price submission needed</p>
+                <p className="text-xs text-orange-700">{job.address}</p>
+                <p className="text-xs text-orange-600">{job.customer?.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => navigate(`/jobs/${job.id}`)}
+                className="bg-orange-600 hover:bg-orange-700 text-white text-xs rounded-lg px-4 py-2 font-medium whitespace-nowrap"
+              >
+                Submit Price
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-3">Document Status</h3>
@@ -118,7 +146,7 @@ export default function ContractorDashboard() {
                 <div className="mt-1"><StatusBadge status={job.status} /></div>
               </div>
               <div className="flex flex-wrap gap-2">
-                {job.contractor_price_status === 'pending' && (
+                {['pending', 'not_requested', null, undefined].includes(job.contractor_price_status) && (
                   <button type="button" onClick={() => setPriceJob(job.id)}
                     className="px-3 py-1.5 bg-orange-100 text-orange-700 rounded-lg text-xs font-medium">Submit Price</button>
                 )}

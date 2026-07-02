@@ -5,6 +5,7 @@ import api, { storageUrl } from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
 import AssignUserModal from '../components/AssignUserModal';
 import JobUpdateForm from '../components/JobUpdateForm';
+import ContractorPriceSubmission from '../components/ContractorPriceSubmission';
 import QuoteBuilder from '../components/QuoteBuilder';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
@@ -49,6 +50,10 @@ export default function JobDetail() {
   const canManage = ['owner', 'pm'].includes(user?.role);
   const isAdmin = user?.role === 'owner';
   const isContractor = user?.role === 'contractor';
+  const isMyJob = job?.contractor_id === user?.id;
+  const needsPricing = job && ['pending', 'not_requested', null, undefined].includes(job.contractor_price_status);
+  const priceSubmitted = job?.contractor_price_status === 'submitted';
+  const priceApproved = job?.contractor_price_status === 'approved';
 
   const loadJob = (silent = false) => {
     if (!silent) {
@@ -230,7 +235,9 @@ export default function JobDetail() {
 
   const tabs = isCustomer
     ? ['Overview', 'Timeline', 'Messages']
-    : ['Overview', 'Timeline', 'Messages', 'Quote & Pricing', 'Documents', 'Activity Log'];
+    : isContractor
+      ? ['Overview', 'Timeline', 'Messages']
+      : ['Overview', 'Timeline', 'Messages', 'Quote & Pricing', 'Documents', 'Activity Log'];
 
   return (
     <div>
@@ -280,6 +287,33 @@ export default function JobDetail() {
           <div><dt className="text-slate-500">Address</dt><dd className="font-medium mt-0.5">{job.address || '—'}</dd></div>
         </dl>
       </div>
+
+      {isContractor && isMyJob && (
+        <div className="mb-6">
+          {needsPricing && (
+            <ContractorPriceSubmission job={job} onSubmitted={() => loadJob(true)} />
+          )}
+
+          {priceSubmitted && !priceApproved && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-yellow-800">
+                ✓ Price submitted — ${Number(job.contractor_submitted_price || 0).toFixed(2)}
+              </p>
+              <p className="text-xs text-yellow-700 mt-1">
+                Waiting for the project manager to review and send the estimate to the customer.
+              </p>
+            </div>
+          )}
+
+          {priceApproved && (
+            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-green-800">
+                ✓ Your price has been approved and the estimate has been sent to the customer.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex overflow-x-auto border-b border-slate-200 -mx-4 px-4 md:mx-0 md:px-0 mb-4">
         <div className="flex gap-1 min-w-max pb-2">
