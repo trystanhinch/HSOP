@@ -300,22 +300,52 @@ class JobController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $data = $request->validate(['price' => 'required|numeric|min:0']);
-        $job = Job::findOrFail($id);
+        $job = Job::with('contractor')->findOrFail($id);
 
         if ($job->contractor_id !== $user->id) {
-            abort(403, 'You do not have permission to view this job.');
+            return response()->json(['message' => 'You are not assigned to this job.'], 403);
         }
+
+        if ($job->contractor_price_status === 'approved') {
+            return response()->json(['message' => 'Price has already been approved.'], 422);
+        }
+
+        $data = $request->validate([
+            'price' => 'required|numeric|min:1',
+            'estimated_duration' => 'nullable|string|max:200',
+            'availability_notes' => 'nullable|string|max:500',
+            'exclusions' => 'nullable|string|max:500',
+            'concerns' => 'nullable|string|max:500',
+        ]);
 
         $job->update([
             'contractor_submitted_price' => $data['price'],
             'contractor_price_status' => 'submitted',
             'contractor_price_submitted_at' => now(),
+            'status' => 'contractor_pricing_pending',
         ]);
 
         $this->notifications->priceSubmitted($job->fresh());
 
-        return response()->json(['message' => 'Price submitted', 'job' => $job->fresh()]);
+        AuditLog::create([
+            'user_id' => $user->id,
+            'user_role' => 'contractor',
+            'object_type' => 'job',
+            'object_id' => $job->id,
+            'action_type' => 'contractor_price_submitted',
+            'new_value' => json_encode([
+                'price' => $data['price'],
+                'estimated_duration' => $data['estimated_duration'] ?? null,
+                'availability_notes' => $data['availability_notes'] ?? null,
+                'exclusions' => $data['exclusions'] ?? null,
+                'concerns' => $data['concerns'] ?? null,
+            ]),
+        ]);
+
+        return response()->json([
+            'message' => 'Price submitted successfully. The project manager has been notified.',
+            'job' => $job->fresh(),
+        ]);
     }
 
     public function approvePrice(Request $request, string $id): JsonResponse
