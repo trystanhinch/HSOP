@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Services\EmailService;
 use App\Services\JobNotificationService;
 use App\Services\PayoutWorkflowService;
+use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -208,10 +209,11 @@ class CustomerPortalController extends Controller
             'revision_description' => $request->description,
         ]);
 
-        $contractorPortalUrl = $this->frontendUrl('dashboard/contractor');
+        $contractorPortalUrl = SmsMessageTemplates::contractorDashboardUrl();
+        $job->loadMissing('contractor');
         $this->sms->send(
             SmsService::phoneForUser($job->contractor),
-            "Revision requested for your job at {$job->address}. Please review and address the client's feedback: {$contractorPortalUrl}",
+            SmsMessageTemplates::revisionRequested($job->contractor, $job, $contractorPortalUrl),
             'revision_requested',
             $job->contractor_id,
             $job->id

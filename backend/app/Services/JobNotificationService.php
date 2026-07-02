@@ -18,7 +18,7 @@ class JobNotificationService
 
     public function frontendUrl(string $path = ''): string
     {
-        return rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/'.ltrim($path, '/');
+        return SmsMessageTemplates::frontendUrl($path);
     }
 
     public function audit(string $action, string $objectType, int $objectId, ?int $userId = null, ?string $role = null, array $meta = []): void
@@ -35,12 +35,15 @@ class JobNotificationService
 
     public function quoteSent(Quote $quote, string $quoteUrl): void
     {
-        $quote->loadMissing(['customer', 'job.pm']);
+        $quote->loadMissing(['customer', 'job.pm', 'job.lead']);
         $customer = $quote->customer;
+        $portalUrl = $quote->job?->lead?->customer_portal_token
+            ? SmsMessageTemplates::customerPortalUrl($quote->job->lead->customer_portal_token)
+            : $quoteUrl;
 
         $this->sms->sendToUser(
             $customer,
-            "Hi {$customer->name}, your quote from HSOP is ready to review. View and approve it here: {$quoteUrl}",
+            SmsMessageTemplates::quoteSent($customer, $quote, $portalUrl),
             'quote_sent',
             $quote->job_id
         );
@@ -134,21 +137,20 @@ class JobNotificationService
 
     public function jobScheduled(Job $job, bool $isUpdate = false): void
     {
-        $job->loadMissing(['customer', 'contractor', 'pm']);
-        $prefix = $isUpdate ? 'Schedule updated:' : 'Your job has been scheduled for';
-        $customerPortal = $this->frontendUrl("jobs/{$job->id}");
-        $contractorPortal = $this->frontendUrl("jobs/{$job->id}");
+        $job->loadMissing(['customer', 'contractor', 'pm', 'lead']);
+        $customerPortal = SmsMessageTemplates::customerPortalUrlForJob($job);
+        $contractorPortal = SmsMessageTemplates::contractorJobUrl($job->id);
 
         $this->sms->sendToUser(
             $job->customer,
-            "Hi {$job->customer->name}, {$prefix} {$job->scheduled_start_date} at {$job->scheduled_start_time}. View details: {$customerPortal}",
+            SmsMessageTemplates::jobScheduledCustomer($job->customer, $job, $customerPortal, $isUpdate),
             $isUpdate ? 'schedule_changed' : 'job_scheduled',
             $job->id
         );
 
         $this->sms->sendToUser(
             $job->contractor,
-            "Schedule confirmed for {$job->address}: {$job->scheduled_start_date} at {$job->scheduled_start_time}. {$contractorPortal}",
+            SmsMessageTemplates::jobScheduledContractor($job->contractor, $job, $contractorPortal, $isUpdate),
             $isUpdate ? 'schedule_changed' : 'job_scheduled',
             $job->id
         );
@@ -159,7 +161,9 @@ class JobNotificationService
             'emails.notification',
             [
                 'heading' => "Hi {$job->customer?->name},",
-                'body' => "{$prefix} {$job->scheduled_start_date}.",
+                'body' => ($isUpdate ? 'Your schedule was updated to ' : 'Your job has been scheduled for ')
+                    .SmsMessageTemplates::formatDate($job->scheduled_start_date)
+                    .' at '.SmsMessageTemplates::formatTime($job->scheduled_start_time).'.',
                 'actionUrl' => $customerPortal,
                 'actionLabel' => 'View Job',
             ],
@@ -257,10 +261,10 @@ class JobNotificationService
         );
 
         if ($visibility === 'customer_visible') {
-            $portal = $this->frontendUrl("jobs/{$job->id}");
+            $portal = SmsMessageTemplates::customerPortalUrlForJob($job);
             $this->sms->sendToUser(
                 $job->customer,
-                "Hi {$job->customer->name}, there is a new progress update for your project. {$portal}",
+                SmsMessageTemplates::progressUpdateCustomer($job->customer, $job, $portal),
                 'progress_update_customer',
                 $job->id
             );
@@ -297,14 +301,11 @@ class JobNotificationService
             $job->id
         );
 
-        $portalToken = $job->lead?->customer_portal_token;
-        $portalUrl = $portalToken
-            ? $this->frontendUrl('portal/'.$portalToken)
-            : $this->frontendUrl('jobs/'.$job->id);
+        $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
 
         $this->sms->sendToUser(
             $job->customer,
-            "Hi {$job->customer?->name}, there is a new progress update for your project at {$job->address}. View it here: {$portalUrl}",
+            SmsMessageTemplates::progressUpdateCustomer($job->customer, $job, $portalUrl),
             'progress_update_customer',
             $job->customer_id,
             $job->id
@@ -351,12 +352,12 @@ class JobNotificationService
 
     public function jobComplete(Job $job): void
     {
-        $job->loadMissing(['customer', 'contractor']);
-        $portal = $this->frontendUrl("jobs/{$job->id}");
+        $job->loadMissing(['customer', 'contractor', 'lead']);
+        $portal = SmsMessageTemplates::customerPortalUrlForJob($job);
 
         $this->sms->sendToUser(
             $job->customer,
-            "Hi {$job->customer->name}, your project has been marked complete. {$portal}",
+            SmsMessageTemplates::jobCompletePendingApproval($job->customer, $job, $portal),
             'job_complete',
             $job->id
         );
@@ -384,11 +385,12 @@ class JobNotificationService
     public function correctionsRequested(Job $job): void
     {
         $job->loadMissing('contractor');
-        $portal = $this->frontendUrl("jobs/{$job->id}");
+        $portal = SmsMessageTemplates::contractorJobUrl($job->id);
 
         $this->sms->sendToUser(
             $job->contractor,
-            "Corrections requested for {$job->job_title}. {$job->corrections_notes}",
+            SmsMessageTemplates::revisionRequested($job->contractor, $job, $portal)
+                .($job->corrections_notes ? ' Notes: '.$job->corrections_notes : ''),
             'corrections_requested',
             $job->id
         );

@@ -13,6 +13,7 @@ use App\Mail\SiteVisitScheduledCustomerMail;
 use App\Services\EmailService;
 use App\Services\LeadCustomerResolver;
 use App\Services\PricingService;
+use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -341,13 +342,18 @@ class LeadController extends Controller
             ]
         );
 
-        $customerPortalUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/portal/'.$lead->customer_portal_token;
-        $contractorPortalUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/dashboard/contractor';
+        $customerPortalUrl = SmsMessageTemplates::customerPortalUrl($lead->customer_portal_token);
+        $contractorPortalUrl = SmsMessageTemplates::contractorDashboardUrl();
 
         $customerUser = User::find($customerId);
         $this->sms->send(
             SmsService::phoneForUser($customerUser) ?? $lead->phone,
-            "Hi {$lead->contact_name}, your site visit with ".config('app.company_name', 'HSOP')." is scheduled for {$request->site_visit_date} at {$request->site_visit_time}. View details: {$customerPortalUrl}",
+            SmsMessageTemplates::siteVisitCustomer(
+                $lead,
+                $request->site_visit_date,
+                $request->site_visit_time,
+                $customerPortalUrl
+            ),
             'site_visit_scheduled',
             $customerId,
             null
@@ -363,7 +369,13 @@ class LeadController extends Controller
 
         $this->sms->send(
             SmsService::phoneForUser($contractor),
-            "You have a site visit scheduled: {$lead->contact_name}, {$lead->address} on {$request->site_visit_date} at {$request->site_visit_time}. View: {$contractorPortalUrl}",
+            SmsMessageTemplates::siteVisitContractor(
+                $contractor,
+                $lead,
+                $request->site_visit_date,
+                $request->site_visit_time,
+                $contractorPortalUrl
+            ),
             'site_visit_contractor_assigned',
             $contractor->id,
             null

@@ -19,6 +19,7 @@ use App\Services\EmailService;
 use App\Services\JobNotificationService;
 use App\Services\PricingService;
 use App\Services\PayoutWorkflowService;
+use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -367,11 +368,11 @@ class JobController extends Controller
         ]);
 
         $job->load('lead', 'customer');
-        $portalUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/portal/'.($job->lead?->customer_portal_token ?? '');
+        $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
 
         $this->sms->sendToUser(
             $job->customer,
-            "Hi {$job->customer?->name}, your project is complete and ready for your review. Please accept or request changes here: {$portalUrl}",
+            SmsMessageTemplates::jobCompletePendingApproval($job->customer, $job, $portalUrl),
             'contractor_marked_complete',
             $job->customer_id,
             $job->id
@@ -473,10 +474,11 @@ class JobController extends Controller
             'revision_description' => $request->description,
         ]);
 
-        $contractorPortalUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/dashboard/contractor';
+        $contractorPortalUrl = SmsMessageTemplates::contractorDashboardUrl();
+        $job->loadMissing('contractor');
         $this->sms->sendToUser(
             $job->contractor,
-            "Revision requested for your job at {$job->address}. Please review and address the client's feedback: {$contractorPortalUrl}",
+            SmsMessageTemplates::revisionRequested($job->contractor, $job, $contractorPortalUrl),
             'revision_requested',
             $job->contractor_id,
             $job->id
@@ -582,7 +584,18 @@ class JobController extends Controller
 
         $this->payouts->markPayoutsReady($job);
 
-        $portalUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/portal/'.($job->lead?->customer_portal_token ?? '');
+        $job->loadMissing(['customer', 'lead']);
+        if ($job->customer) {
+            $this->sms->sendToUser(
+                $job->customer,
+                SmsMessageTemplates::paymentConfirmed($job->customer, $job),
+                'payment_confirmed',
+                $job->customer_id,
+                $job->id
+            );
+        }
+
+        $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
         if ($job->customer?->email) {
             $this->email->sendMailable(
                 $job->customer->email,
