@@ -3,16 +3,23 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Job;
 use App\Models\Message;
 use App\Models\User;
-use App\Services\JobNotificationService;
+use App\Mail\NewMessageMail;
+use App\Services\EmailService;
+use App\Services\SmsMessageTemplates;
+use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class MessageController extends Controller
 {
-    public function __construct(protected JobNotificationService $notifications) {}
+    public function __construct(
+        protected SmsService $sms,
+        protected EmailService $email
+    ) {}
     public function index(Request $request, string $jobId): JsonResponse
     {
         $user = $request->user();
@@ -88,12 +95,55 @@ class MessageController extends Controller
             'channel' => $channel,
         ]);
 
-        if ($request->boolean('send_sms') && $request->visibility === 'customer_visible' && $job->customer_id) {
-            $recipient = User::find($job->customer_id);
-            if ($recipient) {
-                $this->notifications->manualMessageSms($recipient, $request->content, $job->id);
+        $job->loadMissing(['customer', 'lead']);
+
+        if ($request->visibility === 'customer_visible' && $user->role !== 'customer') {
+            $customer = User::find($job->customer_id);
+            $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
+            $customerPhone = SmsService::phoneForUser($customer) ?? $job->lead?->phone;
+            $customerName = $customer?->name ?? $job->lead?->contact_name ?? 'there';
+            $customerEmail = $customer?->email ?? $job->lead?->email;
+
+            if ($customerPhone) {
+                $this->sms->send(
+                    $customerPhone,
+                    "Hi {$customerName}, you have a new message about your project at {$job->address}. View it here: {$portalUrl}",
+                    'new_message_customer',
+                    $customer?->id,
+                    $job->id
+                );
+            }
+
+            if ($customerEmail) {
+                $this->email->sendMailable(
+                    $customerEmail,
+                    new NewMessageMail($job, $message, $portalUrl),
+                    'new_message_customer',
+                    $customer?->id,
+                    $job->id
+                );
             }
         }
+
+        if (in_array($user->role, ['customer', 'contractor'], true)) {
+            $pm = User::find($job->pm_id);
+            if ($pm && SmsService::phoneForUser($pm)) {
+                $this->sms->sendToUser(
+                    $pm,
+                    "New message from {$user->name} on job at {$job->address}.",
+                    'new_message_pm',
+                    $job->id
+                );
+            }
+        }
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'object_type' => 'job',
+            'object_id' => $job->id,
+            'action_type' => 'message_sent',
+        ]);
 
         return response()->json($message->load('sender:id,name,role'), 201);
     }

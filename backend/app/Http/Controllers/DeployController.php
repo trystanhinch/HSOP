@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Services\LeadCustomerResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 
 class DeployController extends Controller
 {
@@ -26,6 +27,7 @@ class DeployController extends Controller
             'cache:clear' => 'cache:clear',
             'config:cache' => 'config:cache',
             'migrate --force' => 'migrate',
+            'storage:link' => 'storage:link',
         ] as $label => $command) {
             $args = $command === 'migrate' ? ['--force' => true] : [];
             Artisan::call($command, $args);
@@ -90,6 +92,52 @@ class DeployController extends Controller
             'ok' => true,
             'repaired_customers' => $customers,
             'fixed_contractors' => $contractors,
+        ]);
+    }
+
+    public function storageLink(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+        Artisan::call('storage:link');
+
+        return $this->ok('storage:link');
+    }
+
+    public function cleanTestData(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        DB::transaction(function () {
+            \App\Models\RevisionRequestPhoto::query()->delete();
+            \App\Models\RevisionRequest::query()->delete();
+            \App\Models\JobUpdatePhoto::query()->delete();
+            \App\Models\JobUpdate::query()->delete();
+            \App\Models\Payment::query()->delete();
+            \App\Models\Payout::query()->delete();
+            \App\Models\Invoice::query()->delete();
+            \App\Models\Message::query()->delete();
+            \App\Models\Quote::query()->delete();
+            \App\Models\Job::query()->delete();
+            \App\Models\SiteVisit::query()->delete();
+            \App\Models\Lead::query()->delete();
+            \App\Models\Customer::query()->delete();
+            \App\Models\SmsLog::query()->delete();
+            \App\Models\EmailLog::query()->delete();
+            \App\Models\AuditLog::query()->delete();
+
+            \App\Models\Contractor::query()->update([
+                'wcb_status' => 'not_uploaded',
+                'liability_insurance_status' => 'not_uploaded',
+                'wcb_file_url' => null,
+                'insurance_file_url' => null,
+            ]);
+        });
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Test data cleaned successfully',
+            'kept' => 'users, companies, settings, contractor profiles',
+            'deleted' => 'leads, jobs, quotes, invoices, payments, payouts, messages, updates, site visits, logs',
         ]);
     }
 

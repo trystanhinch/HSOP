@@ -59,7 +59,7 @@ class DashboardController extends Controller
         $id = auth()->id();
 
         return response()->json([
-            'my_leads' => Lead::where('assigned_pm_id', $id)->count(),
+            'my_leads' => Lead::where('assigned_pm_id', $id)->where('status', '!=', 'converted')->count(),
             'my_active_jobs' => Job::where('pm_id', $id)->whereIn('status', ['new_job', 'contractor_assigned', 'in_progress', 'scheduled', 'ready_for_review'])->count(),
             'active_jobs' => Job::where('pm_id', $id)->whereIn('status', ['new_job', 'contractor_assigned', 'in_progress', 'scheduled'])->count(),
             'quotes_to_send' => Quote::where('status', 'draft')->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count(),
@@ -72,7 +72,11 @@ class DashboardController extends Controller
                 ->get(['id', 'address', 'contractor_submitted_price', 'customer_id', 'contractor_price_submitted_at']),
             'recent_leads' => Lead::where('assigned_pm_id', $id)->latest()->take(5)->get(),
             'recent_jobs' => Job::where('pm_id', $id)->with(['contractor:id,name', 'customer:id,name'])->latest()->take(5)->get(),
-            'my_leads_list' => Lead::where('assigned_pm_id', $id)->latest()->take(5)->get(['id', 'contact_name', 'address', 'service_category', 'status', 'site_visit_date']),
+            'my_leads_list' => Lead::where('assigned_pm_id', $id)
+                ->where('status', '!=', 'converted')
+                ->latest()
+                ->take(5)
+                ->get(['id', 'contact_name', 'address', 'service_category', 'status', 'site_visit_date', 'site_visit_time']),
             'my_jobs_list' => Job::where('pm_id', $id)->with('contractor:id,name')->latest()->take(5)->get(),
             'recent_updates' => \App\Models\JobUpdate::whereHas('job', fn ($q) => $q->where('pm_id', $id))
                 ->with(['job:id,address', 'postedBy:id,name,role'])

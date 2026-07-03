@@ -64,7 +64,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/leads', [LeadController::class, 'store'])->middleware('role:owner,pm');
     Route::get('/leads/{lead}', [LeadController::class, 'show']);
     Route::put('/leads/{lead}', [LeadController::class, 'update'])->middleware('role:owner,pm');
-    Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])->middleware('role:owner');
+    Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])->middleware('role:owner,pm');
     Route::post('/leads/{lead}/convert-to-job', [LeadController::class, 'convertToJob'])->middleware('role:owner,pm');
     Route::post('/leads/{lead}/schedule-site-visit', [LeadController::class, 'scheduleSiteVisit'])->middleware('role:owner,pm');
 

@@ -41,6 +41,10 @@ class LeadController extends Controller
             $query->where('assigned_pm_id', $user->id);
         }
 
+        if ($request->show_converted !== 'true') {
+            $query->where('status', '!=', 'converted');
+        }
+
         if ($request->status) {
             $query->where('status', $request->status);
         }
@@ -215,13 +219,35 @@ class LeadController extends Controller
 
     public function destroy(Request $request, string $id): JsonResponse
     {
-        if ($request->user()->role !== 'owner') {
+        $user = $request->user();
+        if (! in_array($user->role, ['owner', 'pm'], true)) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        Lead::findOrFail($id)->delete();
+        $lead = Lead::with('job')->findOrFail($id);
 
-        return response()->json(['message' => 'Lead deleted']);
+        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
+            return response()->json(['message' => 'You can only delete leads assigned to you.'], 403);
+        }
+
+        if ($lead->job && ! in_array($lead->job->status, ['cancelled'], true)) {
+            return response()->json([
+                'message' => 'Cannot delete a lead that has an active job. Cancel the job first.',
+            ], 422);
+        }
+
+        $leadId = $lead->id;
+        $lead->delete();
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'object_type' => 'lead',
+            'object_id' => $leadId,
+            'action_type' => 'lead_deleted',
+        ]);
+
+        return response()->json(['message' => 'Lead deleted successfully']);
     }
 
     public function convertToJob(Request $request, string $id): JsonResponse

@@ -10,4 +10,6 @@ Route::prefix('deploy')->group(function () {
     Route::get('/seed/{secret}', [DeployController::class, 'seed']);
     Route::get('/setup/{secret}', [DeployController::class, 'setup']);
     Route::get('/repair/{secret}', [DeployController::class, 'repair']);
+    Route::get('/storage-link/{secret}', [DeployController::class, 'storageLink']);
+    Route::get('/clean-test-data/{secret}', [DeployController::class, 'cleanTestData']);
 });

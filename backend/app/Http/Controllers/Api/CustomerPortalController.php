@@ -70,6 +70,7 @@ class CustomerPortalController extends Controller
                 'customer_notes' => $job->quote->customer_notes,
                 'customer_price_before_gst' => $job->quote->customer_price_before_gst,
                 'gst' => $job->quote->gst,
+                'gst_rate' => $job->quote->gst_rate,
                 'customer_total' => $job->quote->customer_total,
                 'status' => $job->quote->status,
                 'accepted_at' => $job->quote->accepted_at,

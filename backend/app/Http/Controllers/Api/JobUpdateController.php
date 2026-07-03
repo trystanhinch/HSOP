@@ -9,6 +9,7 @@ use App\Models\JobUpdatePhoto;
 use App\Services\JobNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class JobUpdateController extends Controller
@@ -77,11 +78,16 @@ class JobUpdateController extends Controller
                     JobUpdatePhoto::create([
                         'job_update_id' => $update->id,
                         'file_name' => $photo->getClientOriginalName(),
-                        'file_url' => Storage::disk('public')->url($path),
+                        'file_url' => '/storage/'.$path,
                         'file_size' => round($photo->getSize() / 1024, 1).' KB',
                     ]);
                 } catch (\Exception $e) {
-                    return response()->json(['message' => 'Photo upload failed. Please try again.'], 500);
+                    Log::error('Job update photo upload failed', [
+                        'job_id' => $job->id,
+                        'error' => $e->getMessage(),
+                    ]);
+
+                    return response()->json(['message' => 'Photo upload failed: '.$e->getMessage()], 500);
                 }
             }
         }
