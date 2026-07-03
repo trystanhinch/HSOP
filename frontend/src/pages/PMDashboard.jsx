@@ -10,6 +10,13 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
+function formatVisitDate(date) {
+  if (!date) return '—';
+  return new Date(date).toLocaleDateString('en-CA', {
+    month: 'short', day: 'numeric', year: 'numeric',
+  });
+}
+
 export default function PMDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -98,7 +105,7 @@ export default function PMDashboard() {
                   <td className="px-4 py-2 hidden md:table-cell text-[#64748B]">{lead.address}</td>
                   <td className="px-4 py-2 capitalize">{formatCategory(lead.service_category)}</td>
                   <td className="px-4 py-2"><StatusBadge status={lead.status} /></td>
-                  <td className="px-4 py-2 hidden sm:table-cell">{lead.site_visit_date || '—'}</td>
+                  <td className="px-4 py-2 hidden sm:table-cell">{formatVisitDate(lead.site_visit_date)}</td>
                   <td className="px-4 py-2">
                     <Link to={`/leads/${lead.id}`} className="text-[#3B82F6] text-xs font-medium hover:underline">View Lead</Link>
                   </td>
@@ -132,7 +139,7 @@ export default function PMDashboard() {
                   <td className="px-4 py-2 capitalize">{formatCategory(job.service_category)}</td>
                   <td className="px-4 py-2">{job.contractor?.name || '—'}</td>
                   <td className="px-4 py-2"><StatusBadge status={job.status} /></td>
-                  <td className="px-4 py-2 hidden sm:table-cell">{job.scheduled_start_date || '—'}</td>
+                  <td className="px-4 py-2 hidden sm:table-cell">{formatVisitDate(job.scheduled_start_date)}</td>
                   <td className="px-4 py-2">
                     <Link to={`/jobs/${job.id}`} className="text-[#3B82F6] text-xs font-medium hover:underline">View Job</Link>
                   </td>

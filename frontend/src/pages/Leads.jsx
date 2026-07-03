@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import SlideOverPanel from '../components/SlideOverPanel';
 import LeadForm from '../components/LeadForm';
+import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
 function formatCategory(cat) {
@@ -13,6 +14,7 @@ function formatCategory(cat) {
 }
 
 export default function Leads() {
+  const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [leads, setLeads] = useState([]);
   const [meta, setMeta] = useState({});
@@ -27,6 +29,7 @@ export default function Leads() {
   const fetchLeads = () => {
     const params = { page };
     if (status) params.status = status;
+    if (status === 'converted') params.show_converted = 'true';
     if (category) params.category = category;
     if (search) params.search = search;
     api.get('/leads', { params }).then(({ data }) => {
@@ -68,6 +71,27 @@ export default function Leads() {
       await showError(e.response?.data?.message || 'Failed to create lead.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const canDelete = ['owner', 'pm'].includes(user?.role);
+
+  const confirmDelete = async (leadId, e) => {
+    e?.stopPropagation();
+    e?.preventDefault();
+    const ok = await confirmAction({
+      title: 'Delete lead?',
+      text: 'Are you sure you want to delete this lead? This cannot be undone.',
+      confirmText: 'Yes, delete',
+    });
+    if (!ok) return;
+
+    try {
+      await api.delete(`/leads/${leadId}`);
+      await showSuccess('Lead deleted.');
+      fetchLeads();
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Delete failed.');
     }
   };
 
@@ -115,20 +139,33 @@ export default function Leads() {
                 <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 hidden lg:table-cell">PM</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">Date</th>
+                {canDelete && <th className="text-right px-4 py-3 font-medium text-slate-500 w-12" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {leads.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-12 text-center text-slate-500">No leads found.</td></tr>
+                <tr><td colSpan={canDelete ? 8 : 7} className="px-4 py-12 text-center text-slate-500">No leads found.</td></tr>
               ) : leads.map((lead) => (
                 <tr key={lead.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => window.location.href = `/leads/${lead.id}`}>
-                  <td className="px-4 py-3"><Link to={`/leads/${lead.id}`} className="text-blue-600 hover:underline font-medium">{lead.contact_name}</Link></td>
+                  <td className="px-4 py-3"><Link to={`/leads/${lead.id}`} className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>{lead.contact_name}</Link></td>
                   <td className="px-4 py-3">{lead.phone || '—'}</td>
                   <td className="px-4 py-3 hidden md:table-cell">{lead.address || '—'}</td>
                   <td className="px-4 py-3 capitalize">{formatCategory(lead.service_category)}</td>
                   <td className="px-4 py-3"><StatusBadge status={lead.status} /></td>
                   <td className="px-4 py-3 hidden lg:table-cell">{lead.assigned_pm?.name || '—'}</td>
                   <td className="px-4 py-3 hidden sm:table-cell">{lead.created_at?.split('T')[0]}</td>
+                  {canDelete && (
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => confirmDelete(lead.id, e)}
+                        className="text-red-500 hover:text-red-700 p-1 rounded"
+                        title="Delete lead"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
