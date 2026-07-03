@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
+import { useAuth } from '../context/AuthContext';
 
 const tabs = [
   { label: 'All', value: '' },
@@ -20,7 +21,15 @@ const tabs = [
 const PAYMENT_STATUSES = ['draft', 'invoice_sent', 'awaiting_payment', 'partially_paid', 'paid', 'overdue', 'cancelled'];
 const PAYOUT_STATUSES = ['not_ready', 'ready_for_payout', 'pending', 'approved', 'paid', 'hold_issue'];
 
+function needsPrice(item) {
+  return ['pending', 'not_requested', null, undefined].includes(item.contractor_price_status);
+}
+
 export default function Jobs() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const isContractor = user?.role === 'contractor';
+
   const [jobs, setJobs] = useState([]);
   const [activeTab, setActiveTab] = useState('');
   const [search, setSearch] = useState('');
@@ -36,32 +45,111 @@ export default function Jobs() {
   const [pms, setPms] = useState([]);
 
   useEffect(() => {
-    api.get('/users').then(({ data }) => {
-      const list = data.data || data || [];
-      setContractors(list.filter((u) => u.role === 'contractor'));
-      setPms(list.filter((u) => u.role === 'pm'));
-    }).catch(() => {});
-  }, []);
+    if (!isContractor) {
+      api.get('/users').then(({ data }) => {
+        const list = data.data || data || [];
+        setContractors(list.filter((u) => u.role === 'contractor'));
+        setPms(list.filter((u) => u.role === 'pm'));
+      }).catch(() => {});
+    }
+  }, [isContractor]);
 
   const loadJobs = () => {
     const params = {};
-    if (search) params.q = search;
-    if (statusFilter) params.status = statusFilter;
-    else if (activeTab) params.status = activeTab;
-    if (contractorId) params.contractor_id = contractorId;
-    if (pmId) params.pm_id = pmId;
-    if (dateFrom) params.date_from = dateFrom;
-    if (dateTo) params.date_to = dateTo;
-    if (paymentStatus) params.payment_status = paymentStatus;
-    if (payoutStatus) params.payout_status = payoutStatus;
+    if (!isContractor) {
+      if (search) params.q = search;
+      if (statusFilter) params.status = statusFilter;
+      else if (activeTab) params.status = activeTab;
+      if (contractorId) params.contractor_id = contractorId;
+      if (pmId) params.pm_id = pmId;
+      if (dateFrom) params.date_from = dateFrom;
+      if (dateTo) params.date_to = dateTo;
+      if (paymentStatus) params.payment_status = paymentStatus;
+      if (payoutStatus) params.payout_status = payoutStatus;
+    }
 
     const hasAdvanced = contractorId || pmId || dateFrom || dateTo || paymentStatus || payoutStatus || search;
-    const endpoint = hasAdvanced ? '/jobs/search' : '/jobs';
+    const endpoint = !isContractor && hasAdvanced ? '/jobs/search' : '/jobs';
 
     api.get(endpoint, { params }).then(({ data }) => setJobs(data.data || data)).catch(() => setJobs([]));
   };
 
-  useEffect(() => { loadJobs(); }, [activeTab]);
+  useEffect(() => { loadJobs(); }, [activeTab, isContractor]);
+
+  if (isContractor) {
+    return (
+      <div>
+        <PageHeader title="Jobs" />
+        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Job / Visit</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Customer</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">Date</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Pricing</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {jobs.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-500">No jobs or site visits found.</td></tr>
+                ) : jobs.map((item) => (
+                  <tr
+                    key={item.id}
+                    className="hover:bg-slate-50 cursor-pointer"
+                    onClick={() => navigate(item.url)}
+                  >
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-800 text-sm">{item.job_title}</p>
+                      <p className="text-xs text-slate-500">{item.address}</p>
+                      {item.type === 'site_visit' && item.visit_date && (
+                        <p className="text-xs text-indigo-600 mt-0.5">
+                          📅 {new Date(item.visit_date).toLocaleDateString('en-CA', {
+                            month: 'short', day: 'numeric',
+                          })}
+                          {item.visit_time && ` at ${String(item.visit_time).slice(0, 5)}`}
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-600">{item.customer?.name || '—'}</td>
+                    <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
+                    <td className="px-4 py-3 text-sm text-slate-500 hidden sm:table-cell">
+                      {item.type === 'site_visit'
+                        ? (item.visit_date ? new Date(item.visit_date).toLocaleDateString() : '—')
+                        : (item.scheduled_start_date ? new Date(item.scheduled_start_date).toLocaleDateString() : '—')}
+                    </td>
+                    <td className="px-4 py-3">
+                      {needsPrice(item) && (
+                        <button
+                          type="button"
+                          onClick={(e) => { e.stopPropagation(); navigate(item.url); }}
+                          className="bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium"
+                        >
+                          Submit Price
+                        </button>
+                      )}
+                      {item.contractor_price_status === 'submitted' && (
+                        <span className="text-xs text-yellow-700 bg-yellow-100 px-2 py-1 rounded-full">
+                          Price Submitted
+                        </span>
+                      )}
+                      {item.contractor_price_status === 'approved' && (
+                        <span className="text-xs text-green-700 bg-green-100 px-2 py-1 rounded-full">
+                          Price Approved
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

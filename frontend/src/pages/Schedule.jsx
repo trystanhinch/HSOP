@@ -89,11 +89,15 @@ export default function Schedule() {
                       type="button"
                       onClick={() => navigate(item.url)}
                       className={`w-full text-left text-xs border rounded px-2 py-1 mb-1 truncate font-medium hover:opacity-80 ${eventClass(item)}`}
+                      title={item.time ? `${item.time}${item.address ? ` · ${item.address}` : ''}` : item.address}
                     >
-                      {item.time && <span className="opacity-70">{item.time} </span>}
-                      {item.title}
-                      {item.type === 'site_visit' && (
-                        <span className="ml-1 opacity-60 text-xs">· Visit</span>
+                      {item.type === 'site_visit' ? (
+                        <span>{item.customer_name || 'Site Visit'}</span>
+                      ) : (
+                        <>
+                          {item.time && <span className="opacity-70">{item.time} </span>}
+                          {item.title}
+                        </>
                       )}
                     </button>
                   ))}

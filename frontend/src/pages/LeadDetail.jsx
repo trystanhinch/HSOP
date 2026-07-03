@@ -5,6 +5,7 @@ import api from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
 import SlideOverPanel from '../components/SlideOverPanel';
 import LeadForm from '../components/LeadForm';
+import ContractorLeadPriceForm from '../components/ContractorLeadPriceForm';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
@@ -171,9 +172,9 @@ export default function LeadDetail() {
   if (isContractor) {
     return (
       <div className="max-w-3xl mx-auto space-y-6">
-        <button type="button" onClick={() => navigate('/schedule')}
+        <button type="button" onClick={() => navigate('/jobs')}
           className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
-          <ArrowLeft size={16} /> Back to Schedule
+          <ArrowLeft size={16} /> Back to Jobs
         </button>
 
         <div className="flex items-center gap-3">
@@ -205,6 +206,8 @@ export default function LeadDetail() {
             </div>
           </div>
         </div>
+
+        <ContractorLeadPriceForm lead={lead} onSubmitted={load} />
 
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h2 className="font-semibold text-slate-800 mb-4">Customer Contact</h2>
@@ -266,18 +269,6 @@ export default function LeadDetail() {
           </div>
         )}
 
-        {['site_visit_completed', 'contractor_pricing_pending'].includes(lead.status) && lead.job?.id && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-            <p className="text-sm font-medium text-yellow-800 mb-1">Site visit complete — please submit your price</p>
-            <p className="text-xs text-yellow-700 mb-3">
-              Once you submit your price, the PM will review and prepare the customer estimate.
-            </p>
-            <button type="button" onClick={() => navigate(`/jobs/${lead.job.id}`)}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white text-sm rounded-lg px-4 py-2 font-medium">
-              Submit My Price
-            </button>
-          </div>
-        )}
       </div>
     );
   }
@@ -318,6 +309,31 @@ export default function LeadDetail() {
         )}
         {lead.job && <Link to={`/jobs/${lead.job.id}`} className="text-sm text-blue-600 hover:underline">View Job →</Link>}
       </div>
+
+      {isAdminOrPm && lead.contractor_price && lead.status !== 'converted' && (
+        <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
+          <h3 className="font-semibold text-orange-800 mb-1">Contractor Price Submitted</h3>
+          <p className="text-2xl font-bold text-orange-700">
+            ${Number(lead.contractor_price).toFixed(2)}
+          </p>
+          {lead.contractor_price_notes && (
+            <p className="text-sm text-orange-600 mt-1">{lead.contractor_price_notes}</p>
+          )}
+          {lead.contractor_price_submitted_at && (
+            <p className="text-xs text-orange-500 mt-1">
+              Submitted {new Date(lead.contractor_price_submitted_at).toLocaleString()}
+            </p>
+          )}
+          <button
+            type="button"
+            onClick={convertToJob}
+            disabled={converting}
+            className="mt-3 w-full bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white rounded-lg py-2 text-sm font-medium"
+          >
+            {converting ? 'Converting...' : 'Convert to Job & Create Estimate'}
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-3 text-sm">

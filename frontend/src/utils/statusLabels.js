@@ -2,6 +2,8 @@ export const statusLabels = {
   new: 'New',
   contacted: 'Contacted',
   site_visit_scheduled: 'Site Visit Scheduled',
+  site_visit_completed: 'Site Visit Completed',
+  site_visit_cancelled: 'Site Visit Cancelled',
   quote_needed: 'Quote Needed',
   converted: 'Converted',
   lost: 'Lost',
