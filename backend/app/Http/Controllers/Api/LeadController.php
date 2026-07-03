@@ -146,7 +146,7 @@ class LeadController extends Controller
                 ->where('contractor_id', $user->id)
                 ->first();
 
-            if (! $siteVisit) {
+            if (! $siteVisit && (int) $lead->site_visit_contractor_id !== (int) $user->id) {
                 abort(403, 'You are not assigned to this appointment.');
             }
 
@@ -457,7 +457,7 @@ class LeadController extends Controller
             ->where('contractor_id', $user->id)
             ->first();
 
-        if (! $siteVisit) {
+        if (! $siteVisit && (int) $lead->site_visit_contractor_id !== (int) $user->id) {
             return response()->json([
                 'message' => 'You are not assigned to this appointment.',
             ], 403);

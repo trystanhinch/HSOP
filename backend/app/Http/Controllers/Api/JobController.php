@@ -87,7 +87,35 @@ class JobController extends Controller
                     'url' => '/leads/'.$sv->lead_id,
                 ]);
 
-            $all = $jobs->concat($siteVisits)->sortByDesc(function ($item) {
+            $siteVisitLeadIds = $siteVisits->pluck('lead_id')->filter()->values();
+
+            $leadAppointments = \App\Models\Lead::where('site_visit_contractor_id', $user->id)
+                ->where('status', '!=', 'converted')
+                ->whereDoesntHave('job')
+                ->when($siteVisitLeadIds->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $siteVisitLeadIds))
+                ->with(['assignedPm:id,name,phone'])
+                ->orderByDesc('site_visit_date')
+                ->get()
+                ->map(fn ($lead) => [
+                    'type' => 'site_visit',
+                    'id' => 'lead_'.$lead->id,
+                    'site_visit_id' => null,
+                    'lead_id' => $lead->id,
+                    'job_title' => 'Site Visit — '.($lead->contact_name ?? 'Customer'),
+                    'address' => $lead->address ?? '',
+                    'service_category' => $lead->service_category ?? '',
+                    'status' => $lead->status === 'quote_needed' ? 'site_visit_completed' : 'site_visit_scheduled',
+                    'visit_date' => $lead->site_visit_date,
+                    'visit_time' => $lead->site_visit_time,
+                    'contractor_price_status' => $lead->contractor_price ? 'submitted' : 'pending',
+                    'contractor_submitted_price' => $lead->contractor_price,
+                    'customer' => ['id' => null, 'name' => $lead->contact_name ?? ''],
+                    'pm' => $lead->assignedPm?->only(['id', 'name', 'phone']),
+                    'description' => $lead->project_description ?? '',
+                    'url' => '/leads/'.$lead->id,
+                ]);
+
+            $all = $jobs->concat($siteVisits)->concat($leadAppointments)->sortByDesc(function ($item) {
                 $date = $item['scheduled_start_date'] ?? $item['visit_date'] ?? null;
 
                 return $date ? strtotime((string) $date) : 0;
