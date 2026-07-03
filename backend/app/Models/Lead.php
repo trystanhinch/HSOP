@@ -29,12 +29,16 @@ class Lead extends Model
         'site_visit_contractor_id',
         'site_visit_notes',
         'customer_portal_token',
+        'contractor_price',
+        'contractor_price_submitted_at',
+        'contractor_price_notes',
     ];
 
     protected function casts(): array
     {
         return [
             'site_visit_date' => 'date',
+            'contractor_price_submitted_at' => 'datetime',
         ];
     }
 

@@ -162,6 +162,9 @@ class LeadController extends Controller
                 'site_visit_date' => $lead->site_visit_date,
                 'site_visit_time' => $lead->site_visit_time,
                 'site_visit_notes' => $lead->site_visit_notes,
+                'contractor_price' => $lead->contractor_price,
+                'contractor_price_submitted_at' => $lead->contractor_price_submitted_at,
+                'contractor_price_notes' => $lead->contractor_price_notes,
                 'assigned_pm' => $lead->assignedPm?->only(['id', 'name', 'email', 'phone']),
                 'company' => $lead->company?->only(['id', 'name']),
                 'job' => $lead->job?->only(['id', 'status']),
@@ -293,7 +296,9 @@ class LeadController extends Controller
 
             if ($lead->site_visit_contractor_id) {
                 $jobPayload['contractor_id'] = $lead->site_visit_contractor_id;
-                $jobPayload['contractor_price_status'] = 'pending';
+                $jobPayload['contractor_submitted_price'] = $lead->contractor_price;
+                $jobPayload['contractor_price_status'] = $lead->contractor_price ? 'submitted' : 'pending';
+                $jobPayload['contractor_price_submitted_at'] = $lead->contractor_price_submitted_at;
                 $jobPayload['status'] = 'contractor_assigned';
             }
 
@@ -441,6 +446,65 @@ class LeadController extends Controller
             'lead' => $lead->fresh()->load('siteVisitContractor:id,name'),
             'site_visit' => $siteVisit,
             'customer_portal' => $customerPortalUrl,
+        ]);
+    }
+
+    public function submitPrice(Request $request, Lead $lead): JsonResponse
+    {
+        $user = $request->user();
+
+        $siteVisit = SiteVisit::where('lead_id', $lead->id)
+            ->where('contractor_id', $user->id)
+            ->first();
+
+        if (! $siteVisit) {
+            return response()->json([
+                'message' => 'You are not assigned to this appointment.',
+            ], 403);
+        }
+
+        if ($lead->status === 'converted') {
+            return response()->json([
+                'message' => 'This lead has already been converted to a job. Submit pricing on the job page.',
+            ], 422);
+        }
+
+        $data = $request->validate([
+            'price' => 'required|numeric|min:1',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        $lead->update([
+            'contractor_price' => $data['price'],
+            'contractor_price_submitted_at' => now(),
+            'contractor_price_notes' => $data['notes'] ?? null,
+            'status' => 'quote_needed',
+        ]);
+
+        $message = "{$user->name} submitted a price of $".number_format((float) $data['price'], 2)
+            ." for the job at {$lead->address}. Please review and create the customer estimate.";
+
+        $pm = User::find($lead->assigned_pm_id);
+        if ($pm) {
+            $this->sms->sendToUser($pm, $message, 'lead_price_submitted');
+        }
+
+        User::where('role', 'owner')->get()->each(function (User $admin) use ($message) {
+            $this->sms->sendToUser($admin, $message, 'lead_price_submitted');
+        });
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'object_type' => 'lead',
+            'object_id' => $lead->id,
+            'action_type' => 'contractor_price_submitted',
+            'new_value' => json_encode(['price' => $data['price']]),
+        ]);
+
+        return response()->json([
+            'message' => 'Price submitted. The project manager has been notified.',
+            'lead' => $lead->fresh(),
         ]);
     }
 }

@@ -11,6 +11,7 @@ use App\Models\Quote;
 use App\Models\RevisionRequest;
 use App\Models\RevisionRequestPhoto;
 use App\Models\Setting;
+use App\Models\SiteVisit;
 use App\Models\User;
 use App\Mail\JobReadyForReviewMail;
 use App\Mail\PaymentConfirmedMail;
@@ -38,12 +39,70 @@ class JobController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+
+        if ($user->role === 'contractor') {
+            $jobs = Job::with(['customer:id,name', 'pm:id,name', 'company:id,name'])
+                ->where('contractor_id', $user->id)
+                ->latest()
+                ->get()
+                ->map(fn ($j) => [
+                    'type' => 'job',
+                    'id' => $j->id,
+                    'job_title' => $j->job_title,
+                    'address' => $j->address,
+                    'service_category' => $j->service_category,
+                    'status' => $j->status,
+                    'contractor_price_status' => $j->contractor_price_status,
+                    'contractor_submitted_price' => $j->contractor_submitted_price,
+                    'scheduled_start_date' => $j->scheduled_start_date,
+                    'customer' => $j->customer?->only(['id', 'name']),
+                    'pm' => $j->pm?->only(['id', 'name', 'phone']),
+                    'url' => '/jobs/'.$j->id,
+                ]);
+
+            $siteVisits = SiteVisit::where('contractor_id', $user->id)
+                ->whereHas('lead', fn ($q) => $q->where('status', '!=', 'converted'))
+                ->with([
+                    'lead:id,contact_name,address,service_category,project_description,status,contractor_price,contractor_price_submitted_at,contractor_price_notes',
+                    'pm:id,name,phone',
+                ])
+                ->orderByDesc('visit_date')
+                ->get()
+                ->map(fn ($sv) => [
+                    'type' => 'site_visit',
+                    'id' => 'sv_'.$sv->id,
+                    'site_visit_id' => $sv->id,
+                    'lead_id' => $sv->lead_id,
+                    'job_title' => 'Site Visit — '.($sv->lead->contact_name ?? 'Customer'),
+                    'address' => $sv->lead->address ?? '',
+                    'service_category' => $sv->lead->service_category ?? '',
+                    'status' => 'site_visit_'.$sv->status,
+                    'visit_date' => $sv->visit_date,
+                    'visit_time' => $sv->visit_time,
+                    'contractor_price_status' => $sv->lead->contractor_price ? 'submitted' : 'pending',
+                    'contractor_submitted_price' => $sv->lead->contractor_price,
+                    'customer' => ['id' => null, 'name' => $sv->lead->contact_name ?? ''],
+                    'pm' => $sv->pm?->only(['id', 'name', 'phone']),
+                    'description' => $sv->lead->project_description ?? '',
+                    'url' => '/leads/'.$sv->lead_id,
+                ]);
+
+            $all = $jobs->concat($siteVisits)->sortByDesc(function ($item) {
+                $date = $item['scheduled_start_date'] ?? $item['visit_date'] ?? null;
+
+                return $date ? strtotime((string) $date) : 0;
+            })->values();
+
+            return response()->json([
+                'data' => $all,
+                'meta' => ['total' => $all->count()],
+            ]);
+        }
+
         $query = Job::with(['customer:id,name', 'contractor:id,name', 'pm:id,name', 'company:id,name', 'invoice', 'payout']);
 
         if ($user->role === 'pm') {
             $query->where('pm_id', $user->id);
-        } elseif ($user->role === 'contractor') {
-            $query->where('contractor_id', $user->id);
         } elseif ($user->role === 'customer') {
             $query->where('customer_id', $user->id);
         }
