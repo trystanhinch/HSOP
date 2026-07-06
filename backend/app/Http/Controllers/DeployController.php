@@ -144,10 +144,14 @@ class DeployController extends Controller
             }
             $relative = ltrim($relative, '/');
             $exists = false;
-            if ($relative) {
-                $exists = $disk === 's3'
-                    ? Storage::disk('s3')->exists($relative)
-                    : Storage::disk('public')->exists($relative);
+            if ($relative && str_contains($photo->file_url ?? '', 'digitaloceanspaces.com')) {
+                try {
+                    $exists = Storage::disk('s3')->exists($relative);
+                } catch (\Throwable) {
+                    $exists = false;
+                }
+            } elseif ($relative && $disk !== 's3') {
+                $exists = Storage::disk('public')->exists($relative);
             }
 
             return [
