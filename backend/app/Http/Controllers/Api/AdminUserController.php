@@ -107,4 +107,35 @@ class AdminUserController extends Controller
 
         return response()->json(['message' => 'Account deactivated']);
     }
+
+    public function resetPassword(User $user): JsonResponse
+    {
+        if ($user->role === 'owner') {
+            return response()->json(['message' => 'Cannot reset admin passwords'], 422);
+        }
+
+        $newPassword = Str::random(10);
+        $user->update(['password' => $newPassword]);
+
+        if ($user->phone) {
+            try {
+                app(SmsService::class)->send(
+                    $user->phone,
+                    "Hi {$user->name}, your ServiceOP password has been reset. ".
+                    "New password: {$newPassword} — please log in and change it.",
+                    'password_reset',
+                    $user->id,
+                    null
+                );
+            } catch (\Throwable) {
+                // SMS failure should not block password reset
+            }
+        }
+
+        return response()->json([
+            'message' => 'Password reset successfully',
+            'password' => $newPassword,
+            'sms_sent' => ! empty($user->phone),
+        ]);
+    }
 }

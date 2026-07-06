@@ -121,7 +121,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/contractors', [ContractorController::class, 'index']);
     Route::get('/contractors/{id}', [ContractorController::class, 'show']);
-    Route::put('/contractors/{id}', [ContractorController::class, 'update']);
+    Route::put('/contractors/{id}', [ContractorController::class, 'update'])->middleware('role:owner,pm');
     Route::get('/contractors/{id}/documents', [ContractorDocumentController::class, 'index']);
     Route::post('/contractors/{id}/documents', [ContractorDocumentController::class, 'upload']);
     Route::put('/contractors/{id}/documents/{doc}/review', [ContractorDocumentController::class, 'review'])->middleware('role:owner,pm');
@@ -149,5 +149,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/users', [AdminUserController::class, 'index']);
         Route::post('/users', [AdminUserController::class, 'store']);
         Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
+        Route::post('/users/{user}/reset-password', [AdminUserController::class, 'resetPassword']);
     });
 });
