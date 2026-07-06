@@ -273,12 +273,17 @@ class DeployController extends Controller
             $uploads = app(UploadStorage::class);
             $path = 'test/upload-'.time().'.png';
             $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
-            $putOk = Storage::disk('s3')->put($path, $png);
-            $content = Storage::disk('s3')->get($path);
-            if ($content === null || $content === '') {
+            $putOk = false;
+            $putError = null;
+            try {
+                $putOk = Storage::disk('s3')->put($path, $png);
+            } catch (\Throwable $e) {
+                $putError = $e->getMessage();
+            }
+            if ($putError || ! $putOk) {
                 return response()->json([
                     'ok' => false,
-                    'error' => 'Put returned but object not readable (get returned empty)',
+                    'error' => $putError ?: 'S3 put returned false',
                     'put_ok' => $putOk,
                     'path' => $path,
                     'bucket' => config('filesystems.disks.s3.bucket'),
