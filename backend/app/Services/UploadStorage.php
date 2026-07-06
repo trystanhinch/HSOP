@@ -37,8 +37,12 @@ class UploadStorage
         if ($disk === 's3') {
             $safeName = preg_replace('/[^A-Za-z0-9._-]/', '_', $filename) ?: 'file';
             $path = trim($directory, '/').'/'.$safeName;
-            Storage::disk('s3')->put($path, file_get_contents($file->getRealPath()), 'public');
-            Storage::disk('s3')->setVisibility($path, 'public');
+            Storage::disk('s3')->put($path, file_get_contents($file->getRealPath()));
+            try {
+                Storage::disk('s3')->setVisibility($path, 'public');
+            } catch (\Throwable) {
+                //
+            }
 
             return $path;
         }
@@ -93,11 +97,16 @@ class UploadStorage
         $extension = $file->getClientOriginalExtension() ?: $file->extension() ?: 'bin';
         $path = trim($directory, '/').'/'.Str::random(40).'.'.strtolower($extension);
 
-        $stored = Storage::disk('s3')->put($path, file_get_contents($file->getRealPath()), 'public');
+        $stored = Storage::disk('s3')->put($path, file_get_contents($file->getRealPath()));
         if (! $stored) {
             throw new \RuntimeException('S3 upload failed for path: '.$path);
         }
-        Storage::disk('s3')->setVisibility($path, 'public');
+
+        try {
+            Storage::disk('s3')->setVisibility($path, 'public');
+        } catch (\Throwable) {
+            // Some Spaces buckets disable per-object ACLs — rely on bucket/CDN policy.
+        }
 
         return $path;
     }

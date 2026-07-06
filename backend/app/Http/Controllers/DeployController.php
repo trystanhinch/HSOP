@@ -119,8 +119,12 @@ class DeployController extends Controller
         if ($s3Configured) {
             try {
                 $testPath = 'test/connection-test-'.time().'.txt';
-                Storage::disk('s3')->put($testPath, 'ServiceOP Spaces test '.now(), 'public');
-                Storage::disk('s3')->setVisibility($testPath, 'public');
+                Storage::disk('s3')->put($testPath, 'ServiceOP Spaces test '.now());
+                try {
+                    Storage::disk('s3')->setVisibility($testPath, 'public');
+                } catch (\Throwable) {
+                    //
+                }
                 $uploads = app(UploadStorage::class);
                 $spacesTest = [
                     'ok' => true,
@@ -238,6 +242,33 @@ class DeployController extends Controller
             'message' => 'Photo URLs normalized to /api/files route.',
             'updated' => $updated,
         ]);
+    }
+
+    public function testSpacesUpload(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        try {
+            $uploads = app(UploadStorage::class);
+            $path = 'test/upload-'.time().'.png';
+            $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+            Storage::disk('s3')->put($path, $png);
+            try {
+                Storage::disk('s3')->setVisibility($path, 'public');
+            } catch (\Throwable) {
+                //
+            }
+            $url = $uploads->publicUrl($path);
+
+            return response()->json([
+                'ok' => true,
+                'path' => $path,
+                'url' => $url,
+                'exists' => Storage::disk('s3')->exists($path),
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
+        }
     }
 
     public function cleanBrokenFileUrls(string $secret): JsonResponse
