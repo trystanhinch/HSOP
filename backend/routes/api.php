@@ -77,6 +77,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/jobs', [JobController::class, 'store'])->middleware('role:owner,pm');
     Route::get('/jobs/{job}', [JobController::class, 'show']);
     Route::put('/jobs/{job}', [JobController::class, 'update'])->middleware('role:owner,pm');
+    Route::delete('/jobs/{job}', [JobController::class, 'destroy'])->middleware('role:owner');
     Route::post('/jobs/{job}/assign-pm', [JobController::class, 'assignPm'])->middleware('role:owner');
     Route::post('/jobs/{job}/assign-contractor', [JobController::class, 'assignContractor'])->middleware('role:owner,pm');
     Route::post('/jobs/{job}/schedule', [JobController::class, 'schedule'])->middleware('role:owner,pm');

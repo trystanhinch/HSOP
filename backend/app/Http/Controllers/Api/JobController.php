@@ -25,6 +25,9 @@ use App\Services\SmsService;
 use App\Services\UploadStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class JobController extends Controller
 {
@@ -305,9 +308,89 @@ class JobController extends Controller
         return response()->json($job->fresh());
     }
 
-    public function destroy(string $id): JsonResponse
+    public function destroy(Request $request, Job $job): JsonResponse
     {
-        return response()->json(['message' => 'Not allowed'], 403);
+        if ($request->user()->role !== 'owner') {
+            return response()->json(['message' => 'Only admins can delete jobs.'], 403);
+        }
+
+        $job->load(['updates.photos', 'revisionRequests.photos', 'invoice', 'quote.items']);
+
+        DB::transaction(function () use ($job, $request) {
+            foreach ($job->updates as $update) {
+                foreach ($update->photos as $photo) {
+                    $this->deleteStoredFile($photo->file_url);
+                    $photo->delete();
+                }
+                $update->delete();
+            }
+
+            foreach ($job->revisionRequests as $revision) {
+                foreach ($revision->photos as $photo) {
+                    $this->deleteStoredFile($photo->file_url);
+                    $photo->delete();
+                }
+                $revision->delete();
+            }
+
+            $job->messages()->delete();
+            $job->invoice?->payments()->delete();
+            $job->invoice?->delete();
+            $job->payouts()->delete();
+            $job->quote?->items()->delete();
+            $job->quote?->delete();
+            $job->files()->delete();
+
+            if ($job->lead) {
+                $job->lead->update([
+                    'status' => 'site_visit_scheduled',
+                    'contractor_price' => null,
+                    'contractor_price_submitted_at' => null,
+                    'contractor_price_notes' => null,
+                ]);
+            }
+
+            AuditLog::create([
+                'user_id' => $request->user()->id,
+                'user_role' => $request->user()->role,
+                'object_type' => 'job',
+                'object_id' => $job->id,
+                'action_type' => 'job_deleted',
+                'created_at' => now(),
+            ]);
+
+            $job->delete();
+        });
+
+        return response()->json(['message' => 'Job deleted successfully']);
+    }
+
+    private function deleteStoredFile(?string $url): void
+    {
+        if (! $url) {
+            return;
+        }
+
+        $path = null;
+        if (str_contains($url, 'digitaloceanspaces.com')) {
+            $path = ltrim(parse_url($url, PHP_URL_PATH) ?? '', '/');
+        } elseif (preg_match('#/api/files/(.+)$#', $url, $matches)) {
+            $path = urldecode($matches[1]);
+        }
+
+        if (! $path) {
+            return;
+        }
+
+        try {
+            if (config('filesystems.uploads_disk') === 's3' || config('filesystems.default') === 's3') {
+                Storage::disk('s3')->delete($path);
+            } else {
+                Storage::disk('public')->delete($path);
+            }
+        } catch (\Exception $e) {
+            Log::warning('Could not delete file from storage', ['path' => $path, 'error' => $e->getMessage()]);
+        }
     }
 
     public function assignPm(Request $request, string $id): JsonResponse
