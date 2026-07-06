@@ -281,11 +281,26 @@ class DeployController extends Controller
             }
             $url = $uploads->publicUrl($path);
             $getError = null;
+            $bytes = null;
             try {
-                Storage::disk('s3')->get($path);
+                $content = Storage::disk('s3')->get($path);
+                $bytes = $content !== null ? strlen($content) : null;
             } catch (\Throwable $e) {
                 $getError = $e->getMessage();
             }
+
+            $internalStatus = null;
+            $internalBytes = null;
+            try {
+                $internal = app()->handle(
+                    \Illuminate\Http\Request::create('/api/files/'.implode('%2F', array_map('rawurlencode', explode('/', $path))), 'GET')
+                );
+                $internalStatus = $internal->getStatusCode();
+                $internalBytes = strlen($internal->getContent());
+            } catch (\Throwable $e) {
+                $internalStatus = 'error: '.$e->getMessage();
+            }
+
             $httpStatus = null;
             try {
                 $httpStatus = \Illuminate\Support\Facades\Http::timeout(10)->get($url)->status();
@@ -297,6 +312,9 @@ class DeployController extends Controller
                 'ok' => true,
                 'path' => $path,
                 'url' => $url,
+                'bytes' => $bytes,
+                'internal_status' => $internalStatus,
+                'internal_bytes' => $internalBytes,
                 'http_status' => $httpStatus,
                 'get_error' => $getError,
                 'storage' => 's3',
