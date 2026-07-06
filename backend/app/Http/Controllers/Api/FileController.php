@@ -29,11 +29,11 @@ class FileController extends Controller
         ]);
     }
 
-    private function serveFromS3(string $path): StreamedResponse
+    private function serveFromS3(string $path): StreamedResponse|\Illuminate\Http\Response
     {
         try {
-            $stream = Storage::disk('s3')->readStream($path);
-            if (! $stream) {
+            $content = Storage::disk('s3')->get($path);
+            if ($content === null) {
                 abort(404);
             }
 
@@ -44,12 +44,7 @@ class FileController extends Controller
                 //
             }
 
-            return response()->stream(function () use ($stream) {
-                fpassthru($stream);
-                if (is_resource($stream)) {
-                    fclose($stream);
-                }
-            }, 200, [
+            return response($content, 200, [
                 'Content-Type' => $mime,
                 'Cache-Control' => 'public, max-age=31536000',
                 'Access-Control-Allow-Origin' => '*',

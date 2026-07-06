@@ -259,6 +259,12 @@ class DeployController extends Controller
                 //
             }
             $url = $uploads->publicUrl($path);
+            $getError = null;
+            try {
+                Storage::disk('s3')->get($path);
+            } catch (\Throwable $e) {
+                $getError = $e->getMessage();
+            }
             $httpStatus = null;
             try {
                 $httpStatus = \Illuminate\Support\Facades\Http::timeout(10)->get($url)->status();
@@ -271,6 +277,7 @@ class DeployController extends Controller
                 'path' => $path,
                 'url' => $url,
                 'http_status' => $httpStatus,
+                'get_error' => $getError,
                 'storage' => 's3',
             ]);
         } catch (\Throwable $e) {
