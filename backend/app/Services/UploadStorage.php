@@ -19,34 +19,51 @@ class UploadStorage
     public function store(UploadedFile $file, string $directory): string
     {
         $disk = $this->diskName();
-        $path = $file->store($directory, $disk);
 
         if ($disk === 's3') {
+            $path = Storage::disk('s3')->putFile($directory, $file, 'public');
+            if (! $path) {
+                throw new \RuntimeException('S3 upload failed — no path returned');
+            }
             Storage::disk('s3')->setVisibility($path, 'public');
+
+            return $path;
         }
 
-        return $path;
+        return $file->store($directory, $disk);
     }
 
     public function storeAs(UploadedFile $file, string $directory, string $filename): string
     {
         $disk = $this->diskName();
-        $path = $file->storeAs($directory, $filename, $disk);
 
         if ($disk === 's3') {
+            $path = Storage::disk('s3')->putFileAs($directory, $file, $filename, 'public');
+            if (! $path) {
+                throw new \RuntimeException('S3 upload failed — no path returned');
+            }
             Storage::disk('s3')->setVisibility($path, 'public');
+
+            return $path;
         }
 
-        return $path;
+        return $file->storeAs($directory, $filename, $disk);
     }
 
     public function publicUrl(string $path): string
     {
+        $path = ltrim($path, '/');
+
         if ($this->diskName() === 's3') {
+            $base = rtrim((string) config('filesystems.disks.s3.url'), '/');
+            if ($base && $path) {
+                return $base.'/'.$path;
+            }
+
             return Storage::disk('s3')->url($path);
         }
 
-        return rtrim(config('app.url'), '/').'/api/files/'.ltrim($path, '/');
+        return rtrim(config('app.url'), '/').'/api/files/'.$path;
     }
 
     /** Convert legacy /storage/... or broken API /storage/ URLs to the files route. */

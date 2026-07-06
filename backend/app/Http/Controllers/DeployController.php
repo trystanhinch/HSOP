@@ -219,6 +219,67 @@ class DeployController extends Controller
         ]);
     }
 
+    public function cleanBrokenFileUrls(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $counts = [
+            'job_update_photos' => \App\Models\JobUpdatePhoto::where(function ($q) {
+                $q->where('file_url', 'like', '%api.serviceop.ca%')
+                    ->orWhere('file_url', 'like', '%/storage/%')
+                    ->orWhere('file_url', 'like', '%digitaloceanspaces.com/')
+                    ->orWhere('file_url', 'like', '%digitaloceanspaces.com');
+            })->count(),
+        ];
+
+        $cleaned = 0;
+        $cleaned += \App\Models\JobUpdatePhoto::where(function ($q) {
+            $q->where('file_url', 'like', '%api.serviceop.ca%')
+                ->orWhere('file_url', 'like', '%/storage/%')
+                ->orWhere('file_url', 'like', '%digitaloceanspaces.com/')
+                ->orWhere('file_url', 'like', '%digitaloceanspaces.com');
+        })->update(['file_url' => null]);
+
+        $cleaned += \App\Models\RevisionRequestPhoto::where(function ($q) {
+            $q->where('file_url', 'like', '%api.serviceop.ca%')
+                ->orWhere('file_url', 'like', '%/storage/%')
+                ->orWhere('file_url', 'like', '%digitaloceanspaces.com/')
+                ->orWhere('file_url', 'like', '%digitaloceanspaces.com');
+        })->update(['file_url' => null]);
+
+        $cleaned += \App\Models\ContractorDocument::where(function ($q) {
+            $q->where('file_url', 'like', '%api.serviceop.ca%')
+                ->orWhere('file_url', 'like', '%/storage/%')
+                ->orWhere('file_url', 'like', '%digitaloceanspaces.com/')
+                ->orWhere('file_url', 'like', '%digitaloceanspaces.com');
+        })->update(['file_url' => null]);
+
+        \App\Models\Contractor::query()->each(function ($contractor) use (&$cleaned) {
+            $changes = [];
+            foreach (['wcb_file_url', 'insurance_file_url'] as $col) {
+                $url = $contractor->{$col};
+                if ($url && (
+                    str_contains($url, 'api.serviceop.ca')
+                    || str_contains($url, '/storage/')
+                    || str_ends_with(rtrim($url, '/'), 'digitaloceanspaces.com')
+                )) {
+                    $changes[$col] = null;
+                }
+            }
+            if ($changes) {
+                $contractor->update($changes);
+                $cleaned += count($changes);
+            }
+        });
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Broken local file URLs cleared.',
+            'broken_before' => $counts,
+            'cleaned' => $cleaned,
+        ]);
+    }
+
     public function cleanTestData(string $secret): JsonResponse
     {
         $this->authorizeDeploy($secret);

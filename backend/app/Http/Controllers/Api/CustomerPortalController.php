@@ -93,7 +93,7 @@ class CustomerPortalController extends Controller
                     'text' => $u->update_text,
                     'created_at' => $u->created_at,
                     'posted_by' => $u->postedBy?->name,
-                    'photos' => $u->photos->pluck('file_url'),
+                    'photos' => $u->photos->pluck('file_url')->filter()->values(),
                 ]) : [],
             'invoice' => $job?->invoice ? [
                 'amount' => $job->invoice->amount,

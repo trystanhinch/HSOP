@@ -273,9 +273,9 @@ export default function CustomerPortal() {
                     })}
                   </p>
                   <p className="text-sm text-slate-700">{u.text}</p>
-                  {u.photos?.length > 0 && (
+                  {u.photos?.filter(Boolean)?.length > 0 && (
                     <div className="grid grid-cols-3 gap-2 mt-3">
-                      {u.photos.map((url, j) => (
+                      {u.photos.filter(Boolean).map((url, j) => (
                         <button key={j} type="button" onClick={() => setSelectedPhoto(storageUrl(url))}>
                           <img
                             src={storageUrl(url)}

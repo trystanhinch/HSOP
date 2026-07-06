@@ -690,9 +690,9 @@ export default function JobDetail() {
                   {u.visibility === 'internal' && <span className="ml-auto text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">Internal Only</span>}
                 </div>
                 <p className="text-sm text-slate-700">{u.update_text}</p>
-                {u.photos?.length > 0 && (
+                {u.photos?.filter((p) => p.file_url)?.length > 0 && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    {u.photos.map((p) => (
+                    {u.photos.filter((p) => p.file_url).map((p) => (
                       <a key={p.id} href={storageUrl(p.file_url)} target="_blank" rel="noreferrer">
                         <img
                           src={storageUrl(p.file_url)}
