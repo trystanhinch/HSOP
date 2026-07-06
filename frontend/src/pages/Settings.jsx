@@ -3,8 +3,9 @@ import { useSearchParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
+import AddUserModal from '../components/AddUserModal';
 import DatabaseStructure from './DatabaseStructure';
-import { confirmAction, showError, showSuccess } from '../utils/swal';
+import { confirmAction, confirmDanger, showError, showSuccess } from '../utils/swal';
 
 const tabs = ['Company', 'Users & Roles', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure'];
 
@@ -15,7 +16,6 @@ export default function Settings() {
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(tabParam === 'database' ? 'Database Structure' : 'Company');
   const [settings, setSettings] = useState(null);
-  const [users, setUsers] = useState([]);
   const [companyForm, setCompanyForm] = useState({});
   const [notifForm, setNotifForm] = useState({ sms_globally_enabled: false, email_globally_enabled: false });
   const [pricingForm, setPricingForm] = useState({ gst_rate: '5', markup_divisor: '0.80' });
@@ -23,9 +23,14 @@ export default function Settings() {
   const [paymentForm, setPaymentForm] = useState({ payment_instructions: '' });
   const [smsLogs, setSmsLogs] = useState([]);
   const [emailLogs, setEmailLogs] = useState([]);
-  const [userForm, setUserForm] = useState({ name: '', email: '', role: 'pm' });
-  const [showAddUser, setShowAddUser] = useState(false);
+  const [users, setUsers] = useState([]);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [roleFilter, setRoleFilter] = useState('all');
   const [saving, setSaving] = useState(false);
+
+  const loadAdminUsers = () => {
+    api.get('/admin/users').then(({ data }) => setUsers(data)).catch(() => setUsers([]));
+  };
 
   const loadSettings = () => {
     api.get('/settings').then(({ data }) => {
@@ -50,8 +55,13 @@ export default function Settings() {
 
   useEffect(() => {
     loadSettings();
-    api.get('/users').then(({ data }) => setUsers(data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'Users & Roles') {
+      loadAdminUsers();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'SMS Log') {
@@ -115,42 +125,23 @@ export default function Settings() {
     saveSettings(paymentForm, 'Payment settings saved.');
   };
 
-  const toggleUserSms = async (user) => {
-    try {
-      const { data } = await api.put(`/users/${user.id}/toggle-sms`);
-      setUsers((prev) => prev.map((u) => (u.id === user.id ? { ...u, sms_enabled: data.sms_enabled } : u)));
-    } catch (err) {
-      await showError(err.response?.data?.message || 'Failed to toggle SMS.');
-    }
-  };
-
-  const addUser = async (e) => {
-    e.preventDefault();
-    const ok = await confirmAction({
-      title: 'Create user?',
-      text: `Create a new ${userForm.role === 'pm' ? 'Project Manager' : 'Contractor'} account for ${userForm.name}?`,
-      confirmText: 'Yes, create user',
+  const deactivateUser = async (userId) => {
+    const ok = await confirmDanger({
+      title: 'Deactivate account?',
+      text: 'This user will no longer be able to log in.',
+      confirmText: 'Yes, deactivate',
     });
     if (!ok) return;
-
-    setSaving(true);
     try {
-      const { data } = await api.post('/users', userForm);
-      setUsers((p) => [...p, data]);
-      setShowAddUser(false);
-      setUserForm({ name: '', email: '', role: 'pm' });
-      await showSuccess('User created. Default password: password');
+      await api.delete(`/admin/users/${userId}`);
+      await showSuccess('Account deactivated');
+      loadAdminUsers();
     } catch (err) {
-      await showError(err.response?.data?.message || 'Failed to create user');
-    } finally {
-      setSaving(false);
+      await showError(err.response?.data?.message || 'Failed to deactivate account');
     }
   };
 
-  const roleBadge = (role) => {
-    const colors = { owner: 'bg-purple-100 text-purple-700', pm: 'bg-blue-100 text-blue-700', contractor: 'bg-orange-100 text-orange-700', customer: 'bg-green-100 text-green-700' };
-    return <span className={`text-xs px-2 py-0.5 rounded-full font-medium capitalize ${colors[role] || 'bg-slate-100'}`}>{role}</span>;
-  };
+  const filteredUsers = users.filter((u) => roleFilter === 'all' || u.role === roleFilter);
 
   return (
     <div>
@@ -183,54 +174,107 @@ export default function Settings() {
       )}
 
       {activeTab === 'Users & Roles' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-slate-800">Users</h3>
-            <button onClick={() => setShowAddUser(true)} className="flex items-center gap-1 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
-              <Plus className="w-4 h-4" /> Add User
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRoleFilter('all')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${roleFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoleFilter('pm')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${roleFilter === 'pm' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+              >
+                Project Managers
+              </button>
+              <button
+                type="button"
+                onClick={() => setRoleFilter('contractor')}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${roleFilter === 'contractor' ? 'bg-orange-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+              >
+                Contractors
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAddModal(true)}
+              className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium flex items-center gap-2 hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" />
+              Add User
             </button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm divide-y divide-slate-200">
-              <thead>
-                <tr className="text-slate-500">
-                  <th className="text-left py-2">Name</th>
-                  <th className="text-left py-2">Email</th>
-                  <th className="text-left py-2">Role</th>
-                  <th className="text-left py-2">SMS</th>
-                  <th className="text-left py-2">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {users.map((u) => (
-                  <tr key={u.id}>
-                    <td className="py-2">{u.name}</td>
-                    <td className="py-2">{u.email}</td>
-                    <td className="py-2">{roleBadge(u.role)}</td>
-                    <td className="py-2">
-                      {u.role !== 'customer' && (
-                        <button type="button" onClick={() => toggleUserSms(u)}
-                          className={`text-xs px-2 py-1 rounded-full ${u.sms_enabled !== false ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
-                          {u.sms_enabled !== false ? 'On' : 'Off'}
-                        </button>
-                      )}
-                    </td>
-                    <td className="py-2 capitalize">{u.status}</td>
+
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] text-sm">
+                <thead className="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th className="px-4 py-3 text-left font-medium text-slate-500">Name</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate-500">Email</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate-500">Phone</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate-500">Role</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate-500">Status</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate-500">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredUsers.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-12 text-center text-slate-500">No users found.</td>
+                    </tr>
+                  ) : filteredUsers.map((user) => (
+                    <tr key={user.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3 font-medium text-slate-800">{user.name}</td>
+                      <td className="px-4 py-3 text-slate-600">{user.email}</td>
+                      <td className="px-4 py-3 text-slate-600">{user.phone || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                          user.role === 'pm'
+                            ? 'bg-blue-100 text-blue-700'
+                            : 'bg-orange-100 text-orange-700'
+                        }`}
+                        >
+                          {user.role === 'pm' ? 'Project Manager' : 'Contractor'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs px-2 py-1 rounded-full ${
+                          user.status === 'active'
+                            ? 'bg-green-100 text-green-700'
+                            : 'bg-red-100 text-red-700'
+                        }`}
+                        >
+                          {user.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {user.status === 'active' && (
+                          <button
+                            type="button"
+                            onClick={() => deactivateUser(user.id)}
+                            className="text-red-500 hover:text-red-700 text-xs"
+                          >
+                            Deactivate
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-          {showAddUser && (
-            <form onSubmit={addUser} className="mt-6 border-t border-slate-200 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input placeholder="Name" value={userForm.name} onChange={(e) => setUserForm({ ...userForm, name: e.target.value })} required className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-              <input placeholder="Email" type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} required className="border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-              <select value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value })} className="border border-slate-300 rounded-lg px-3 py-2 text-sm">
-                <option value="pm">Project Manager</option>
-                <option value="contractor">Contractor</option>
-              </select>
-              <button type="submit" disabled={saving} className="bg-blue-600 text-white rounded-lg text-sm py-2 hover:bg-blue-700">Create User</button>
-            </form>
+
+          {showAddModal && (
+            <AddUserModal
+              onClose={() => setShowAddModal(false)}
+              onSuccess={loadAdminUsers}
+            />
           )}
         </div>
       )}
