@@ -276,9 +276,21 @@ class DeployController extends Controller
             $putOk = false;
             $putError = null;
             try {
-                $putOk = Storage::disk('s3')->put($path, $png);
+                $client = Storage::disk('s3')->getClient();
+                $client->putObject([
+                    'Bucket' => config('filesystems.disks.s3.bucket'),
+                    'Key' => $path,
+                    'Body' => $png,
+                    'ACL' => 'public-read',
+                ]);
+                $putOk = true;
             } catch (\Throwable $e) {
                 $putError = $e->getMessage();
+                try {
+                    $putOk = (bool) Storage::disk('s3')->put($path, $png);
+                } catch (\Throwable $e2) {
+                    $putError = $putError.' | fallback: '.$e2->getMessage();
+                }
             }
             if ($putError || ! $putOk) {
                 return response()->json([
