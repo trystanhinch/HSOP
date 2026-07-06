@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Send, FileText } from 'lucide-react';
+import { ArrowLeft, Calendar, Send, FileText, Plus } from 'lucide-react';
 import api, { storageUrl } from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
 import AssignUserModal from '../components/AssignUserModal';
@@ -60,12 +60,18 @@ export default function JobDetail() {
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
   const [customerRevision, setCustomerRevision] = useState('');
   const [showCustomerRevision, setShowCustomerRevision] = useState(false);
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [completing, setCompleting] = useState(false);
 
   const isCustomer = user?.role === 'customer';
   const canManage = ['owner', 'pm'].includes(user?.role);
   const isAdmin = user?.role === 'owner';
   const isContractor = user?.role === 'contractor';
-  const isMyJob = job?.contractor_id === user?.id;
+  const isMyJob = Number(job?.contractor_id) === Number(user?.id);
+  const canPostUpdate = job && ((isContractor && isMyJob) || canManage)
+    && !['cancelled', 'paid_completed'].includes(job.status);
+  const canMarkComplete = isContractor && isMyJob
+    && ['in_progress', 'scheduled', 'contractor_assigned', 'progress_updated', 'revision_requested', 'corrections_required'].includes(job?.status);
   const needsPricing = job && ['pending', 'not_requested', null, undefined].includes(job.contractor_price_status);
   const priceSubmitted = job?.contractor_price_status === 'submitted';
   const priceApproved = job?.contractor_price_status === 'approved';
@@ -234,6 +240,20 @@ export default function JobDetail() {
       await showError(err.response?.data?.message || 'Failed to approve price.');
     } finally {
       setApproving(false);
+    }
+  };
+
+  const markComplete = async () => {
+    setCompleting(true);
+    try {
+      await api.post(`/jobs/${id}/contractor-complete`);
+      setShowCompleteConfirm(false);
+      await showSuccess('Job marked complete. Customer has been notified to review.');
+      await loadJob(true);
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to mark complete.');
+    } finally {
+      setCompleting(false);
     }
   };
 
@@ -471,16 +491,48 @@ export default function JobDetail() {
               <strong>Corrections requested:</strong> {job.corrections_notes}
             </div>
           )}
-          {isContractor && ['in_progress', 'progress_updated', 'revision_requested', 'corrections_required'].includes(job.status) && (
-            <button type="button" onClick={async () => {
-              try {
-                await api.post(`/jobs/${id}/contractor-complete`);
-                await showSuccess('Marked complete — customer notified for review.');
-                loadJob(true);
-              } catch (err) { await showError(err.response?.data?.message || 'Failed'); }
-            }} className="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700">
-              Mark Job Complete
-            </button>
+          {isContractor && isMyJob && job.status === 'pending_customer_approval' && (
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
+              <p className="text-sm font-semibold text-blue-800">✓ Job Marked Complete</p>
+              <p className="text-sm text-blue-600 mt-1">
+                The customer has been notified and is reviewing the completed work.
+                You will be notified when they accept or request changes.
+              </p>
+            </div>
+          )}
+          {isContractor && isMyJob && job.status === 'revision_requested' && (
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-5">
+              <p className="text-sm font-semibold text-orange-800">⚠ Revision Requested</p>
+              {job.revision_description && (
+                <p className="text-sm text-orange-600 mt-1">{job.revision_description}</p>
+              )}
+              <p className="text-xs text-orange-500 mt-2">
+                Please address the customer&apos;s feedback and post an update when ready.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowCompleteConfirm(true)}
+                className="mt-3 w-full bg-orange-600 hover:bg-orange-700 text-white rounded-lg py-2 text-sm font-medium"
+              >
+                Mark Complete Again
+              </button>
+            </div>
+          )}
+          {canMarkComplete && (
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <h3 className="font-semibold text-slate-800 mb-1">Mark Job Complete</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                Once all work is finished, mark the job complete. The customer will
+                receive a notification to review and accept the completed work.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowCompleteConfirm(true)}
+                className="w-full bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg py-3 text-sm"
+              >
+                Mark Job Complete
+              </button>
+            </div>
           )}
           {isCustomer && job.status === 'pending_customer_approval' && (
             <div className="flex flex-wrap gap-2">
@@ -612,8 +664,13 @@ export default function JobDetail() {
       {/* Timeline */}
       {activeTab === 'Timeline' && (
         <div>
-          {!isCustomer && (
-            <button onClick={() => setShowUpdateForm(true)} className="mb-4 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">
+          {canPostUpdate && (
+            <button
+              type="button"
+              onClick={() => setShowUpdateForm(true)}
+              className="mb-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg px-4 py-2.5 flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
               Add Update
             </button>
           )}
@@ -818,6 +875,38 @@ export default function JobDetail() {
         </div>
       )}
 
+      {showCompleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-3">✅</div>
+              <h3 className="font-semibold text-slate-800 text-lg">Mark Job Complete?</h3>
+              <p className="text-sm text-slate-500 mt-2">
+                The customer will be notified and asked to review and accept the
+                completed work before payment is processed.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowCompleteConfirm(false)}
+                className="flex-1 border border-slate-300 text-slate-600 rounded-lg py-2.5 text-sm font-medium"
+              >
+                Not Yet
+              </button>
+              <button
+                type="button"
+                onClick={markComplete}
+                disabled={completing}
+                className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium"
+              >
+                {completing ? 'Submitting...' : 'Yes, Mark Complete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {assignModal && (
         <AssignUserModal
           jobId={id}
@@ -827,7 +916,13 @@ export default function JobDetail() {
           onAssigned={loadJob}
         />
       )}
-      {showUpdateForm && <JobUpdateForm jobId={id} onClose={() => setShowUpdateForm(false)} onPosted={loadUpdates} />}
+      {showUpdateForm && (
+        <JobUpdateForm
+          jobId={id}
+          onClose={() => setShowUpdateForm(false)}
+          onPosted={() => { loadUpdates(); loadJob(true); }}
+        />
+      )}
       {showQuoteBuilder && <QuoteBuilder job={job} onClose={() => setShowQuoteBuilder(false)} onCreated={loadJob} />}
     </div>
   );
