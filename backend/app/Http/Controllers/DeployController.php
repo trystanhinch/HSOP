@@ -271,6 +271,7 @@ class DeployController extends Controller
                 'path' => $path,
                 'url' => $url,
                 'http_status' => $httpStatus,
+                'storage' => 's3',
             ]);
         } catch (\Throwable $e) {
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);

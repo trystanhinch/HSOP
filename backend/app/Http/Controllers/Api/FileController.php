@@ -3,24 +3,59 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Services\UploadStorage;
 use Illuminate\Support\Facades\Storage;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class FileController extends Controller
 {
-    public function show(string $path): BinaryFileResponse
+    public function __construct(protected UploadStorage $uploads) {}
+
+    public function show(string $path): StreamedResponse|\Symfony\Component\HttpFoundation\BinaryFileResponse
     {
         $path = str_replace(['..', '\\'], '', $path);
+
+        if ($this->uploads->diskName() === 's3') {
+            return $this->serveFromS3($path);
+        }
 
         if (! Storage::disk('public')->exists($path)) {
             abort(404);
         }
 
-        $fullPath = Storage::disk('public')->path($path);
-
-        return response()->file($fullPath, [
+        return response()->file(Storage::disk('public')->path($path), [
             'Cache-Control' => 'public, max-age=31536000',
             'Access-Control-Allow-Origin' => '*',
         ]);
+    }
+
+    private function serveFromS3(string $path): StreamedResponse
+    {
+        try {
+            $stream = Storage::disk('s3')->readStream($path);
+            if (! $stream) {
+                abort(404);
+            }
+
+            $mime = 'application/octet-stream';
+            try {
+                $mime = Storage::disk('s3')->mimeType($path) ?: $mime;
+            } catch (\Throwable) {
+                //
+            }
+
+            return response()->stream(function () use ($stream) {
+                fpassthru($stream);
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }, 200, [
+                'Content-Type' => $mime,
+                'Cache-Control' => 'public, max-age=31536000',
+                'Access-Control-Allow-Origin' => '*',
+            ]);
+        } catch (\Throwable) {
+            abort(404);
+        }
     }
 }

@@ -59,12 +59,8 @@ class UploadStorage
         }
 
         if ($this->diskName() === 's3') {
-            $base = rtrim((string) config('filesystems.disks.s3.url'), '/');
-            if ($base) {
-                return $base.'/'.$path;
-            }
-
-            return Storage::disk('s3')->url($path);
+            // Serve via API proxy — works with private Spaces buckets and avoids CORS issues.
+            return rtrim(config('app.url'), '/').'/api/files/'.$path;
         }
 
         return rtrim(config('app.url'), '/').'/api/files/'.$path;
