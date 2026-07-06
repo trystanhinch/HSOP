@@ -4,6 +4,7 @@ namespace App\Services;
 
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class UploadStorage
 {
@@ -21,11 +22,7 @@ class UploadStorage
         $disk = $this->diskName();
 
         if ($disk === 's3') {
-            $path = Storage::disk('s3')->putFile($directory, $file, 'public');
-            if (! $path) {
-                throw new \RuntimeException('S3 upload failed — no path returned');
-            }
-            Storage::disk('s3')->setVisibility($path, 'public');
+            $path = $this->storeOnS3($file, $directory);
 
             return $path;
         }
@@ -38,10 +35,9 @@ class UploadStorage
         $disk = $this->diskName();
 
         if ($disk === 's3') {
-            $path = Storage::disk('s3')->putFileAs($directory, $file, $filename, 'public');
-            if (! $path) {
-                throw new \RuntimeException('S3 upload failed — no path returned');
-            }
+            $safeName = preg_replace('/[^A-Za-z0-9._-]/', '_', $filename) ?: 'file';
+            $path = trim($directory, '/').'/'.$safeName;
+            Storage::disk('s3')->put($path, file_get_contents($file->getRealPath()), 'public');
             Storage::disk('s3')->setVisibility($path, 'public');
 
             return $path;
@@ -54,9 +50,13 @@ class UploadStorage
     {
         $path = ltrim($path, '/');
 
+        if ($path === '') {
+            throw new \RuntimeException('Cannot build public URL for empty storage path');
+        }
+
         if ($this->diskName() === 's3') {
             $base = rtrim((string) config('filesystems.disks.s3.url'), '/');
-            if ($base && $path) {
+            if ($base) {
                 return $base.'/'.$path;
             }
 
@@ -86,6 +86,20 @@ class UploadStorage
         }
 
         return $url;
+    }
+
+    private function storeOnS3(UploadedFile $file, string $directory): string
+    {
+        $extension = $file->getClientOriginalExtension() ?: $file->extension() ?: 'bin';
+        $path = trim($directory, '/').'/'.Str::random(40).'.'.strtolower($extension);
+
+        $stored = Storage::disk('s3')->put($path, file_get_contents($file->getRealPath()), 'public');
+        if (! $stored) {
+            throw new \RuntimeException('S3 upload failed for path: '.$path);
+        }
+        Storage::disk('s3')->setVisibility($path, 'public');
+
+        return $path;
     }
 
     private function s3Configured(): bool

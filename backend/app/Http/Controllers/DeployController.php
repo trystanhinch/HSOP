@@ -118,20 +118,37 @@ class DeployController extends Controller
         $spacesTest = null;
         if ($s3Configured) {
             try {
-                Storage::disk('s3')->put('test/connection-test.txt', 'ServiceOP Spaces test '.now());
+                $testPath = 'test/connection-test-'.time().'.txt';
+                Storage::disk('s3')->put($testPath, 'ServiceOP Spaces test '.now(), 'public');
+                Storage::disk('s3')->setVisibility($testPath, 'public');
+                $uploads = app(UploadStorage::class);
                 $spacesTest = [
                     'ok' => true,
-                    'url' => Storage::disk('s3')->url('test/connection-test.txt'),
+                    'path' => $testPath,
+                    'url' => $uploads->publicUrl($testPath),
+                    'exists' => Storage::disk('s3')->exists($testPath),
                 ];
             } catch (\Throwable $e) {
                 $spacesTest = ['ok' => false, 'error' => $e->getMessage()];
             }
         }
 
-        $photos = JobUpdatePhoto::latest()->take(10)->get(['id', 'file_name', 'file_url'])->map(function ($photo) {
-            $relative = preg_replace('#^https?://[^/]+/api/files/#', '', $photo->file_url) ?? '';
-            $relative = ltrim(str_replace('/storage/', '', $relative), '/');
-            $exists = $relative ? Storage::disk('public')->exists($relative) : false;
+        $photos = JobUpdatePhoto::latest()->take(10)->get(['id', 'file_name', 'file_url'])->map(function ($photo) use ($disk) {
+            $relative = '';
+            if (preg_match('#digitaloceanspaces\.com/(.+)$#', $photo->file_url ?? '', $m)) {
+                $relative = $m[1];
+            } elseif (preg_match('#/api/files/(.+)$#', $photo->file_url ?? '', $m)) {
+                $relative = $m[1];
+            } elseif (str_starts_with($photo->file_url ?? '', '/storage/')) {
+                $relative = substr($photo->file_url, strlen('/storage/'));
+            }
+            $relative = ltrim($relative, '/');
+            $exists = false;
+            if ($relative) {
+                $exists = $disk === 's3'
+                    ? Storage::disk('s3')->exists($relative)
+                    : Storage::disk('public')->exists($relative);
+            }
 
             return [
                 'id' => $photo->id,
@@ -144,7 +161,7 @@ class DeployController extends Controller
 
         return response()->json([
             'ok' => true,
-            'filesystem_disk_env' => env('FILESYSTEM_DISK'),
+            'filesystem_default' => config('filesystems.default'),
             'uploads_disk_env' => env('UPLOADS_DISK'),
             'active_upload_disk' => $disk,
             'public_root' => config('filesystems.disks.public.root'),
