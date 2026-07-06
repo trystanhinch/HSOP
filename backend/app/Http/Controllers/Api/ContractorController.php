@@ -62,7 +62,7 @@ class ContractorController extends Controller
         $contractor = Contractor::findOrFail($id);
         $user = User::findOrFail($contractor->user_id);
 
-        $data = $request->validate([
+        $request->validate([
             'name' => 'nullable|string|max:255',
             'legal_name' => 'nullable|string|max:255',
             'operating_name' => 'nullable|string|max:255',
@@ -76,35 +76,35 @@ class ContractorController extends Controller
         ]);
 
         $userUpdate = [];
-        if (array_key_exists('name', $data) && $data['name'] !== null) {
-            $userUpdate['name'] = $data['name'];
+        if ($request->filled('name')) {
+            $userUpdate['name'] = $request->name;
         }
-        if (array_key_exists('email', $data) && $data['email'] !== null) {
-            $userUpdate['email'] = $data['email'];
+        if ($request->filled('email')) {
+            $userUpdate['email'] = $request->email;
         }
-        if (array_key_exists('phone', $data)) {
-            $userUpdate['phone'] = $data['phone'];
+        if ($request->filled('phone')) {
+            $userUpdate['phone'] = $request->phone;
         }
         if (! empty($userUpdate)) {
             $user->update($userUpdate);
         }
 
-        $contractorUpdate = [];
-        foreach (['legal_name', 'operating_name', 'contact_name', 'phone', 'email', 'services', 'cities', 'approval_status', 'admin_notes'] as $field) {
-            if (array_key_exists($field, $data)) {
-                $contractorUpdate[$field] = $data[$field];
-            }
-        }
-        if (! empty($contractorUpdate)) {
-            $contractor->update($contractorUpdate);
-        }
-
-        $contractor->load(['documents', 'user:id,name,email,phone,status,created_at']);
+        $contractor->update([
+            'legal_name' => $request->legal_name ?? $contractor->legal_name,
+            'operating_name' => $request->operating_name ?? $contractor->operating_name,
+            'contact_name' => $request->contact_name ?? $contractor->contact_name,
+            'phone' => $request->phone ?? $contractor->phone,
+            'email' => $request->email ?? $contractor->email,
+            'services' => $request->services !== null ? $request->services : $contractor->services,
+            'cities' => $request->cities !== null ? $request->cities : $contractor->cities,
+            'approval_status' => $request->approval_status ?? $contractor->approval_status,
+            'admin_notes' => $request->admin_notes ?? $contractor->admin_notes,
+        ]);
 
         return response()->json([
-            'message' => 'Contractor profile updated',
-            'contractor' => $contractor,
-            'user' => $user->fresh(['id', 'name', 'email', 'phone', 'status']),
+            'message' => 'Contractor profile updated successfully',
+            'contractor' => $contractor->fresh(),
+            'user' => $user->fresh()->only(['id', 'name', 'email', 'phone', 'status']),
         ]);
     }
 
