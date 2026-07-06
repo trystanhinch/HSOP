@@ -244,6 +244,27 @@ class DeployController extends Controller
         ]);
     }
 
+    public function debugFilePath(string $secret, string $path): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $uploads = app(UploadStorage::class);
+        $content = null;
+        $error = null;
+        try {
+            $content = Storage::disk('s3')->get($path);
+        } catch (\Throwable $e) {
+            $error = $e->getMessage();
+        }
+
+        return response()->json([
+            'received_path' => $path,
+            'upload_disk' => $uploads->diskName(),
+            'content_bytes' => $content !== null ? strlen($content) : null,
+            'error' => $error,
+        ]);
+    }
+
     public function testSpacesUpload(string $secret): JsonResponse
     {
         $this->authorizeDeploy($secret);

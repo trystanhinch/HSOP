@@ -11,6 +11,7 @@ Route::prefix('deploy')->group(function () {
     Route::get('/setup/{secret}', [DeployController::class, 'setup']);
     Route::get('/repair/{secret}', [DeployController::class, 'repair']);
     Route::get('/storage-link/{secret}', [DeployController::class, 'storageLink']);
+    Route::get('/debug-file-path/{secret}/{path}', [DeployController::class, 'debugFilePath'])->where('path', '.*');
     Route::get('/test-spaces-upload/{secret}', [DeployController::class, 'testSpacesUpload']);
     Route::get('/clean-broken-file-urls/{secret}', [DeployController::class, 'cleanBrokenFileUrls']);
     Route::get('/storage-diagnostic/{secret}', [DeployController::class, 'storageDiagnostic']);
