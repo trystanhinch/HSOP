@@ -18,6 +18,9 @@ class FileController extends Controller
 
         $fullPath = Storage::disk('public')->path($path);
 
-        return response()->file($fullPath);
+        return response()->file($fullPath, [
+            'Cache-Control' => 'public, max-age=31536000',
+            'Access-Control-Allow-Origin' => '*',
+        ]);
     }
 }

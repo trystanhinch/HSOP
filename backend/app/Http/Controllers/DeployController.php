@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\JobUpdatePhoto;
 use App\Services\LeadCustomerResolver;
 use App\Services\UploadStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class DeployController extends Controller
 {
@@ -102,6 +104,60 @@ class DeployController extends Controller
         Artisan::call('storage:link');
 
         return $this->ok('storage:link');
+    }
+
+    public function storageDiagnostic(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $uploads = app(UploadStorage::class);
+        $disk = $uploads->diskName();
+        $s3Configured = (bool) config('filesystems.disks.s3.bucket')
+            && (bool) config('filesystems.disks.s3.key');
+
+        $spacesTest = null;
+        if ($s3Configured) {
+            try {
+                Storage::disk('s3')->put('test/connection-test.txt', 'ServiceOP Spaces test '.now());
+                $spacesTest = [
+                    'ok' => true,
+                    'url' => Storage::disk('s3')->url('test/connection-test.txt'),
+                ];
+            } catch (\Throwable $e) {
+                $spacesTest = ['ok' => false, 'error' => $e->getMessage()];
+            }
+        }
+
+        $photos = JobUpdatePhoto::latest()->take(10)->get(['id', 'file_name', 'file_url'])->map(function ($photo) {
+            $relative = preg_replace('#^https?://[^/]+/api/files/#', '', $photo->file_url) ?? '';
+            $relative = ltrim(str_replace('/storage/', '', $relative), '/');
+            $exists = $relative ? Storage::disk('public')->exists($relative) : false;
+
+            return [
+                'id' => $photo->id,
+                'file_name' => $photo->file_name,
+                'file_url' => $photo->file_url,
+                'storage_path' => $relative,
+                'exists_on_disk' => $exists,
+            ];
+        });
+
+        return response()->json([
+            'ok' => true,
+            'filesystem_disk_env' => env('FILESYSTEM_DISK'),
+            'uploads_disk_env' => env('UPLOADS_DISK'),
+            'active_upload_disk' => $disk,
+            'public_root' => config('filesystems.disks.public.root'),
+            's3_configured' => $s3Configured,
+            's3_bucket' => config('filesystems.disks.s3.bucket'),
+            's3_endpoint_set' => (bool) config('filesystems.disks.s3.endpoint'),
+            's3_url' => config('filesystems.disks.s3.url'),
+            'spaces_connection_test' => $spacesTest,
+            'latest_photos' => $photos,
+            'recommendation' => $disk === 's3' && ($spacesTest['ok'] ?? false)
+                ? 'Spaces active — new uploads are permanent.'
+                : 'Configure DigitalOcean Spaces (FILESYSTEM_DISK=s3 + AWS_* env vars). Local files are wiped on redeploy.',
+        ]);
     }
 
     public function fixPhotoUrls(string $secret): JsonResponse

@@ -18,12 +18,26 @@ class UploadStorage
 
     public function store(UploadedFile $file, string $directory): string
     {
-        return $file->store($directory, $this->diskName());
+        $disk = $this->diskName();
+        $path = $file->store($directory, $disk);
+
+        if ($disk === 's3') {
+            Storage::disk('s3')->setVisibility($path, 'public');
+        }
+
+        return $path;
     }
 
     public function storeAs(UploadedFile $file, string $directory, string $filename): string
     {
-        return $file->storeAs($directory, $filename, $this->diskName());
+        $disk = $this->diskName();
+        $path = $file->storeAs($directory, $filename, $disk);
+
+        if ($disk === 's3') {
+            Storage::disk('s3')->setVisibility($path, 'public');
+        }
+
+        return $path;
     }
 
     public function publicUrl(string $path): string

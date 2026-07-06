@@ -19,7 +19,7 @@ return [
     | Disk used for user uploads (job photos, documents, etc.).
     | Set FILESYSTEM_DISK=s3 with AWS_* / DigitalOcean Spaces vars for CDN storage.
     */
-    'uploads_disk' => env('FILESYSTEM_DISK', 'public') === 's3' ? 's3' : 'public',
+    'uploads_disk' => env('UPLOADS_DISK', env('FILESYSTEM_DISK', 'public') === 's3' ? 's3' : 'public'),
 
     /*
     |--------------------------------------------------------------------------
@@ -46,7 +46,7 @@ return [
 
         'public' => [
             'driver' => 'local',
-            'root' => storage_path('app/public'),
+            'root' => env('STORAGE_PUBLIC_ROOT', storage_path('app/public')),
             'url' => rtrim(env('APP_URL', 'http://localhost'), '/').'/storage',
             'visibility' => 'public',
             'throw' => false,
