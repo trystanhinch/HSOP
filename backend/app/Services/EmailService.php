@@ -21,7 +21,7 @@ class EmailService
         $jobId = null
     ): array {
         if (! Setting::isGloballyEnabled('email')) {
-            EmailLog::create([
+            $this->writeLog([
                 'to_email' => $toEmail ?: 'MISSING',
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -34,7 +34,7 @@ class EmailService
         }
 
         if (! $toEmail) {
-            EmailLog::create([
+            $this->writeLog([
                 'to_email' => 'MISSING',
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -49,7 +49,7 @@ class EmailService
         try {
             Mail::to($toEmail)->send(new HsopNotificationMail($subject, $view, $viewData));
 
-            EmailLog::create([
+            $this->writeLog([
                 'to_email' => $toEmail,
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -61,7 +61,7 @@ class EmailService
         } catch (\Exception $e) {
             Log::error('Email send failed', ['error' => $e->getMessage(), 'to' => $toEmail]);
 
-            EmailLog::create([
+            $this->writeLog([
                 'to_email' => $toEmail,
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -82,7 +82,7 @@ class EmailService
         $jobId = null
     ): array {
         if (! Setting::isGloballyEnabled('email')) {
-            EmailLog::create([
+            $this->writeLog([
                 'to_email' => $toEmail ?: 'MISSING',
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -95,7 +95,7 @@ class EmailService
         }
 
         if (! $toEmail) {
-            EmailLog::create([
+            $this->writeLog([
                 'to_email' => 'MISSING',
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -110,7 +110,7 @@ class EmailService
         try {
             Mail::to($toEmail)->send($mailable);
 
-            EmailLog::create([
+            $this->writeLog([
                 'to_email' => $toEmail,
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -122,7 +122,7 @@ class EmailService
         } catch (\Exception $e) {
             Log::error('Email send failed', ['error' => $e->getMessage(), 'to' => $toEmail]);
 
-            EmailLog::create([
+            $this->writeLog([
                 'to_email' => $toEmail,
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -132,6 +132,19 @@ class EmailService
             ]);
 
             return ['success' => false, 'error' => $e->getMessage()];
+        }
+    }
+
+    private function writeLog(array $data): void
+    {
+        try {
+            EmailLog::create($data);
+        } catch (\Exception $e) {
+            Log::warning('EmailLog write failed', [
+                'error' => $e->getMessage(),
+                'trigger' => $data['trigger_event'] ?? null,
+                'to' => $data['to_email'] ?? null,
+            ]);
         }
     }
 }

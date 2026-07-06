@@ -48,7 +48,7 @@ class SmsService
         $toPhone = $this->formatPhone($toPhone);
 
         if (! Setting::isGloballyEnabled('sms')) {
-            SmsLog::create([
+            $this->writeLog([
                 'to_phone' => $toPhone ?: 'MISSING_OR_INVALID',
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -62,7 +62,7 @@ class SmsService
         }
 
         if (! $toPhone) {
-            SmsLog::create([
+            $this->writeLog([
                 'to_phone' => 'MISSING_OR_INVALID',
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -76,7 +76,7 @@ class SmsService
         }
 
         if (! $this->enabled || ! $this->client) {
-            SmsLog::create([
+            $this->writeLog([
                 'to_phone' => $toPhone,
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -92,7 +92,7 @@ class SmsService
         if ($userId) {
             $user = User::find($userId);
             if ($user && $user->sms_enabled === false) {
-                SmsLog::create([
+                $this->writeLog([
                     'to_phone' => $toPhone,
                     'user_id' => $userId,
                     'trigger_event' => $triggerEvent,
@@ -112,7 +112,7 @@ class SmsService
                 'body' => $message,
             ]);
 
-            SmsLog::create([
+            $this->writeLog([
                 'to_phone' => $toPhone,
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -126,7 +126,7 @@ class SmsService
         } catch (\Exception $e) {
             Log::error('SMS send failed', ['error' => $e->getMessage(), 'to' => $toPhone]);
 
-            SmsLog::create([
+            $this->writeLog([
                 'to_phone' => $toPhone,
                 'user_id' => $userId,
                 'trigger_event' => $triggerEvent,
@@ -153,7 +153,6 @@ class SmsService
 
     /**
      * Normalize any phone number to E.164 format for Twilio.
-     * Handles: 7782556370, 778-255-6370, (778) 255-6370, +17782556370, 17782556370
      */
     private function formatPhone(?string $phone): ?string
     {
@@ -185,5 +184,18 @@ class SmsService
         ]);
 
         return null;
+    }
+
+    private function writeLog(array $data): void
+    {
+        try {
+            SmsLog::create($data);
+        } catch (\Exception $e) {
+            Log::warning('SmsLog write failed', [
+                'error' => $e->getMessage(),
+                'trigger' => $data['trigger_event'] ?? null,
+                'to' => $data['to_phone'] ?? null,
+            ]);
+        }
     }
 }

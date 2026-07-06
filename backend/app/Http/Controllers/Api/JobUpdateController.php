@@ -86,8 +86,6 @@ class JobUpdateController extends Controller
                         'job_id' => $job->id,
                         'error' => $e->getMessage(),
                     ]);
-
-                    return response()->json(['message' => 'Photo upload failed: '.$e->getMessage()], 500);
                 }
             }
         }
@@ -98,10 +96,17 @@ class JobUpdateController extends Controller
             $job->update(['status' => 'progress_updated']);
         }
 
-        if ($update->visibility === 'customer_visible') {
-            $this->notifications->progressUpdateCustomer($job->fresh(['lead', 'customer']), $update);
-        } else {
-            $this->notifications->progressUpdate($job->fresh(), $user, $update->visibility);
+        try {
+            if ($update->visibility === 'customer_visible') {
+                $this->notifications->progressUpdateCustomer($job->fresh(['lead', 'customer']), $update);
+            } else {
+                $this->notifications->progressUpdate($job->fresh(), $user, $update->visibility);
+            }
+        } catch (\Exception $e) {
+            Log::error('Notification failed after job update', [
+                'job_id' => $job->id,
+                'error' => $e->getMessage(),
+            ]);
         }
 
         return response()->json($update->load(['postedBy:id,name,role', 'photos']), 201);

@@ -516,7 +516,6 @@ class JobController extends Controller
             $job->customer,
             SmsMessageTemplates::jobCompletePendingApproval($job->customer, $job, $portalUrl),
             'contractor_marked_complete',
-            $job->customer_id,
             $job->id
         );
 
@@ -622,7 +621,6 @@ class JobController extends Controller
             $job->contractor,
             SmsMessageTemplates::revisionRequested($job->contractor, $job, $contractorPortalUrl),
             'revision_requested',
-            $job->contractor_id,
             $job->id
         );
 
@@ -732,7 +730,6 @@ class JobController extends Controller
                 $job->customer,
                 SmsMessageTemplates::paymentConfirmed($job->customer, $job),
                 'payment_confirmed',
-                $job->customer_id,
                 $job->id
             );
         }

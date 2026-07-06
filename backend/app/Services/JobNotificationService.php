@@ -307,7 +307,6 @@ class JobNotificationService
             $job->customer,
             SmsMessageTemplates::progressUpdateCustomer($job->customer, $job, $portalUrl),
             'progress_update_customer',
-            $job->customer_id,
             $job->id
         );
 
