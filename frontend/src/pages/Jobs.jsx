@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Trash2 } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
+import { confirmDanger, showError, showSuccess } from '../utils/swal';
 
 const tabs = [
   { label: 'All', value: '' },
@@ -75,6 +77,22 @@ export default function Jobs() {
   };
 
   useEffect(() => { loadJobs(); }, [activeTab, isContractor]);
+
+  const confirmDeleteJob = async (jobId) => {
+    const ok = await confirmDanger({
+      title: 'Delete This Job?',
+      text: 'This will permanently delete the job and all related records. The lead will be reset so it can be converted again. This cannot be undone.',
+      confirmText: 'Yes, Delete Job',
+    });
+    if (!ok) return;
+    try {
+      await api.delete(`/jobs/${jobId}`);
+      await showSuccess('Job deleted successfully');
+      loadJobs();
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to delete job');
+    }
+  };
 
   if (isContractor) {
     return (
@@ -212,11 +230,14 @@ export default function Jobs() {
                 <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">Start</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 hidden lg:table-cell">PM</th>
+                {user?.role === 'owner' && (
+                  <th className="text-right px-4 py-3 font-medium text-slate-500 w-12" />
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {jobs.length === 0 ? (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-slate-500">No jobs found.</td></tr>
+                <tr><td colSpan={user?.role === 'owner' ? 7 : 6} className="px-4 py-12 text-center text-slate-500">No jobs found.</td></tr>
               ) : jobs.map((job) => (
                 <tr key={job.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3">
@@ -229,6 +250,18 @@ export default function Jobs() {
                   <td className="px-4 py-3"><StatusBadge status={job.status} /></td>
                   <td className="px-4 py-3 hidden sm:table-cell">{job.scheduled_start_date?.split('T')[0] || '—'}</td>
                   <td className="px-4 py-3 hidden lg:table-cell">{job.pm?.name || '—'}</td>
+                  {user?.role === 'owner' && (
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); confirmDeleteJob(job.id); }}
+                        className="text-red-400 hover:text-red-600 p-1.5 rounded"
+                        title="Delete job"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>

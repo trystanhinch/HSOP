@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, Send, FileText, Plus } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Calendar, FileText, Plus, Send, Trash2 } from 'lucide-react';
 import api, { storageUrl } from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
 import AssignUserModal from '../components/AssignUserModal';
@@ -35,6 +35,7 @@ function calcPriceBreakdown(job) {
 
 export default function JobDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [job, setJob] = useState(null);
   const [updates, setUpdates] = useState([]);
@@ -62,6 +63,8 @@ export default function JobDetail() {
   const [showCustomerRevision, setShowCustomerRevision] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const isCustomer = user?.role === 'customer';
   const canManage = ['owner', 'pm'].includes(user?.role);
@@ -257,6 +260,20 @@ export default function JobDetail() {
     }
   };
 
+  const deleteJob = async () => {
+    setDeleting(true);
+    try {
+      await api.delete(`/jobs/${job.id}`);
+      await showSuccess('Job deleted successfully');
+      navigate('/jobs');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to delete job');
+    } finally {
+      setDeleting(false);
+      setShowDeleteConfirm(false);
+    }
+  };
+
   const createInvoice = async () => {
     if (!job?.quote?.id) return;
     const ok = await confirmAction({
@@ -306,15 +323,27 @@ export default function JobDetail() {
       </Link>
 
       <div className="bg-white rounded-xl border border-slate-200 p-6 mb-6">
-        <div className="flex flex-wrap items-center gap-3 mb-2">
-          <h2 className="text-lg font-semibold text-slate-900">{job.job_title || `Job #${job.id}`}</h2>
-          {canManage ? (
-            <select value={job.status} onChange={(e) => updateJobStatus(e.target.value)}
-              className="text-sm border border-slate-300 rounded-lg px-2 py-1">
-              {jobStatuses.map((s) => <option key={s} value={s}>{getStatusLabel(s)}</option>)}
-            </select>
-          ) : (
-            <StatusBadge status={job.status} />
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-lg font-semibold text-slate-900">{job.job_title || `Job #${job.id}`}</h2>
+            {canManage ? (
+              <select value={job.status} onChange={(e) => updateJobStatus(e.target.value)}
+                className="text-sm border border-slate-300 rounded-lg px-2 py-1">
+                {jobStatuses.map((s) => <option key={s} value={s}>{getStatusLabel(s)}</option>)}
+              </select>
+            ) : (
+              <StatusBadge status={job.status} />
+            )}
+          </div>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setShowDeleteConfirm(true)}
+              className="flex items-center gap-1.5 text-red-600 border border-red-300 hover:bg-red-50 rounded-lg px-3 py-2 text-sm font-medium"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete Job
+            </button>
           )}
         </div>
         <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-sm">
@@ -906,6 +935,39 @@ export default function JobDetail() {
                 className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium"
               >
                 {completing ? 'Submitting...' : 'Yes, Mark Complete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+            <div className="text-center mb-4">
+              <div className="text-4xl mb-3">⚠️</div>
+              <h3 className="font-semibold text-slate-800 text-lg">Delete This Job?</h3>
+              <p className="text-sm text-slate-500 mt-2">
+                This will permanently delete the job, all messages, updates,
+                photos, quotes, and invoices. The lead will be reset so it
+                can be converted again. This cannot be undone.
+              </p>
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button
+                type="button"
+                onClick={() => setShowDeleteConfirm(false)}
+                className="flex-1 border border-slate-300 text-slate-600 rounded-lg py-2.5 text-sm font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={deleteJob}
+                disabled={deleting}
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium"
+              >
+                {deleting ? 'Deleting...' : 'Yes, Delete Job'}
               </button>
             </div>
           </div>
