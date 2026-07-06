@@ -96,6 +96,13 @@ class UploadStorage
             throw new \RuntimeException('S3 upload failed for path: '.$path);
         }
 
+        $verify = Storage::disk('s3')->get($path);
+        if ($verify === null || $verify === '') {
+            throw new \RuntimeException(
+                'S3 upload verify failed — object not readable after put. Check bucket/region/endpoint. Path: '.$path
+            );
+        }
+
         try {
             Storage::disk('s3')->setVisibility($path, 'public');
         } catch (\Throwable) {
