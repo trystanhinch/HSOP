@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\CustomerPortalController;
+use App\Http\Controllers\Api\AdminUserController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyController;
@@ -143,4 +144,10 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/sms-logs', [SmsLogController::class, 'index'])->middleware('role:owner');
     Route::get('/email-logs', [EmailLogController::class, 'index'])->middleware('role:owner');
     Route::put('/users/{user}/toggle-sms', [UserController::class, 'toggleSms'])->middleware('role:owner');
+
+    Route::middleware('role:owner')->prefix('admin')->group(function () {
+        Route::get('/users', [AdminUserController::class, 'index']);
+        Route::post('/users', [AdminUserController::class, 'store']);
+        Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
+    });
 });
