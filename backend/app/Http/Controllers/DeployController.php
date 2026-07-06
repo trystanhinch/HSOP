@@ -259,12 +259,18 @@ class DeployController extends Controller
                 //
             }
             $url = $uploads->publicUrl($path);
+            $httpStatus = null;
+            try {
+                $httpStatus = \Illuminate\Support\Facades\Http::timeout(10)->get($url)->status();
+            } catch (\Throwable $e) {
+                $httpStatus = 'fetch_failed: '.$e->getMessage();
+            }
 
             return response()->json([
                 'ok' => true,
                 'path' => $path,
                 'url' => $url,
-                'exists' => Storage::disk('s3')->exists($path),
+                'http_status' => $httpStatus,
             ]);
         } catch (\Throwable $e) {
             return response()->json(['ok' => false, 'error' => $e->getMessage()], 500);
