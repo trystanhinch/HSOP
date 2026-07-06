@@ -500,8 +500,8 @@ class JobController extends Controller
             abort(403);
         }
 
-        if (! in_array($job->status, ['in_progress', 'progress_updated', 'revision_requested', 'corrections_required'], true)) {
-            return response()->json(['message' => 'Job must be in progress to mark complete'], 422);
+        if (! in_array($job->status, ['in_progress', 'progress_updated', 'scheduled', 'contractor_assigned', 'revision_requested', 'corrections_required'], true)) {
+            return response()->json(['message' => 'Job cannot be marked complete in its current status.'], 422);
         }
 
         $job->update([

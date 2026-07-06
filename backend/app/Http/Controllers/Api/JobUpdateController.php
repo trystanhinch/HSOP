@@ -92,7 +92,7 @@ class JobUpdateController extends Controller
             }
         }
 
-        if ($job->status === 'scheduled') {
+        if (in_array($job->status, ['scheduled', 'contractor_assigned'], true)) {
             $job->update(['status' => 'in_progress']);
         } elseif (in_array($job->status, ['in_progress', 'progress_updated'], true)) {
             $job->update(['status' => 'progress_updated']);
