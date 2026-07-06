@@ -349,6 +349,38 @@ class DeployController extends Controller
         }
     }
 
+    public function fixS3PhotoUrls(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $updated = 0;
+        foreach (\App\Models\JobUpdatePhoto::whereNotNull('file_url')->get() as $photo) {
+            $new = UploadStorage::toPublicUrl($photo->file_url);
+            if ($new && $new !== $photo->file_url) {
+                $photo->update(['file_url' => $new]);
+                $updated++;
+            }
+        }
+
+        foreach (\App\Models\RevisionRequestPhoto::whereNotNull('file_url')->get() as $photo) {
+            $new = UploadStorage::toPublicUrl($photo->file_url);
+            if ($new && $new !== $photo->file_url) {
+                $photo->update(['file_url' => $new]);
+                $updated++;
+            }
+        }
+
+        foreach (\App\Models\ContractorDocument::whereNotNull('file_url')->get() as $doc) {
+            $new = UploadStorage::toPublicUrl($doc->file_url);
+            if ($new && $new !== $doc->file_url) {
+                $doc->update(['file_url' => $new]);
+                $updated++;
+            }
+        }
+
+        return response()->json(['ok' => true, 'updated' => $updated]);
+    }
+
     public function cleanBrokenFileUrls(string $secret): JsonResponse
     {
         $this->authorizeDeploy($secret);
