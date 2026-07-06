@@ -11,8 +11,9 @@ class FileController extends Controller
 {
     public function __construct(protected UploadStorage $uploads) {}
 
-    public function show(string $path): StreamedResponse|\Symfony\Component\HttpFoundation\BinaryFileResponse
+    public function show(string $path): StreamedResponse|\Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\Response
     {
+        $path = urldecode($path);
         $path = str_replace(['..', '\\'], '', $path);
 
         if ($this->uploads->diskName() === 's3') {

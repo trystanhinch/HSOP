@@ -58,12 +58,10 @@ class UploadStorage
             throw new \RuntimeException('Cannot build public URL for empty storage path');
         }
 
-        if ($this->diskName() === 's3') {
-            // Serve via API proxy — works with private Spaces buckets and avoids CORS issues.
-            return rtrim(config('app.url'), '/').'/api/files/'.$path;
-        }
+        // Encode slashes so the full storage key survives Laravel/nginx routing.
+        $encoded = implode('%2F', array_map('rawurlencode', explode('/', $path)));
 
-        return rtrim(config('app.url'), '/').'/api/files/'.$path;
+        return rtrim(config('app.url'), '/').'/api/files/'.$encoded;
     }
 
     /** Convert legacy /storage/... or broken API /storage/ URLs to the files route. */

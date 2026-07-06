@@ -39,13 +39,14 @@ function resolveStorageBase(apiBase) {
 export function storageUrl(path) {
   if (!path) return '';
   if (/^https?:\/\//i.test(path)) {
-    // Legacy broken URLs: api.serviceop.ca/storage/... → api.serviceop.ca/api/files/...
     return path.replace(/^(https?:\/\/[^/]+)\/storage\//i, '$1/api/files/');
   }
   const base = resolveStorageBase(resolveApiBase());
   const normalized = path.startsWith('/') ? path : `/${path}`;
   if (normalized.startsWith('/storage/')) {
-    return `${base}/api/files/${normalized.slice('/storage/'.length)}`;
+    const key = normalized.slice('/storage/'.length);
+    const encoded = key.split('/').map(encodeURIComponent).join('%2F');
+    return `${base}/api/files/${encoded}`;
   }
   if (normalized.startsWith('/api/files/')) {
     return `${base}${normalized}`;
