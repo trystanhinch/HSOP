@@ -277,7 +277,12 @@ export default function CustomerPortal() {
                     <div className="grid grid-cols-3 gap-2 mt-3">
                       {u.photos.map((url, j) => (
                         <button key={j} type="button" onClick={() => setSelectedPhoto(storageUrl(url))}>
-                          <img src={storageUrl(url)} alt="Progress" className="w-full h-24 object-cover rounded-lg border hover:opacity-80" />
+                          <img
+                            src={storageUrl(url)}
+                            alt="Progress"
+                            className="w-full h-24 object-cover rounded-lg border hover:opacity-80"
+                            onError={(e) => { e.target.style.display = 'none'; }}
+                          />
                         </button>
                       ))}
                     </div>

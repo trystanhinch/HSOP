@@ -7,14 +7,17 @@ use App\Models\Job;
 use App\Models\JobUpdate;
 use App\Models\JobUpdatePhoto;
 use App\Services\JobNotificationService;
+use App\Services\UploadStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class JobUpdateController extends Controller
 {
-    public function __construct(protected JobNotificationService $notifications) {}
+    public function __construct(
+        protected JobNotificationService $notifications,
+        protected UploadStorage $uploads,
+    ) {}
     public function index(Request $request, string $jobId): JsonResponse
     {
         $user = $request->user();
@@ -74,11 +77,11 @@ class JobUpdateController extends Controller
         if ($request->hasFile('photos')) {
             foreach ($request->file('photos') as $photo) {
                 try {
-                    $path = $photo->store('job-updates/'.$job->id, 'public');
+                    $path = $this->uploads->store($photo, 'job-updates/'.$job->id);
                     JobUpdatePhoto::create([
                         'job_update_id' => $update->id,
                         'file_name' => $photo->getClientOriginalName(),
-                        'file_url' => '/storage/'.$path,
+                        'file_url' => $this->uploads->publicUrl($path),
                         'file_size' => round($photo->getSize() / 1024, 1).' KB',
                     ]);
                 } catch (\Exception $e) {

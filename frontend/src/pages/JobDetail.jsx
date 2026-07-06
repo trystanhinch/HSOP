@@ -694,7 +694,12 @@ export default function JobDetail() {
                   <div className="flex flex-wrap gap-2 mt-3">
                     {u.photos.map((p) => (
                       <a key={p.id} href={storageUrl(p.file_url)} target="_blank" rel="noreferrer">
-                        <img src={storageUrl(p.file_url)} alt={p.file_name} className="w-20 h-20 object-cover rounded-lg border" />
+                        <img
+                          src={storageUrl(p.file_url)}
+                          alt={p.file_name}
+                          className="w-20 h-20 object-cover rounded-lg border"
+                          onError={(e) => { e.target.style.display = 'none'; }}
+                        />
                       </a>
                     ))}
                   </div>

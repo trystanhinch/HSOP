@@ -22,9 +22,9 @@ use App\Services\PricingService;
 use App\Services\PayoutWorkflowService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
+use App\Services\UploadStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class JobController extends Controller
 {
@@ -33,7 +33,8 @@ class JobController extends Controller
         protected PayoutWorkflowService $payouts,
         protected PricingService $pricing,
         protected SmsService $sms,
-        protected EmailService $email
+        protected EmailService $email,
+        protected UploadStorage $uploads,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -601,11 +602,11 @@ class JobController extends Controller
 
         if ($request->hasFile('photos')) {
             foreach ($request->file('photos') as $photo) {
-                $path = $photo->store('revision-requests/'.$job->id, 'public');
+                $path = $this->uploads->store($photo, 'revision-requests/'.$job->id);
                 RevisionRequestPhoto::create([
                     'revision_request_id' => $revision->id,
                     'file_name' => $photo->getClientOriginalName(),
-                    'file_url' => Storage::disk('public')->url($path),
+                    'file_url' => $this->uploads->publicUrl($path),
                 ]);
             }
         }

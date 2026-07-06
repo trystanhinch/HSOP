@@ -5,12 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Contractor;
 use App\Models\ContractorDocument;
+use App\Services\UploadStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class ContractorDocumentController extends Controller
 {
+    public function __construct(protected UploadStorage $uploads) {}
     public function index(string $id): JsonResponse
     {
         $contractor = Contractor::findOrFail($id);
@@ -51,8 +52,8 @@ class ContractorDocumentController extends Controller
 
         $file = $request->file('document');
         $filename = time().'_'.preg_replace('/[^A-Za-z0-9._-]/', '_', $file->getClientOriginalName());
-        $path = $file->storeAs('contractor-documents/'.$contractor->id, $filename, 'public');
-        $url = Storage::disk('public')->url($path);
+        $path = $this->uploads->storeAs($file, 'contractor-documents/'.$contractor->id, $filename);
+        $url = $this->uploads->publicUrl($path);
 
         $doc = ContractorDocument::create([
             'contractor_id' => $contractor->id,

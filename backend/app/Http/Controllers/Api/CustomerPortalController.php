@@ -20,9 +20,9 @@ use App\Services\JobNotificationService;
 use App\Services\PayoutWorkflowService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
+use App\Services\UploadStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Storage;
 
 class CustomerPortalController extends Controller
 {
@@ -30,7 +30,8 @@ class CustomerPortalController extends Controller
         protected SmsService $sms,
         protected EmailService $email,
         protected JobNotificationService $notifications,
-        protected PayoutWorkflowService $payouts
+        protected PayoutWorkflowService $payouts,
+        protected UploadStorage $uploads,
     ) {}
 
     protected function leadFromToken(string $token): Lead
@@ -196,11 +197,11 @@ class CustomerPortalController extends Controller
 
         if ($request->hasFile('photos')) {
             foreach ($request->file('photos') as $photo) {
-                $path = $photo->store('revision-requests/'.$job->id, 'public');
+                $path = $this->uploads->store($photo, 'revision-requests/'.$job->id);
                 RevisionRequestPhoto::create([
                     'revision_request_id' => $revision->id,
                     'file_name' => $photo->getClientOriginalName(),
-                    'file_url' => Storage::disk('public')->url($path),
+                    'file_url' => $this->uploads->publicUrl($path),
                 ]);
             }
         }

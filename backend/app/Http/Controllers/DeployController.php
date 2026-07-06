@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\LeadCustomerResolver;
+use App\Services\UploadStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -101,6 +102,65 @@ class DeployController extends Controller
         Artisan::call('storage:link');
 
         return $this->ok('storage:link');
+    }
+
+    public function fixPhotoUrls(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $updated = 0;
+
+        foreach (\App\Models\JobUpdatePhoto::all() as $photo) {
+            $new = UploadStorage::normalizeStoredUrl($photo->file_url);
+            if ($new !== $photo->file_url) {
+                $photo->update(['file_url' => $new]);
+                $updated++;
+            }
+        }
+
+        foreach (\App\Models\RevisionRequestPhoto::all() as $photo) {
+            $new = UploadStorage::normalizeStoredUrl($photo->file_url);
+            if ($new !== $photo->file_url) {
+                $photo->update(['file_url' => $new]);
+                $updated++;
+            }
+        }
+
+        foreach (\App\Models\ContractorDocument::all() as $doc) {
+            $new = UploadStorage::normalizeStoredUrl($doc->file_url);
+            if ($new !== $doc->file_url) {
+                $doc->update(['file_url' => $new]);
+                $updated++;
+            }
+        }
+
+        foreach (\App\Models\LeadPhoto::all() as $photo) {
+            $new = UploadStorage::normalizeStoredUrl($photo->file_url);
+            if ($new !== $photo->file_url) {
+                $photo->update(['file_url' => $new]);
+                $updated++;
+            }
+        }
+
+        foreach (\App\Models\Contractor::all() as $contractor) {
+            $changes = [];
+            foreach (['wcb_file_url', 'insurance_file_url'] as $col) {
+                $new = UploadStorage::normalizeStoredUrl($contractor->{$col});
+                if ($new !== $contractor->{$col}) {
+                    $changes[$col] = $new;
+                }
+            }
+            if ($changes) {
+                $contractor->update($changes);
+                $updated += count($changes);
+            }
+        }
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Photo URLs normalized to /api/files route.',
+            'updated' => $updated,
+        ]);
     }
 
     public function cleanTestData(string $secret): JsonResponse

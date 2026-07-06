@@ -20,12 +20,15 @@ use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\EmailLogController;
+use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\SmsLogController;
 use App\Http\Controllers\Api\UserController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/register', [AuthController::class, 'register']);
+
+Route::get('/files/{path}', [FileController::class, 'show'])->where('path', '.*');
 
 Route::get('/quote/view/{token}', [QuoteController::class, 'viewByToken']);
 Route::post('/quote/view/{token}/approve', [QuoteController::class, 'approveByToken']);

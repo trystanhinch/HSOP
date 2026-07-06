@@ -35,12 +35,22 @@ function resolveStorageBase(apiBase) {
   return apiBase.replace(/\/api\/?$/, '');
 }
 
-/** Turn /storage/... paths into full URLs on live (frontend and API are on different hosts). */
+/** Turn stored file paths into full public URLs (handles legacy /storage/ paths). */
 export function storageUrl(path) {
   if (!path) return '';
-  if (/^https?:\/\//i.test(path)) return path;
+  if (/^https?:\/\//i.test(path)) {
+    // Legacy broken URLs: api.serviceop.ca/storage/... → api.serviceop.ca/api/files/...
+    return path.replace(/^(https?:\/\/[^/]+)\/storage\//i, '$1/api/files/');
+  }
+  const base = resolveStorageBase(resolveApiBase());
   const normalized = path.startsWith('/') ? path : `/${path}`;
-  return `${resolveStorageBase(resolveApiBase())}${normalized}`;
+  if (normalized.startsWith('/storage/')) {
+    return `${base}/api/files/${normalized.slice('/storage/'.length)}`;
+  }
+  if (normalized.startsWith('/api/files/')) {
+    return `${base}${normalized}`;
+  }
+  return `${base}${normalized}`;
 }
 
 const api = axios.create({
