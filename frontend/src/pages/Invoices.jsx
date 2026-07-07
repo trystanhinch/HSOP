@@ -5,6 +5,7 @@ import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
+import { formatDate } from '../utils/formatDate';
 
 const PAYABLE_STATUSES = ['draft', 'sent', 'invoice_sent', 'awaiting_payment', 'partially_paid'];
 
@@ -111,7 +112,7 @@ function PaymentHistory({ invoiceId, balance }) {
         <tbody>
           {payments.map((p) => (
             <tr key={p.id} className="border-t border-slate-200">
-              <td className="py-1.5 pr-3">{p.paid_date?.split('T')[0] || '—'}</td>
+              <td className="py-1.5 pr-3">{formatDate(p.paid_date)}</td>
               <td className="py-1.5 pr-3">${Number(p.amount).toFixed(2)}</td>
               <td className="py-1.5 pr-3">{p.reference_number || '—'}</td>
               <td className="py-1.5">{p.marked_by?.name || p.markedBy?.name || '—'}</td>
@@ -205,7 +206,7 @@ export default function Invoices() {
               <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No invoices found.</td></tr>
             ) : invoices.map((inv) => (
               <Fragment key={inv.id}>
-                <tr className="hover:bg-slate-50">
+                <tr className="hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}>
                   <td className="px-2 py-3">
                     <button type="button" onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}
                       className="text-slate-400 hover:text-slate-600">
@@ -217,8 +218,8 @@ export default function Invoices() {
                   <td className="px-4 py-3 whitespace-nowrap">{inv.customer?.name || '—'}</td>
                   <td className="px-4 py-3 whitespace-nowrap">${Number(inv.balance || 0).toFixed(2)}</td>
                   <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={inv.status} />{inv.is_overdue && <span className="ml-1"><StatusBadge status="overdue" /></span>}</td>
-                  <td className="px-4 py-3 hidden lg:table-cell whitespace-nowrap">{inv.due_date?.split?.('T')?.[0] || inv.due_date || '—'}</td>
-                  <td className="px-4 py-3 whitespace-nowrap sticky right-0 bg-white">
+                  <td className="px-4 py-3 hidden lg:table-cell whitespace-nowrap">{formatDate(inv.due_date)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap sticky right-0 bg-white" onClick={(e) => e.stopPropagation()}>
                     <div className="flex flex-wrap gap-2">
                       {canSend(inv) && (
                         <button type="button" onClick={() => sendInvoice(inv)}

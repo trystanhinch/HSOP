@@ -7,6 +7,8 @@ import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
+import { formatDate, formatTime } from '../utils/formatDate';
+
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
@@ -127,10 +129,8 @@ export default function ContractorDashboard() {
                   <p className="text-sm font-semibold text-indigo-800">{sv.customer_name}</p>
                   <p className="text-xs text-indigo-700">{sv.address}</p>
                   <p className="text-xs text-indigo-600">
-                    {new Date(sv.visit_date).toLocaleDateString('en-CA', {
-                      weekday: 'short', month: 'short', day: 'numeric',
-                    })}
-                    {sv.visit_time && ` at ${String(sv.visit_time).slice(0, 5)}`}
+                    {formatDate(sv.visit_date)}
+                    {sv.visit_time && ` at ${formatTime(sv.visit_time)}`}
                   </p>
                 </div>
                 <button
@@ -155,14 +155,14 @@ export default function ContractorDashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="Assigned Jobs" value={data.assigned_jobs} icon={Briefcase} color="#3B82F6" />
-        <KPICard title="Active Jobs" value={data.active_jobs} icon={Hammer} color="#22C55E" />
-        <KPICard title="Upcoming Jobs" value={data.upcoming_jobs} icon={Calendar} color="#EAB308" />
-        <KPICard title="Pending Payout" value={`$${Number(data.pending_payout || 0).toLocaleString()}`} icon={Wallet} color="#8B5CF6" />
+        <KPICard title="Assigned Jobs" value={data.assigned_jobs} icon={Briefcase} color="#3B82F6" to="/jobs" />
+        <KPICard title="Active Jobs" value={data.active_jobs} icon={Hammer} color="#22C55E" to="/jobs?status=in_progress" />
+        <KPICard title="Upcoming Jobs" value={data.upcoming_jobs} icon={Calendar} color="#EAB308" to="/jobs?status=scheduled" />
+        <KPICard title="Pending Payout" value={`$${Number(data.pending_payout || 0).toLocaleString()}`} icon={Wallet} color="#8B5CF6" to="/payouts" />
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-xl">
-        <KPICard title="Total Paid to Date" value={`$${Number(data.paid_payout_total || 0).toLocaleString()}`} icon={CheckCircle} color="#22C55E" />
+        <KPICard title="Total Paid to Date" value={`$${Number(data.paid_payout_total || 0).toLocaleString()}`} icon={CheckCircle} color="#22C55E" to="/payouts" />
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -174,7 +174,7 @@ export default function ContractorDashboard() {
             <div key={job.id} className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <p className="font-medium text-slate-900">{job.address}</p>
-                <p className="text-sm text-slate-500 capitalize">{formatCategory(job.service_category)} · Start: {job.scheduled_start_date?.split('T')[0] || 'TBD'}</p>
+                <p className="text-sm text-slate-500 capitalize">{formatCategory(job.service_category)} · Start: {job.scheduled_start_date ? formatDate(job.scheduled_start_date) : 'TBD'}</p>
                 <div className="mt-1"><StatusBadge status={job.status} /></div>
               </div>
               <div className="flex flex-wrap gap-2">

@@ -6,7 +6,6 @@ import ProtectedRoute from './components/ProtectedRoute';
 import RoleGuard from './components/RoleGuard';
 import DashboardRedirect from './components/DashboardRedirect';
 import Login from './pages/Login';
-import Register from './pages/Register';
 import AdminDashboard from './pages/AdminDashboard';
 import PMDashboard from './pages/PMDashboard';
 import ContractorDashboard from './pages/ContractorDashboard';
@@ -38,7 +37,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
+          <Route path="/register" element={<Navigate to="/login" replace />} />
           <Route path="/quote/view/:token" element={<CustomerQuoteView />} />
           <Route path="/portal/:token" element={<CustomerPortal />} />
           <Route path="/payment/:jobId" element={<PaymentPage />} />

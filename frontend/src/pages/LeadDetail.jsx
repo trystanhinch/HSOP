@@ -8,21 +8,12 @@ import LeadForm from '../components/LeadForm';
 import ContractorLeadPriceForm from '../components/ContractorLeadPriceForm';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
+import { formatDate, formatTime, formatDateTime } from '../utils/formatDate';
 
 const statuses = ['new', 'contacted', 'site_visit_scheduled', 'quote_needed', 'converted', 'lost'];
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
-}
-
-function formatVisitDate(date) {
-  if (!date) return '—';
-  return date.split('T')[0];
-}
-
-function formatVisitTime(time) {
-  if (!time) return '';
-  return time.slice(0, 5);
 }
 
 export default function LeadDetail() {
@@ -43,6 +34,7 @@ export default function LeadDetail() {
   const [visitTime, setVisitTime] = useState('');
   const [contractorId, setContractorId] = useState('');
   const [visitNotes, setVisitNotes] = useState('');
+  const [scheduleAddress, setScheduleAddress] = useState('');
   const [selectedContractorId, setSelectedContractorId] = useState('');
   const [assigningContractor, setAssigningContractor] = useState(false);
   const [showContractorSelect, setShowContractorSelect] = useState(false);
@@ -57,6 +49,7 @@ export default function LeadDetail() {
         setContractorId(data.site_visit_contractor_id ? String(data.site_visit_contractor_id) : '');
         setSelectedContractorId(data.assigned_contractor_id ? String(data.assigned_contractor_id) : '');
         setVisitNotes(data.site_visit_notes || '');
+        setScheduleAddress(data.address || '');
         setShowContractorSelect(false);
       })
       .catch((e) => {
@@ -125,6 +118,7 @@ export default function LeadDetail() {
         site_visit_time: visitTime,
         site_visit_contractor_id: contractorId,
         site_visit_notes: visitNotes || undefined,
+        ...(!lead.address && scheduleAddress ? { address: scheduleAddress } : {}),
       });
       setSiteVisitSaved(true);
       await showSuccess('Site visit scheduled.');
@@ -233,8 +227,8 @@ export default function LeadDetail() {
               <div>
                 <p className="text-slate-400 text-xs mb-0.5">Date & Time</p>
                 <p className="font-medium text-slate-800">
-                  {formatVisitDate(lead.site_visit_date)}
-                  {lead.site_visit_time && ` at ${formatVisitTime(lead.site_visit_time)}`}
+                  {formatDate(lead.site_visit_date)}
+                  {lead.site_visit_time && ` at ${formatTime(lead.site_visit_time)}`}
                 </p>
               </div>
             )}
@@ -488,7 +482,21 @@ export default function LeadDetail() {
             {lead.site_visit_contractor && (
               <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm">
                 Currently assigned: <strong>{lead.site_visit_contractor?.name}</strong>
-                {lead.site_visit_date && <> · {formatVisitDate(lead.site_visit_date)} at {formatVisitTime(lead.site_visit_time)}</>}
+                {lead.site_visit_date && <> · {formatDate(lead.site_visit_date)} at {formatTime(lead.site_visit_time)}</>}
+              </div>
+            )}
+
+            {!lead.address && (
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Job Address *</label>
+                <input
+                  type="text"
+                  value={scheduleAddress}
+                  onChange={(e) => setScheduleAddress(e.target.value)}
+                  placeholder="Enter the job site address"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                />
+                <p className="text-xs text-slate-400 mt-1">Required before scheduling a site visit.</p>
               </div>
             )}
 
@@ -525,7 +533,7 @@ export default function LeadDetail() {
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
             </div>
 
-            <button onClick={saveSiteVisit} disabled={!visitDate || !visitTime || !contractorId || saving}
+            <button onClick={saveSiteVisit} disabled={!visitDate || !visitTime || !contractorId || (!lead.address && !scheduleAddress) || saving}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium">
               {saving ? 'Scheduling...' : 'Save Site Visit & Notify'}
             </button>
@@ -544,7 +552,7 @@ export default function LeadDetail() {
             <div className="space-y-2">
               {lead.activity.map((a) => (
                 <div key={a.id} className="text-xs text-slate-600 flex gap-2">
-                  <span className="text-slate-400">{new Date(a.created_at).toLocaleString()}</span>
+                  <span className="text-slate-400">{formatDateTime(a.created_at)}</span>
                   <span className="font-medium">{a.user?.name}</span>
                   <span>{a.action_type}</span>
                 </div>

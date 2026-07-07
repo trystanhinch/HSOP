@@ -30,6 +30,14 @@ export default function LeadForm({ initial, onSubmit, onCancel, saving }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrors({});
+    if (!form.contact_name) {
+      setErrors({ contact_name: ['Contact name is required.'] });
+      return;
+    }
+    if (!form.phone && !form.email) {
+      setErrors({ phone: ['Please enter at least a phone number or email.'] });
+      return;
+    }
     try {
       await onSubmit(form);
     } catch (err) {
@@ -53,7 +61,15 @@ export default function LeadForm({ initial, onSubmit, onCancel, saving }) {
       {field('contact_name', 'Contact Name', 'text', true)}
       {field('phone', 'Phone')}
       {field('email', 'Email', 'email')}
-      {field('address', 'Address', 'text', true)}
+      <div>
+        <label className="text-xs font-medium text-slate-600 block mb-1">Address</label>
+        <input type="text" value={form.address || ''} onChange={(e) => setForm({ ...form, address: e.target.value })}
+          className={`w-full border rounded-lg px-3 py-2 text-sm ${errors.address ? 'border-red-400' : 'border-slate-300'}`} />
+        <p className="text-xs text-slate-400 mt-1">
+          Optional at this stage. Required before scheduling a site visit.
+        </p>
+        {errors.address && <p className="text-red-500 text-xs mt-1">{errors.address[0]}</p>}
+      </div>
 
       <div>
         <label className="text-xs font-medium text-slate-600 block mb-1">Service Category *</label>

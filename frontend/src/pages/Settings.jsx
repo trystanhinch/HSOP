@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
+import { formatDate } from '../utils/formatDate';
 import AddUserModal from '../components/AddUserModal';
 import DatabaseStructure from './DatabaseStructure';
 import { confirmAction, confirmDanger, showError, showSuccess } from '../utils/swal';
@@ -391,7 +392,7 @@ export default function Settings() {
                       </span>
                     </td>
                     <td className="px-4 py-3">{log.job?.address || log.related_job_id || '—'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{log.created_at?.split('T')[0] || '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{formatDate(log.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -426,7 +427,7 @@ export default function Settings() {
                       </span>
                     </td>
                     <td className="px-4 py-3">{log.job?.address || log.related_job_id || '—'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{log.created_at?.split('T')[0] || '—'}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">{formatDate(log.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -439,7 +440,7 @@ export default function Settings() {
         <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl">
           <h3 className="font-semibold text-slate-800 mb-2">Branding</h3>
           <p className="text-sm text-slate-500">Primary color: {settings?.branding?.primary_color || '#3B82F6'}</p>
-          <p className="text-sm text-slate-500 mt-1">Company name: {settings?.branding?.company_name || 'HSOP'}</p>
+          <p className="text-sm text-slate-500 mt-1">Company name: {settings?.branding?.company_name || 'ServiceOP'}</p>
         </div>
       )}
     </div>

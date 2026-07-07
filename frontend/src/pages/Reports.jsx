@@ -3,6 +3,7 @@ import { DollarSign, Briefcase, TrendingUp } from 'lucide-react';
 import api from '../api/axios';
 import KPICard from '../components/KPICard';
 import PageHeader from '../components/PageHeader';
+import { formatDate } from '../utils/formatDate';
 
 function fmt(n) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -58,7 +59,7 @@ export default function Reports() {
                 <td className="px-4 py-3 text-right">{fmt(q.contractor_base_price)}</td>
                 <td className="px-4 py-3 text-right">{fmt(q.customer_price_before_gst)}</td>
                 <td className="px-4 py-3 text-right text-green-600 font-medium">{fmt(q.hsop_markup)}</td>
-                <td className="px-4 py-3">{q.accepted_at ? new Date(q.accepted_at).toLocaleDateString() : '—'}</td>
+                <td className="px-4 py-3">{formatDate(q.accepted_at)}</td>
               </tr>
             ))}
           </tbody>

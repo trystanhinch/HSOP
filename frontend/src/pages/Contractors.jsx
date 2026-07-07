@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 
 export default function Contractors() {
+  const navigate = useNavigate();
   const [contractors, setContractors] = useState([]);
 
   useEffect(() => {
@@ -29,10 +30,12 @@ export default function Contractors() {
           </thead>
           <tbody className="divide-y divide-[#E2E8F0]">
             {contractors.map((c) => (
-              <tr key={c.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <Link to={`/contractors/${c.id}`} className="text-[#3B82F6] hover:underline font-medium">#{c.id}</Link>
-                </td>
+              <tr
+                key={c.id}
+                className="hover:bg-slate-50 cursor-pointer transition-colors"
+                onClick={() => navigate(`/contractors/${c.id}`)}
+              >
+                <td className="px-4 py-3 font-medium text-[#3B82F6]">#{c.id}</td>
                 <td className="px-4 py-3">{c.legal_name || c.operating_name || '—'}</td>
                 <td className="px-4 py-3 hidden md:table-cell">{(c.services || []).join(', ')}</td>
                 <td className="px-4 py-3 hidden lg:table-cell">{(c.cities || []).join(', ')}</td>

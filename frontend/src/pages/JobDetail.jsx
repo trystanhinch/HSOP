@@ -9,6 +9,7 @@ import ContractorPriceSubmission from '../components/ContractorPriceSubmission';
 import QuoteBuilder from '../components/QuoteBuilder';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
+import { formatDate, formatDateTime } from '../utils/formatDate';
 import { getStatusLabel } from '../utils/statusLabels';
 
 const roleLabel = { owner: 'Admin', pm: 'PM', contractor: 'Contractor', customer: 'Customer' };
@@ -412,7 +413,7 @@ export default function JobDetail() {
               <h3 className="font-semibold text-slate-800">Contractor Price Submitted</h3>
               {job.contractor_price_submitted_at && (
                 <p className="text-xs text-slate-500">
-                  Submitted {new Date(job.contractor_price_submitted_at).toLocaleString()}
+                  Submitted {formatDateTime(job.contractor_price_submitted_at)}
                 </p>
               )}
             </div>
@@ -479,7 +480,7 @@ export default function JobDetail() {
           <p className="text-sm font-medium text-blue-800">✓ Estimate sent to customer</p>
           {job.quote.sent_at && (
             <p className="text-xs text-blue-600 mt-1">
-              Sent {new Date(job.quote.sent_at).toLocaleString()}
+              Sent {formatDateTime(job.quote.sent_at)}
             </p>
           )}
           <p className="text-xs text-blue-600">Status: {job.quote.status}</p>
@@ -502,12 +503,12 @@ export default function JobDetail() {
         <div className="space-y-6">
           {job.status === 'paid_completed' && job.payment_confirmed_at && (
             <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm">
-              Payment confirmed on {new Date(job.payment_confirmed_at).toLocaleDateString()}
+              Payment confirmed on {formatDate(job.payment_confirmed_at)}
             </div>
           )}
           {job.status === 'completed' && job.completed_at && (
             <div className="bg-green-50 border border-green-200 text-green-800 rounded-xl p-4 text-sm">
-              Job completed on {new Date(job.completed_at).toLocaleDateString()}
+              Job completed on {formatDate(job.completed_at)}
             </div>
           )}
           {job.status === 'revision_requested' && job.revision_description && (
@@ -714,7 +715,7 @@ export default function JobDetail() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-slate-800">{u.posted_by?.name || u.postedBy?.name}</p>
-                    <p className="text-xs text-slate-400">{roleLabel[u.poster_role] || u.poster_role} · {new Date(u.created_at).toLocaleString()}</p>
+                    <p className="text-xs text-slate-400">{roleLabel[u.poster_role] || u.poster_role} · {formatDateTime(u.created_at)}</p>
                   </div>
                   {u.visibility === 'internal' && <span className="ml-auto text-xs bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">Internal Only</span>}
                 </div>
@@ -760,7 +761,7 @@ export default function JobDetail() {
                   <div className={`max-w-[75%] rounded-xl px-4 py-2 text-sm ${mine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
                     {!mine && <p className="text-xs opacity-70 mb-1">{m.sender?.name}</p>}
                     {m.content}
-                    <p className={`text-xs mt-1 ${mine ? 'text-blue-200' : 'text-slate-400'}`}>{new Date(m.created_at).toLocaleString()}</p>
+                    <p className={`text-xs mt-1 ${mine ? 'text-blue-200' : 'text-slate-400'}`}>{formatDateTime(m.created_at)}</p>
                   </div>
                 </div>
               );
@@ -860,7 +861,7 @@ export default function JobDetail() {
                   <span className="font-medium">{getStatusLabel(entry.action_type?.replace(/_/g, ' '))}</span>
                   {entry.user && <> — by {entry.user.name} ({entry.user.role})</>}
                 </p>
-                <p className="text-xs text-slate-400">{new Date(entry.created_at).toLocaleString()}</p>
+                <p className="text-xs text-slate-400">{formatDateTime(entry.created_at)}</p>
               </div>
             </div>
           ))}

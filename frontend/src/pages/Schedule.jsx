@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
+import { formatTime } from '../utils/formatDate';
 
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
@@ -89,13 +90,13 @@ export default function Schedule() {
                       type="button"
                       onClick={() => navigate(item.url)}
                       className={`w-full text-left text-xs border rounded px-2 py-1 mb-1 truncate font-medium hover:opacity-80 ${eventClass(item)}`}
-                      title={item.time ? `${item.time}${item.address ? ` · ${item.address}` : ''}` : item.address}
+                      title={item.time ? `${formatTime(item.time)}${item.address ? ` · ${item.address}` : ''}` : item.address}
                     >
                       {item.type === 'site_visit' ? (
                         <span>{item.customer_name || 'Site Visit'}</span>
                       ) : (
                         <>
-                          {item.time && <span className="opacity-70">{item.time} </span>}
+                          {item.time && <span className="opacity-70">{formatTime(item.time)} </span>}
                           {item.title}
                         </>
                       )}

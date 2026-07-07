@@ -49,9 +49,9 @@ export default function Register() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl mb-3">
-            <span className="text-white font-bold text-lg">JC</span>
+            <span className="text-white font-bold text-lg">SO</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">Job Command</h1>
+          <h1 className="text-2xl font-bold text-slate-900">ServiceOP</h1>
           <p className="text-slate-500 text-sm mt-1">Create your customer account</p>
         </div>
 

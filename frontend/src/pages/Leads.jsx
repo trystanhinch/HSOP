@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
@@ -9,12 +9,15 @@ import LeadForm from '../components/LeadForm';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
+import { formatDate } from '../utils/formatDate';
+
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
 export default function Leads() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [leads, setLeads] = useState([]);
   const [meta, setMeta] = useState({});
@@ -146,14 +149,14 @@ export default function Leads() {
               {leads.length === 0 ? (
                 <tr><td colSpan={canDelete ? 8 : 7} className="px-4 py-12 text-center text-slate-500">No leads found.</td></tr>
               ) : leads.map((lead) => (
-                <tr key={lead.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => window.location.href = `/leads/${lead.id}`}>
-                  <td className="px-4 py-3"><Link to={`/leads/${lead.id}`} className="text-blue-600 hover:underline font-medium" onClick={(e) => e.stopPropagation()}>{lead.contact_name}</Link></td>
+                <tr key={lead.id} className="hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => navigate(`/leads/${lead.id}`)}>
+                  <td className="px-4 py-3 font-medium text-blue-600">{lead.contact_name}</td>
                   <td className="px-4 py-3">{lead.phone || '—'}</td>
                   <td className="px-4 py-3 hidden md:table-cell">{lead.address || '—'}</td>
                   <td className="px-4 py-3 capitalize">{formatCategory(lead.service_category)}</td>
                   <td className="px-4 py-3"><StatusBadge status={lead.status} /></td>
                   <td className="px-4 py-3 hidden lg:table-cell">{lead.assigned_pm?.name || '—'}</td>
-                  <td className="px-4 py-3 hidden sm:table-cell">{lead.created_at?.split('T')[0]}</td>
+                  <td className="px-4 py-3 hidden sm:table-cell">{formatDate(lead.created_at)}</td>
                   {canDelete && (
                     <td className="px-4 py-3 text-right">
                       <button

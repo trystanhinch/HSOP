@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Trash2 } from 'lucide-react';
 import api from '../api/axios';
@@ -6,8 +6,9 @@ import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { confirmDanger, showError, showSuccess } from '../utils/swal';
+import { formatDate, formatTime } from '../utils/formatDate';
 
-const tabs = [
+const adminPmStatusChips = [
   { label: 'All', value: '' },
   { label: 'New', value: 'new_job' },
   { label: 'Contractor Assigned', value: 'contractor_assigned' },
@@ -18,6 +19,15 @@ const tabs = [
   { label: 'Ready for Review', value: 'ready_for_review' },
   { label: 'Completed', value: 'completed' },
   { label: 'Cancelled', value: 'cancelled' },
+];
+
+const contractorStatusChips = [
+  { label: 'All', value: '' },
+  { label: 'Price Needed', value: 'contractor_assigned' },
+  { label: 'Scheduled', value: 'scheduled' },
+  { label: 'In Progress', value: 'in_progress' },
+  { label: 'Ready for Review', value: 'pending_customer_approval' },
+  { label: 'Completed', value: 'completed' },
 ];
 
 const PAYMENT_STATUSES = ['draft', 'invoice_sent', 'awaiting_payment', 'partially_paid', 'paid', 'overdue', 'cancelled'];
@@ -33,6 +43,7 @@ export default function Jobs() {
   const isContractor = user?.role === 'contractor';
 
   const [jobs, setJobs] = useState([]);
+  const [allContractorJobs, setAllContractorJobs] = useState([]);
   const [activeTab, setActiveTab] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -57,18 +68,21 @@ export default function Jobs() {
   }, [isContractor]);
 
   const loadJobs = () => {
-    const params = {};
-    if (!isContractor) {
-      if (search) params.q = search;
-      if (statusFilter) params.status = statusFilter;
-      else if (activeTab) params.status = activeTab;
-      if (contractorId) params.contractor_id = contractorId;
-      if (pmId) params.pm_id = pmId;
-      if (dateFrom) params.date_from = dateFrom;
-      if (dateTo) params.date_to = dateTo;
-      if (paymentStatus) params.payment_status = paymentStatus;
-      if (payoutStatus) params.payout_status = payoutStatus;
+    if (isContractor) {
+      api.get('/jobs').then(({ data }) => setAllContractorJobs(data.data || data)).catch(() => setAllContractorJobs([]));
+      return;
     }
+
+    const params = {};
+    if (search) params.q = search;
+    if (statusFilter) params.status = statusFilter;
+    else if (activeTab) params.status = activeTab;
+    if (contractorId) params.contractor_id = contractorId;
+    if (pmId) params.pm_id = pmId;
+    if (dateFrom) params.date_from = dateFrom;
+    if (dateTo) params.date_to = dateTo;
+    if (paymentStatus) params.payment_status = paymentStatus;
+    if (payoutStatus) params.payout_status = payoutStatus;
 
     const hasAdvanced = contractorId || pmId || dateFrom || dateTo || paymentStatus || payoutStatus || search;
     const endpoint = !isContractor && hasAdvanced ? '/jobs/search' : '/jobs';
@@ -77,6 +91,22 @@ export default function Jobs() {
   };
 
   useEffect(() => { loadJobs(); }, [activeTab, isContractor]);
+
+  const statusChips = isContractor ? contractorStatusChips : adminPmStatusChips;
+
+  const contractorDisplayedJobs = useMemo(() => {
+    let list = allContractorJobs;
+    if (activeTab) list = list.filter((j) => j.status === activeTab);
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((j) =>
+        (j.address || '').toLowerCase().includes(q)
+        || (j.customer?.name || '').toLowerCase().includes(q)
+        || (j.job_title || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [allContractorJobs, activeTab, search]);
 
   const confirmDeleteJob = async (jobId) => {
     const ok = await confirmDanger({
@@ -98,6 +128,35 @@ export default function Jobs() {
     return (
       <div>
         <PageHeader title="Jobs" />
+        <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 space-y-3">
+          <div className="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              placeholder="Search address or customer..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && loadJobs()}
+              className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            />
+            <button type="button" onClick={loadJobs} className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-medium">
+              Apply Filters
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 mb-4">
+          {statusChips.map(({ label, value }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setActiveTab(value)}
+              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                activeTab === value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-sm divide-y divide-slate-200">
@@ -111,9 +170,9 @@ export default function Jobs() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {jobs.length === 0 ? (
+                {contractorDisplayedJobs.length === 0 ? (
                   <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-500">No jobs or site visits found.</td></tr>
-                ) : jobs.map((item) => (
+                ) : contractorDisplayedJobs.map((item) => (
                   <tr
                     key={item.id}
                     className="hover:bg-slate-50 cursor-pointer"
@@ -124,10 +183,8 @@ export default function Jobs() {
                       <p className="text-xs text-slate-500">{item.address}</p>
                       {item.type === 'site_visit' && item.visit_date && (
                         <p className="text-xs text-indigo-600 mt-0.5">
-                          📅 {new Date(item.visit_date).toLocaleDateString('en-CA', {
-                            month: 'short', day: 'numeric',
-                          })}
-                          {item.visit_time && ` at ${String(item.visit_time).slice(0, 5)}`}
+                          📅 {formatDate(item.visit_date)}
+                          {item.visit_time && ` at ${formatTime(item.visit_time)}`}
                         </p>
                       )}
                     </td>
@@ -135,8 +192,8 @@ export default function Jobs() {
                     <td className="px-4 py-3"><StatusBadge status={item.status} /></td>
                     <td className="px-4 py-3 text-sm text-slate-500 hidden sm:table-cell">
                       {item.type === 'site_visit'
-                        ? (item.visit_date ? new Date(item.visit_date).toLocaleDateString() : '—')
-                        : (item.scheduled_start_date ? new Date(item.scheduled_start_date).toLocaleDateString() : '—')}
+                        ? formatDate(item.visit_date)
+                        : formatDate(item.scheduled_start_date)}
                     </td>
                     <td className="px-4 py-3">
                       {needsPrice(item) && (
@@ -185,7 +242,7 @@ export default function Jobs() {
         <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 ${showFilters ? 'block' : 'hidden md:grid'}`}>
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
             <option value="">All statuses</option>
-            {tabs.filter((t) => t.value).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            {adminPmStatusChips.filter((t) => t.value).map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
           <select value={contractorId} onChange={(e) => setContractorId(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
             <option value="">All contractors</option>
@@ -209,7 +266,7 @@ export default function Jobs() {
         </div>
       </div>
       <div className="flex flex-wrap gap-2 mb-4">
-        {tabs.map(({ label, value }) => (
+        {statusChips.map(({ label, value }) => (
           <button key={label} type="button" onClick={() => { setActiveTab(value); setStatusFilter(''); }}
             className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               activeTab === value && !statusFilter ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
@@ -239,16 +296,18 @@ export default function Jobs() {
               {jobs.length === 0 ? (
                 <tr><td colSpan={user?.role === 'owner' ? 7 : 6} className="px-4 py-12 text-center text-slate-500">No jobs found.</td></tr>
               ) : jobs.map((job) => (
-                <tr key={job.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3">
-                    <Link to={`/jobs/${job.id}`} className="text-blue-600 hover:underline font-medium">
-                      {job.job_title || `Job #${job.id}`}
-                    </Link>
+                <tr
+                  key={job.id}
+                  className="hover:bg-slate-50 cursor-pointer transition-colors"
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                >
+                  <td className="px-4 py-3 font-medium text-blue-600">
+                    {job.job_title || `Job #${job.id}`}
                   </td>
                   <td className="px-4 py-3">{job.customer?.name || '—'}</td>
                   <td className="px-4 py-3">{job.contractor?.name || '—'}</td>
                   <td className="px-4 py-3"><StatusBadge status={job.status} /></td>
-                  <td className="px-4 py-3 hidden sm:table-cell">{job.scheduled_start_date?.split('T')[0] || '—'}</td>
+                  <td className="px-4 py-3 hidden sm:table-cell">{formatDate(job.scheduled_start_date)}</td>
                   <td className="px-4 py-3 hidden lg:table-cell">{job.pm?.name || '—'}</td>
                   {user?.role === 'owner' && (
                     <td className="px-4 py-3 text-right">

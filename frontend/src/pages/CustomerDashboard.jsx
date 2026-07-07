@@ -74,7 +74,7 @@ export default function CustomerDashboard() {
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-[#3B82F6] to-[#2563EB] rounded-lg p-6 text-white">
         <h2 className="text-xl font-semibold">Welcome, {data.name}</h2>
-        <p className="text-blue-100 text-sm mt-1">Here&apos;s an update on your projects with HSOP Job Command</p>
+        <p className="text-blue-100 text-sm mt-1">Here&apos;s an update on your projects with ServiceOP</p>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-[#E2E8F0] p-6">

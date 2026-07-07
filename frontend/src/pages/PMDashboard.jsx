@@ -5,16 +5,10 @@ import api from '../api/axios';
 import KPICard from '../components/KPICard';
 import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
+import { formatDate } from '../utils/formatDate';
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
-}
-
-function formatVisitDate(date) {
-  if (!date) return '—';
-  return new Date(date).toLocaleDateString('en-CA', {
-    month: 'short', day: 'numeric', year: 'numeric',
-  });
 }
 
 export default function PMDashboard() {
@@ -40,10 +34,10 @@ export default function PMDashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="My Leads" value={data.my_leads} icon={Users} color="#3B82F6" />
-        <KPICard title="My Active Jobs" value={data.active_jobs} icon={Briefcase} color="#22C55E" />
-        <KPICard title="Quotes to Send" value={data.pending_quotes} icon={FileText} color="#EAB308" />
-        <KPICard title="Awaiting Approval" value={data.awaiting_approval} icon={Clock} color="#8B5CF6" />
+        <KPICard title="My Leads" value={data.my_leads} icon={Users} color="#3B82F6" to="/leads" />
+        <KPICard title="My Active Jobs" value={data.active_jobs} icon={Briefcase} color="#22C55E" to="/jobs" />
+        <KPICard title="Quotes to Send" value={data.pending_quotes} icon={FileText} color="#EAB308" to="/quotes?status=draft" />
+        <KPICard title="Awaiting Approval" value={data.awaiting_approval} icon={Clock} color="#8B5CF6" to="/quotes?status=sent" />
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -100,14 +94,18 @@ export default function PMDashboard() {
             </thead>
             <tbody>
               {(data.my_leads_list || []).map((lead) => (
-                <tr key={lead.id} className="border-b border-[#E2E8F0]">
+                <tr
+                  key={lead.id}
+                  className="border-b border-[#E2E8F0] hover:bg-slate-50 cursor-pointer transition-colors"
+                  onClick={() => navigate(`/leads/${lead.id}`)}
+                >
                   <td className="px-4 py-2 font-medium">{lead.contact_name}</td>
                   <td className="px-4 py-2 hidden md:table-cell text-[#64748B]">{lead.address}</td>
                   <td className="px-4 py-2 capitalize">{formatCategory(lead.service_category)}</td>
                   <td className="px-4 py-2"><StatusBadge status={lead.status} /></td>
-                  <td className="px-4 py-2 hidden sm:table-cell">{formatVisitDate(lead.site_visit_date)}</td>
+                  <td className="px-4 py-2 hidden sm:table-cell">{formatDate(lead.site_visit_date)}</td>
                   <td className="px-4 py-2">
-                    <Link to={`/leads/${lead.id}`} className="text-[#3B82F6] text-xs font-medium hover:underline">View Lead</Link>
+                    <span className="text-[#3B82F6] text-xs font-medium">View Lead</span>
                   </td>
                 </tr>
               ))}
@@ -134,14 +132,18 @@ export default function PMDashboard() {
             </thead>
             <tbody>
               {(data.my_jobs_list || []).map((job) => (
-                <tr key={job.id} className="border-b border-[#E2E8F0]">
+                <tr
+                  key={job.id}
+                  className="border-b border-[#E2E8F0] hover:bg-slate-50 cursor-pointer transition-colors"
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                >
                   <td className="px-4 py-2">{job.address}</td>
                   <td className="px-4 py-2 capitalize">{formatCategory(job.service_category)}</td>
                   <td className="px-4 py-2">{job.contractor?.name || '—'}</td>
                   <td className="px-4 py-2"><StatusBadge status={job.status} /></td>
-                  <td className="px-4 py-2 hidden sm:table-cell">{formatVisitDate(job.scheduled_start_date)}</td>
+                  <td className="px-4 py-2 hidden sm:table-cell">{formatDate(job.scheduled_start_date)}</td>
                   <td className="px-4 py-2">
-                    <Link to={`/jobs/${job.id}`} className="text-[#3B82F6] text-xs font-medium hover:underline">View Job</Link>
+                    <span className="text-[#3B82F6] text-xs font-medium">View Job</span>
                   </td>
                 </tr>
               ))}

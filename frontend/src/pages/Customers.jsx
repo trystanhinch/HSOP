@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 
 export default function Customers() {
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState([]);
 
   useEffect(() => {
@@ -28,8 +29,12 @@ export default function Customers() {
           </thead>
           <tbody className="divide-y divide-[#E2E8F0]">
             {customers.map((c) => (
-              <tr key={c.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3"><Link to={`/customers/${c.id}`} className="text-[#3B82F6] font-medium">#{c.id}</Link></td>
+              <tr
+                key={c.id}
+                className="hover:bg-slate-50 cursor-pointer transition-colors"
+                onClick={() => navigate(`/customers/${c.id}`)}
+              >
+                <td className="px-4 py-3 font-medium text-[#3B82F6]">#{c.id}</td>
                 <td className="px-4 py-3">{c.name}</td>
                 <td className="px-4 py-3">{c.phone || '—'}</td>
                 <td className="px-4 py-3 hidden md:table-cell">{c.email || '—'}</td>

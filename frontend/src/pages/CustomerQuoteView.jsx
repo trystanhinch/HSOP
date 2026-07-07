@@ -95,9 +95,9 @@ export default function CustomerQuoteView() {
       <div className="max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl mb-3">
-            <span className="text-white font-bold text-lg">JC</span>
+            <span className="text-white font-bold text-lg">SO</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">{quote.job?.company_name || 'HSOP'}</h1>
+          <h1 className="text-2xl font-bold text-slate-900">{quote.job?.company_name || 'ServiceOP'}</h1>
           <p className="text-slate-500 text-sm mt-1">Quote {quote.quote_number}</p>
         </div>
 
