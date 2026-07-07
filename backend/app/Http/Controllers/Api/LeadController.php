@@ -118,6 +118,7 @@ class LeadController extends Controller
         $user = $request->user();
         $lead = Lead::with([
             'assignedPm:id,name,email,phone',
+            'assignedContractor:id,name,email,phone',
             'customer:id,name',
             'company:id,name',
             'photos',
@@ -144,9 +145,11 @@ class LeadController extends Controller
         if ($user->role === 'contractor') {
             $siteVisit = SiteVisit::where('lead_id', $lead->id)
                 ->where('contractor_id', $user->id)
-                ->first();
+                ->exists();
 
-            if (! $siteVisit && (int) $lead->site_visit_contractor_id !== (int) $user->id) {
+            $directlyAssigned = (int) $lead->assigned_contractor_id === (int) $user->id;
+
+            if (! $siteVisit && ! $directlyAssigned && (int) $lead->site_visit_contractor_id !== (int) $user->id) {
                 abort(403, 'You are not assigned to this appointment.');
             }
 
@@ -166,6 +169,7 @@ class LeadController extends Controller
                 'contractor_price_submitted_at' => $lead->contractor_price_submitted_at,
                 'contractor_price_notes' => $lead->contractor_price_notes,
                 'assigned_pm' => $lead->assignedPm?->only(['id', 'name', 'email', 'phone']),
+                'assigned_contractor_id' => $lead->assigned_contractor_id,
                 'company' => $lead->company?->only(['id', 'name']),
                 'job' => $lead->job?->only(['id', 'status']),
             ]);
@@ -197,6 +201,7 @@ class LeadController extends Controller
             'project_description' => 'nullable|string',
             'internal_notes' => 'nullable|string',
             'assigned_pm_id' => 'nullable|exists:users,id',
+            'assigned_contractor_id' => 'nullable|exists:users,id',
             'status' => 'sometimes|in:new,contacted,site_visit_scheduled,quote_needed,converted,lost',
             'site_visit_date' => 'nullable|date',
             'site_visit_time' => 'nullable|date_format:H:i',
@@ -204,6 +209,10 @@ class LeadController extends Controller
 
         if (isset($data['project_description'])) {
             $data['notes'] = $data['project_description'];
+        }
+
+        if ($request->has('assigned_contractor_id') && $request->assigned_contractor_id) {
+            User::where('id', $request->assigned_contractor_id)->where('role', 'contractor')->firstOrFail();
         }
 
         $lead->update($data);
@@ -217,7 +226,11 @@ class LeadController extends Controller
             'new_value' => json_encode($data),
         ]);
 
-        return response()->json($lead->fresh()->load(['assignedPm:id,name', 'company:id,name']));
+        return response()->json($lead->fresh()->load([
+            'assignedPm:id,name',
+            'assignedContractor:id,name,email,phone',
+            'company:id,name',
+        ]));
     }
 
     public function destroy(Request $request, string $id): JsonResponse
@@ -294,8 +307,8 @@ class LeadController extends Controller
                 'status' => 'new_job',
             ];
 
-            if ($lead->site_visit_contractor_id) {
-                $jobPayload['contractor_id'] = $lead->site_visit_contractor_id;
+            if ($lead->site_visit_contractor_id || $lead->assigned_contractor_id) {
+                $jobPayload['contractor_id'] = $lead->site_visit_contractor_id ?? $lead->assigned_contractor_id;
                 $jobPayload['contractor_submitted_price'] = $lead->contractor_price;
                 $jobPayload['contractor_price_status'] = $lead->contractor_price ? 'submitted' : 'pending';
                 $jobPayload['contractor_price_submitted_at'] = $lead->contractor_price_submitted_at;
@@ -453,13 +466,15 @@ class LeadController extends Controller
     {
         $user = $request->user();
 
-        $siteVisit = SiteVisit::where('lead_id', $lead->id)
+        $hasSiteVisit = SiteVisit::where('lead_id', $lead->id)
             ->where('contractor_id', $user->id)
-            ->first();
+            ->exists();
 
-        if (! $siteVisit && (int) $lead->site_visit_contractor_id !== (int) $user->id) {
+        $isDirectlyAssigned = (int) $lead->assigned_contractor_id === (int) $user->id;
+
+        if (! $hasSiteVisit && ! $isDirectlyAssigned && (int) $lead->site_visit_contractor_id !== (int) $user->id) {
             return response()->json([
-                'message' => 'You are not assigned to this appointment.',
+                'message' => 'You are not assigned to this lead.',
             ], 403);
         }
 

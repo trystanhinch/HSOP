@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Invoice;
 use App\Models\Job;
+use App\Models\Lead;
 use App\Models\Payment;
 use App\Models\Quote;
 use App\Models\RevisionRequest;
@@ -93,7 +94,7 @@ class JobController extends Controller
 
             $siteVisitLeadIds = $siteVisits->pluck('lead_id')->filter()->values();
 
-            $leadAppointments = \App\Models\Lead::where('site_visit_contractor_id', $user->id)
+            $leadAppointments = Lead::where('site_visit_contractor_id', $user->id)
                 ->where('status', '!=', 'converted')
                 ->whereDoesntHave('job')
                 ->when($siteVisitLeadIds->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $siteVisitLeadIds))
@@ -119,7 +120,36 @@ class JobController extends Controller
                     'url' => '/leads/'.$lead->id,
                 ]);
 
-            $all = $jobs->concat($siteVisits)->concat($leadAppointments)->sortByDesc(function ($item) {
+            $existingLeadIds = $siteVisits->pluck('lead_id')
+                ->concat($leadAppointments->pluck('lead_id'))
+                ->filter()
+                ->unique()
+                ->values();
+
+            $directLeads = Lead::where('assigned_contractor_id', $user->id)
+                ->whereNotIn('status', ['converted', 'lost'])
+                ->whereDoesntHave('job')
+                ->when($existingLeadIds->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $existingLeadIds))
+                ->with(['assignedPm:id,name,phone'])
+                ->latest()
+                ->get()
+                ->map(fn ($lead) => [
+                    'type' => 'direct_lead',
+                    'id' => 'lead_'.$lead->id,
+                    'lead_id' => $lead->id,
+                    'job_title' => 'Lead — '.($lead->contact_name ?? 'Customer'),
+                    'address' => $lead->address ?? '',
+                    'service_category' => $lead->service_category ?? '',
+                    'status' => 'lead_assigned',
+                    'contractor_price_status' => $lead->contractor_price ? 'submitted' : 'pending',
+                    'contractor_submitted_price' => $lead->contractor_price,
+                    'customer' => ['id' => null, 'name' => $lead->contact_name ?? ''],
+                    'pm' => $lead->assignedPm?->only(['id', 'name', 'phone']),
+                    'description' => $lead->project_description ?? '',
+                    'url' => '/leads/'.$lead->id,
+                ]);
+
+            $all = $jobs->concat($siteVisits)->concat($leadAppointments)->concat($directLeads)->sortByDesc(function ($item) {
                 $date = $item['scheduled_start_date'] ?? $item['visit_date'] ?? null;
 
                 return $date ? strtotime((string) $date) : 0;

@@ -23,6 +23,7 @@ class Lead extends Model
         'project_description',
         'internal_notes',
         'assigned_pm_id',
+        'assigned_contractor_id',
         'status',
         'site_visit_date',
         'site_visit_time',
@@ -55,6 +56,11 @@ class Lead extends Model
     public function assignedPm(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_pm_id');
+    }
+
+    public function assignedContractor(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_contractor_id');
     }
 
     public function photos(): HasMany
