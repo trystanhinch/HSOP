@@ -1,25 +1,43 @@
 import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api, { storageUrl } from '../api/axios';
-import { showError, showSuccess } from '../utils/swal';
+import { showError, showSuccess, confirmAction } from '../utils/swal';
+import { formatDate, formatDateTime } from '../utils/formatDate';
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
-function formatDate(date) {
+function formatDateLong(date) {
   if (!date) return null;
   return new Date(date).toLocaleDateString('en-CA', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   });
 }
 
-function statusBannerText(jobStatus) {
+function jobStatusLabel(status) {
+  const labels = {
+    quote_approved: 'Pending Scheduling',
+    scheduled: 'Scheduled',
+    in_progress: 'In Progress',
+    progress_updated: 'In Progress',
+    pending_customer_approval: 'Ready for Your Review',
+    payment_pending: 'Awaiting Payment',
+    completed: 'Completed',
+    paid_completed: 'Completed',
+  };
+  return labels[status] || (status || '').replace(/_/g, ' ');
+}
+
+function statusBannerText(jobStatus, quoteStatus) {
+  if (quoteStatus === 'approved' && jobStatus === 'quote_approved') {
+    return '✓ Quote Approved — Pending Scheduling';
+  }
   switch (jobStatus) {
     case 'estimate_accepted':
     case 'quote_approved':
     case 'start_date_scheduled':
-      return '✓ Estimate Accepted — Your project is being scheduled';
+      return '✓ Quote Approved — Pending Scheduling';
     case 'scheduled':
       return '📅 Your project is scheduled';
     case 'in_progress':
@@ -74,10 +92,17 @@ export default function CustomerPortal() {
   useEffect(() => { load(); }, [token]);
 
   const acceptQuote = async () => {
+    const ok = await confirmAction({
+      title: 'Accept quote?',
+      text: 'By accepting, you agree to proceed with this project at the quoted price. Your project manager will contact you to schedule.',
+      confirmText: 'Yes, accept quote',
+    });
+    if (!ok) return;
+
     setSubmitting(true);
     try {
       await api.post(`/portal/${token}/accept-quote`);
-      await showSuccess('Estimate accepted. Thank you!');
+      await showSuccess('Quote accepted. Your project manager will contact you to schedule.');
       load();
     } catch (e) {
       await showError(e.response?.data?.message || 'Failed to approve estimate.');
@@ -146,14 +171,21 @@ export default function CustomerPortal() {
 
   const quote = data.quote;
   const job = data.job;
+  const pm = data.pm;
   const invoice = data.invoice;
   const jobStatus = job?.status;
   const updates = data.updates || [];
+  const quoteApproved = quote?.status === 'approved';
 
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-slate-800 px-4 py-4">
-        <h1 className="text-white font-bold text-lg">Your Project Portal</h1>
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+            <span className="text-white font-bold text-sm">SO</span>
+          </div>
+          <h1 className="text-white font-bold text-lg">ServiceOP</h1>
+        </div>
         <p className="text-slate-300 text-sm">
           Hi {data.lead.contact_name} · {data.lead.address}
         </p>
@@ -162,13 +194,43 @@ export default function CustomerPortal() {
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         {job && (
           <section className={`rounded-xl p-4 border ${statusBannerClass(jobStatus)}`}>
-            <p className="font-semibold text-slate-800 text-sm">{statusBannerText(jobStatus)}</p>
+            <p className="font-semibold text-slate-800 text-sm">{statusBannerText(jobStatus, quote?.status)}</p>
+            {jobStatus && (
+              <p className="text-xs text-slate-600 mt-1">Project status: {jobStatusLabel(jobStatus)}</p>
+            )}
             {job.scheduled_start_date && ['quote_approved', 'scheduled', 'in_progress'].includes(jobStatus) && (
               <p className="text-xs text-slate-600 mt-1">
-                Start date: {formatDate(job.scheduled_start_date)}
+                Start date: {formatDateLong(job.scheduled_start_date)}
                 {job.scheduled_start_time && ` at ${String(job.scheduled_start_time).slice(0, 5)}`}
               </p>
             )}
+          </section>
+        )}
+
+        {pm && (
+          <section className="bg-white rounded-xl border border-slate-200 p-5">
+            <h2 className="font-semibold text-slate-800 mb-2">Your Project Manager</h2>
+            <p className="text-sm font-medium text-slate-800">{pm.name}</p>
+            {pm.phone && <p className="text-sm text-slate-600">Phone: {pm.phone}</p>}
+            {pm.email && <p className="text-sm text-slate-600">Email: {pm.email}</p>}
+            {quoteApproved && (
+              <p className="text-xs text-slate-500 mt-2">Your PM will contact you to confirm scheduling and next steps.</p>
+            )}
+          </section>
+        )}
+
+        {quoteApproved && job && (
+          <section className="bg-white rounded-xl border border-slate-200 p-5">
+            <h2 className="font-semibold text-slate-800 mb-2">Your Project</h2>
+            <p className="text-sm text-slate-600 mb-3">
+              Your quote has been approved. Track your project status and progress updates below.
+            </p>
+            <div className="text-sm space-y-1">
+              <div className="flex justify-between"><span className="text-slate-500">Status</span><span className="font-medium">{jobStatusLabel(jobStatus)}</span></div>
+              {quote?.quote_number && (
+                <div className="flex justify-between"><span className="text-slate-500">Quote #</span><span>{quote.quote_number}</span></div>
+              )}
+            </div>
           </section>
         )}
 
@@ -176,7 +238,7 @@ export default function CustomerPortal() {
           <section className="bg-white rounded-xl border border-slate-200 p-5">
             <h2 className="font-semibold text-slate-800 mb-2">Site Visit Scheduled</h2>
             <p className="text-sm text-slate-600">
-              Your appointment is on <strong>{formatDate(data.lead.site_visit_date)}</strong>
+              Your appointment is on <strong>{formatDateLong(data.lead.site_visit_date)}</strong>
               {data.lead.site_visit_time && <> at <strong>{String(data.lead.site_visit_time).slice(0, 5)}</strong></>}
               {' '}at <strong>{data.lead.address}</strong>.
             </p>
@@ -189,7 +251,7 @@ export default function CustomerPortal() {
             <div className="space-y-2 text-sm">
               <div className="flex justify-between gap-4">
                 <span className="text-slate-500">Start Date</span>
-                <span className="font-medium text-right">{formatDate(job.scheduled_start_date)}</span>
+                <span className="font-medium text-right">{formatDateLong(job.scheduled_start_date)}</span>
               </div>
               {job.scheduled_start_time && (
                 <div className="flex justify-between">
@@ -200,16 +262,16 @@ export default function CustomerPortal() {
               {job.estimated_completion && (
                 <div className="flex justify-between">
                   <span className="text-slate-500">Est. Completion</span>
-                  <span className="font-medium">{formatDate(job.estimated_completion)}</span>
+                  <span className="font-medium">{formatDateLong(job.estimated_completion)}</span>
                 </div>
               )}
             </div>
           </section>
         )}
 
-        {quote && (
+        {quote && !quoteApproved && (
           <section className="bg-white rounded-xl border border-slate-200 p-5">
-            <h2 className="font-semibold text-slate-800 mb-3">📄 Your Estimate</h2>
+            <h2 className="font-semibold text-slate-800 mb-3">📄 Your Quote</h2>
             <div className="space-y-2 text-sm">
               {quote.scope_of_work && (
                 <div>
@@ -249,7 +311,7 @@ export default function CustomerPortal() {
                 <div className="flex gap-2 mt-4">
                   <button type="button" onClick={acceptQuote} disabled={submitting}
                     className="flex-1 bg-green-600 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-green-700 disabled:opacity-50">
-                    Accept Estimate
+                    Accept Quote
                   </button>
                   <button type="button" onClick={() => setShowReject(true)} disabled={submitting}
                     className="flex-1 border border-red-300 text-red-600 rounded-lg py-2.5 text-sm font-medium hover:bg-red-50">
@@ -261,6 +323,13 @@ export default function CustomerPortal() {
           </section>
         )}
 
+        {quoteApproved && quote && (
+          <section className="bg-slate-50 rounded-xl border border-slate-200 p-4 text-sm">
+            <p className="font-medium text-slate-800">Quote {quote.quote_number ? `#${quote.quote_number}` : ''} — Approved</p>
+            <p className="text-slate-600 mt-1">Total: ${Number(quote.customer_total || 0).toFixed(2)}</p>
+          </section>
+        )}
+
         {updates.length > 0 && (
           <section className="bg-white rounded-xl border border-slate-200 p-5">
             <h2 className="font-semibold text-slate-800 mb-4">📸 Progress Updates</h2>
@@ -268,9 +337,7 @@ export default function CustomerPortal() {
               {updates.map((u, i) => (
                 <div key={i} className="border-b border-slate-100 pb-4 last:border-0 last:pb-0">
                   <p className="text-xs text-slate-500 mb-2">
-                    {new Date(u.created_at).toLocaleDateString('en-CA', {
-                      weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                    })}
+                    {formatDateTime(u.created_at)}
                   </p>
                   <p className="text-sm text-slate-700">{u.text}</p>
                   {u.photos?.filter(Boolean)?.length > 0 && (
@@ -378,7 +445,7 @@ export default function CustomerPortal() {
       {showReject && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h3 className="font-semibold mb-3">Decline Estimate</h3>
+            <h3 className="font-semibold mb-3">Decline Quote</h3>
             <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={3}
               className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm mb-4" placeholder="Reason (optional feedback)..." />
             <div className="flex gap-2">

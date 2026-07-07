@@ -18,14 +18,12 @@ class JobReadyForReviewMail extends Mailable
 
     public function build()
     {
-        $name = $this->job->customer?->name ?? 'there';
-
-        return $this->subject('Your Project is Ready for Review')
+        return $this->subject('Your Project is Complete')
             ->view('emails.notification', [
-                'heading' => "Hi {$name},",
-                'body' => "Your project at {$this->job->address} is complete and ready for your review. Please accept the work or request changes.",
+                'heading' => 'Project Complete',
+                'body' => 'Your project has been marked complete. Please review and accept or request a revision.',
                 'actionUrl' => $this->portalUrl,
-                'actionLabel' => 'Review & Accept',
+                'actionLabel' => 'View Project',
             ]);
     }
 }

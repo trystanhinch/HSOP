@@ -87,9 +87,14 @@ class SmsMessageTemplates
 
     public static function quoteSent(User $customer, Quote $quote, string $portalUrl): string
     {
-        return 'Hi '.$customer->name.', your estimate from '.self::companyName().' is ready.'
-            .' Total: $'.number_format((float) $quote->customer_total, 2)
-            .". Review and approve here: {$portalUrl}";
+        return 'ServiceOP: Your quote is ready. Total: $'.number_format((float) $quote->customer_total, 2)
+            .'. View quote: '.$portalUrl;
+    }
+
+    public static function quoteApprovedCustomer(string $portalUrl): string
+    {
+        return 'ServiceOP: Your quote has been approved. Your project manager will contact you'
+            .' to schedule the project. View project: '.$portalUrl;
     }
 
     public static function jobScheduledCustomer(User $customer, Job $job, string $portalUrl, bool $isUpdate = false): string
@@ -115,15 +120,14 @@ class SmsMessageTemplates
 
     public static function progressUpdateCustomer(User $customer, Job $job, string $portalUrl): string
     {
-        return 'Hi '.$customer->name.', a new progress update has been posted'
-            ." for your project at {$job->address}."
-            ." View update and photos: {$portalUrl}";
+        return 'ServiceOP: A progress update has been posted for your project.'
+            .' View update: '.$portalUrl;
     }
 
     public static function jobCompletePendingApproval(User $customer, Job $job, string $portalUrl): string
     {
-        return 'Hi '.$customer->name.", your project at {$job->address}"
-            .' has been marked complete. Please review and accept or request changes: '.$portalUrl;
+        return 'ServiceOP: Your project has been marked complete. Please review and accept or'
+            .' request a revision: '.$portalUrl;
     }
 
     public static function revisionRequested(User $contractor, Job $job, string $contractorUrl): string

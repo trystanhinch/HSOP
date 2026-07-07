@@ -20,12 +20,10 @@ class ProgressUpdateMail extends Mailable
 
     public function build()
     {
-        $name = $this->job->customer?->name ?? 'there';
-
-        return $this->subject('New Progress Update on Your Project')
+        return $this->subject('Progress Update on Your Project')
             ->view('emails.notification', [
-                'heading' => "Hi {$name},",
-                'body' => "There is a new progress update for your project at {$this->job->address}.\n\n{$this->update->update_text}",
+                'heading' => 'Progress Update',
+                'body' => "A progress update has been posted for your project.\n\n{$this->update->update_text}",
                 'actionUrl' => $this->portalUrl,
                 'actionLabel' => 'View Update',
             ]);

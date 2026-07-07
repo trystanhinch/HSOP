@@ -271,9 +271,10 @@ class QuoteController extends Controller
     {
         $quote = Quote::where('customer_token', $token)
             ->with([
+                'customer:id,name,email,phone',
                 'job:id,address,service_category,status,scope_of_work,scheduled_start_date,estimated_completion_date,scheduled_end_date,company_id,pm_id',
                 'job.company:id,name,phone,email',
-                'job.pm:id,name',
+                'job.pm:id,name,email,phone',
                 'items',
             ])
             ->first();
@@ -289,7 +290,8 @@ class QuoteController extends Controller
         return response()->json([
             'quote_number' => $quote->quote_number,
             'status' => $quote->status,
-            'scope_of_work' => $quote->scope_of_work,
+            'customer_name' => $quote->customer?->name,
+            'scope_of_work' => $quote->scope_of_work ?: ($quote->job->scope_of_work ?? ''),
             'customer_notes' => $quote->customer_notes,
             'subtotal' => $quote->subtotal ?? $quote->customer_price_before_gst,
             'gst' => $quote->gst,
@@ -302,11 +304,14 @@ class QuoteController extends Controller
             'job' => [
                 'address' => $quote->job->address ?? '',
                 'service_category' => $quote->job->service_category ?? '',
+                'status' => $quote->job->status ?? '',
                 'scheduled_start_date' => $quote->job->scheduled_start_date,
                 'estimated_completion' => $quote->job->estimated_completion_date ?? $quote->job->scheduled_end_date,
                 'scope_of_work' => $quote->job->scope_of_work ?? '',
                 'company_name' => optional($quote->job->company)->name ?? 'ServiceOP',
                 'pm_name' => optional($quote->job->pm)->name ?? '',
+                'pm_email' => optional($quote->job->pm)->email,
+                'pm_phone' => optional($quote->job->pm)->phone,
             ],
         ]);
     }

@@ -53,7 +53,7 @@ class CustomerPortalController extends Controller
     public function show(string $token): JsonResponse
     {
         $lead = $this->leadFromToken($token);
-        $job = Job::with(['quote', 'invoice', 'updates.photos', 'updates.postedBy:id,name'])
+        $job = Job::with(['quote', 'invoice', 'updates.photos', 'updates.postedBy:id,name', 'pm:id,name,email,phone'])
             ->where('lead_id', $lead->id)
             ->first();
 
@@ -67,6 +67,7 @@ class CustomerPortalController extends Controller
                 'site_visit_time' => $lead->site_visit_time,
             ],
             'quote' => $job?->quote ? [
+                'quote_number' => $job->quote->quote_number,
                 'scope_of_work' => $job->quote->scope_of_work,
                 'customer_notes' => $job->quote->customer_notes,
                 'customer_price_before_gst' => $job->quote->customer_price_before_gst,
@@ -74,7 +75,13 @@ class CustomerPortalController extends Controller
                 'gst_rate' => $job->quote->gst_rate,
                 'customer_total' => $job->quote->customer_total,
                 'status' => $job->quote->status,
+                'sent_at' => $job->quote->sent_at,
                 'accepted_at' => $job->quote->accepted_at,
+            ] : null,
+            'pm' => $job?->pm ? [
+                'name' => $job->pm->name,
+                'email' => $job->pm->email,
+                'phone' => $job->pm->phone,
             ] : null,
             'job' => $job ? [
                 'id' => $job->id,

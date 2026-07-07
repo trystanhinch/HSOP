@@ -41,7 +41,7 @@ export default function JobUpdateForm({ jobId, onClose, onPosted }) {
       onPosted?.();
       onClose();
     } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to post update';
+      const msg = 'Progress update could not be posted. Please try again.';
       setError(msg);
       await showError(msg);
     } finally {

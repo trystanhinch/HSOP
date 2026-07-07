@@ -50,13 +50,13 @@ class JobNotificationService
 
         $this->email->send(
             $customer->email,
-            'Your Quote from ServiceOP is Ready',
+            'Your Quote Is Ready',
             'emails.notification',
             [
-                'heading' => "Hi {$customer->name},",
+                'heading' => 'Your Quote Is Ready',
                 'body' => "Your quote for {$quote->job->address} is ready.\n\nQuote Total: \${$quote->customer_total} (includes GST)",
                 'actionUrl' => $quoteUrl,
-                'actionLabel' => 'View & Approve Quote',
+                'actionLabel' => 'View Quote',
             ],
             'quote_sent',
             $customer->id,
@@ -68,9 +68,10 @@ class JobNotificationService
 
     public function quoteApproved(Quote $quote): void
     {
-        $quote->loadMissing(['customer', 'job.pm']);
+        $quote->loadMissing(['customer', 'job.pm', 'job.lead']);
         $pm = $quote->job->pm;
         $admin = User::where('role', 'owner')->first();
+        $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($quote->job);
 
         $this->sms->sendToUser(
             $pm ?? $admin,
@@ -81,7 +82,7 @@ class JobNotificationService
 
         $this->sms->sendToUser(
             $quote->customer,
-            "Thank you! Your quote has been approved. We'll be in touch to schedule your project.",
+            SmsMessageTemplates::quoteApprovedCustomer($portalUrl),
             'quote_approved_confirmation',
             $quote->job_id
         );
@@ -96,15 +97,22 @@ class JobNotificationService
             $quote->job_id
         );
 
-        $this->email->send(
-            $quote->customer->email,
-            'Your Quote Has Been Approved',
-            'emails.notification',
-            ['heading' => "Hi {$quote->customer->name},", 'body' => 'Thank you! Your quote has been approved. We will contact you to schedule your project.'],
-            'quote_approved_confirmation',
-            $quote->customer_id,
-            $quote->job_id
-        );
+        if ($quote->customer?->email) {
+            $this->email->send(
+                $quote->customer->email,
+                'Quote Approved',
+                'emails.notification',
+                [
+                    'heading' => 'Quote Approved',
+                    'body' => 'Thank you! Your quote has been approved. Your project manager will contact you to schedule the project.',
+                    'actionUrl' => $portalUrl,
+                    'actionLabel' => 'View Project',
+                ],
+                'quote_approved_confirmation',
+                $quote->customer_id,
+                $quote->job_id
+            );
+        }
 
         $this->audit('quote_approved', 'quote', $quote->id);
     }
@@ -269,20 +277,22 @@ class JobNotificationService
                 $job->id
             );
 
-            $this->email->send(
-                $job->customer?->email,
-                'New Progress Update on Your Project',
-                'emails.notification',
-                [
-                    'heading' => "Hi {$job->customer?->name},",
-                    'body' => 'There is a new progress update on your project.',
-                    'actionUrl' => $portal,
-                    'actionLabel' => 'View Update',
-                ],
-                'progress_update_customer',
-                $job->customer_id,
-                $job->id
-            );
+            if ($job->customer?->email) {
+                $this->email->send(
+                    $job->customer->email,
+                    'Progress Update on Your Project',
+                    'emails.notification',
+                    [
+                        'heading' => 'Progress Update',
+                        'body' => 'A progress update has been posted for your project.',
+                        'actionUrl' => $portal,
+                        'actionLabel' => 'View Update',
+                    ],
+                    'progress_update_customer',
+                    $job->customer_id,
+                    $job->id
+                );
+            }
         }
 
         $this->audit('progress_update_submitted', 'job', $job->id);
@@ -294,30 +304,51 @@ class JobNotificationService
         $pm = $job->pm;
         $admin = User::where('role', 'owner')->first();
 
-        $this->sms->sendToUser(
-            $pm ?? $admin,
-            "New progress update for {$job->job_title}.",
-            'progress_update',
-            $job->id
-        );
+        try {
+            $this->sms->sendToUser(
+                $pm ?? $admin,
+                "New progress update for {$job->job_title}.",
+                'progress_update',
+                $job->id
+            );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('PM progress update SMS failed', [
+                'job_id' => $job->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
 
-        $this->sms->sendToUser(
-            $job->customer,
-            SmsMessageTemplates::progressUpdateCustomer($job->customer, $job, $portalUrl),
-            'progress_update_customer',
-            $job->id
-        );
-
-        if ($job->customer?->email) {
-            $this->email->sendMailable(
-                $job->customer->email,
-                new ProgressUpdateMail($job, $update, $portalUrl),
+        try {
+            $this->sms->sendToUser(
+                $job->customer,
+                SmsMessageTemplates::progressUpdateCustomer($job->customer, $job, $portalUrl),
                 'progress_update_customer',
-                $job->customer_id,
                 $job->id
             );
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Customer progress update SMS failed', [
+                'job_id' => $job->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
+        if ($job->customer?->email) {
+            try {
+                $this->email->sendMailable(
+                    $job->customer->email,
+                    new ProgressUpdateMail($job, $update, $portalUrl),
+                    'progress_update_customer',
+                    $job->customer_id,
+                    $job->id
+                );
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::error('Customer progress update email failed', [
+                    'job_id' => $job->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
 
         $this->audit('progress_update_submitted', 'job', $job->id);
@@ -372,7 +403,12 @@ class JobNotificationService
             $job->customer?->email,
             'Your Project is Complete',
             'emails.notification',
-            ['heading' => "Hi {$job->customer?->name},", 'body' => 'Your project has been marked complete.', 'actionUrl' => $portal, 'actionLabel' => 'View Job'],
+            [
+                'heading' => 'Project Complete',
+                'body' => 'Your project has been marked complete. Please review and accept or request a revision.',
+                'actionUrl' => $portal,
+                'actionLabel' => 'View Project',
+            ],
             'job_complete',
             $job->customer_id,
             $job->id
