@@ -50,7 +50,7 @@ class JobNotificationService
 
         $this->email->send(
             $customer->email,
-            'Your Quote from HSOP is Ready',
+            'Your Quote from ServiceOP is Ready',
             'emails.notification',
             [
                 'heading' => "Hi {$customer->name},",
@@ -195,7 +195,7 @@ class JobNotificationService
 
         $this->email->send(
             $contractor->email,
-            'New Job Assignment — HSOP',
+            'New Job Assignment — ServiceOP',
             'emails.notification',
             [
                 'heading' => "Hi {$contractor->name},",
@@ -421,7 +421,7 @@ class JobNotificationService
 
         $this->email->send(
             $invoice->job->customer?->email,
-            'Your Invoice from HSOP',
+            'Your Invoice from ServiceOP',
             'emails.notification',
             [
                 'heading' => "Hi {$invoice->job->customer?->name},",

@@ -20,7 +20,7 @@ class SiteVisitScheduledCustomerMail extends Mailable
 
     public function build()
     {
-        $company = config('app.company_name', 'HSOP');
+        $company = config('app.company_name', 'ServiceOP');
 
         return $this->subject("Your Site Visit with {$company} is Scheduled")
             ->view('emails.notification', [

@@ -33,7 +33,7 @@ class SettingsController extends Controller
             ],
             'branding' => [
                 'primary_color' => '#3B82F6',
-                'company_name' => $settings['company_name'] ?? $company?->name ?? 'HSOP',
+                'company_name' => $settings['company_name'] ?? $company?->name ?? 'ServiceOP',
             ],
             'gst_rate' => $settings['gst_rate'] ?? '5',
             'markup_divisor' => $settings['markup_divisor'] ?? '0.80',

@@ -1,7 +1,7 @@
 @extends('emails.layout')
 
 @section('content')
-    <h2 style="color: #1e293b; margin-top: 0;">{{ $heading ?? 'Notification from HSOP' }}</h2>
+    <h2 style="color: #1e293b; margin-top: 0;">{{ $heading ?? 'Notification from ServiceOP' }}</h2>
     <p style="color: #334155; line-height: 1.6;">{!! nl2br(e($body ?? '')) !!}</p>
     @if(!empty($actionUrl) && !empty($actionLabel))
         <div style="text-align: center; margin: 28px 0;">

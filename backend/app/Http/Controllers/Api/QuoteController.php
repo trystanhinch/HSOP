@@ -305,7 +305,7 @@ class QuoteController extends Controller
                 'scheduled_start_date' => $quote->job->scheduled_start_date,
                 'estimated_completion' => $quote->job->estimated_completion_date ?? $quote->job->scheduled_end_date,
                 'scope_of_work' => $quote->job->scope_of_work ?? '',
-                'company_name' => optional($quote->job->company)->name ?? 'HSOP',
+                'company_name' => optional($quote->job->company)->name ?? 'ServiceOP',
                 'pm_name' => optional($quote->job->pm)->name ?? '',
             ],
         ]);

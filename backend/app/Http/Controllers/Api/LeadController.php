@@ -79,15 +79,16 @@ class LeadController extends Controller
 
         $data = $request->validate([
             'contact_name' => 'required|string|max:255',
-            'phone' => 'nullable|string|max:20',
-            'email' => 'nullable|email|max:255',
-            'address' => 'required|string|max:500',
+            'phone' => 'nullable|string|max:20|required_without:email',
+            'email' => 'nullable|email|max:255|required_without:phone',
+            'address' => 'nullable|string|max:500',
             'service_category' => 'required|in:drywall_paint,insulation',
             'source' => 'nullable|string|max:100',
             'project_description' => 'nullable|string',
             'internal_notes' => 'nullable|string',
             'company_id' => 'nullable|exists:companies,id',
             'assigned_pm_id' => 'nullable|exists:users,id',
+            'assigned_contractor_id' => 'nullable|exists:users,id',
             'site_visit_date' => 'nullable|date',
             'site_visit_time' => 'nullable|date_format:H:i',
         ]);
@@ -356,7 +357,19 @@ class LeadController extends Controller
             'site_visit_time' => 'required|date_format:H:i',
             'site_visit_contractor_id' => 'required|exists:users,id',
             'site_visit_notes' => 'nullable|string',
+            'address' => 'nullable|string|max:500',
         ]);
+
+        if (! $lead->address && ! $request->address) {
+            return response()->json([
+                'message' => 'Please add the job address before scheduling a site visit.',
+            ], 422);
+        }
+
+        if ($request->address) {
+            $lead->update(['address' => $request->address]);
+            $lead->refresh();
+        }
 
         $contractor = User::where('id', $request->site_visit_contractor_id)
             ->where('role', 'contractor')->firstOrFail();
