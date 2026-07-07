@@ -7,6 +7,7 @@ export const statusLabels = {
   quote_needed: 'Quote Needed',
   converted: 'Converted',
   lost: 'Lost',
+  lead_assigned: 'Lead Assigned',
 
   new_job: 'New Job',
   contractor_assigned: 'Contractor Assigned',

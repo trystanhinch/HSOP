@@ -43,6 +43,9 @@ export default function LeadDetail() {
   const [visitTime, setVisitTime] = useState('');
   const [contractorId, setContractorId] = useState('');
   const [visitNotes, setVisitNotes] = useState('');
+  const [selectedContractorId, setSelectedContractorId] = useState('');
+  const [assigningContractor, setAssigningContractor] = useState(false);
+  const [showContractorSelect, setShowContractorSelect] = useState(false);
 
   const load = () => {
     setLoadError(null);
@@ -52,7 +55,9 @@ export default function LeadDetail() {
         setVisitDate(data.site_visit_date?.split('T')[0] || '');
         setVisitTime(data.site_visit_time?.slice(0, 5) || '');
         setContractorId(data.site_visit_contractor_id ? String(data.site_visit_contractor_id) : '');
+        setSelectedContractorId(data.assigned_contractor_id ? String(data.assigned_contractor_id) : '');
         setVisitNotes(data.site_visit_notes || '');
+        setShowContractorSelect(false);
       })
       .catch((e) => {
         setLead(null);
@@ -82,6 +87,23 @@ export default function LeadDetail() {
       load();
     } catch (e) {
       await showError(e.response?.data?.message || 'Failed to update status.');
+    }
+  };
+
+  const assignContractor = async () => {
+    if (!selectedContractorId) return;
+    setAssigningContractor(true);
+    try {
+      await api.put(`/leads/${id}`, {
+        assigned_contractor_id: selectedContractorId,
+      });
+      await showSuccess('Contractor assigned successfully');
+      setShowContractorSelect(false);
+      load();
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Failed to assign contractor');
+    } finally {
+      setAssigningContractor(false);
     }
   };
 
@@ -169,7 +191,25 @@ export default function LeadDetail() {
 
   if (!lead) return <div className="text-center py-12 text-slate-500">Loading lead...</div>;
 
+  const isAssignedToThisLead = isContractor && (
+    Number(lead.assigned_contractor_id) === Number(user?.id)
+    || Number(lead.site_visit_contractor_id) === Number(user?.id)
+  );
+
   if (isContractor) {
+    if (!isAssignedToThisLead) {
+      return (
+        <div className="text-center py-12">
+          <p className="text-red-600 mb-4">You are not assigned to this lead.</p>
+          <button type="button" onClick={() => navigate('/jobs')} className="text-sm text-blue-600 hover:underline">
+            ← Back to Jobs
+          </button>
+        </div>
+      );
+    }
+
+    const hasSiteVisit = lead.site_visit_date || lead.site_visit_time;
+
     return (
       <div className="max-w-3xl mx-auto space-y-6">
         <button type="button" onClick={() => navigate('/jobs')}
@@ -178,20 +218,26 @@ export default function LeadDetail() {
         </button>
 
         <div className="flex items-center gap-3">
-          <h1 className="text-xl font-bold text-slate-800">Your Appointment</h1>
+          <h1 className="text-xl font-bold text-slate-800">
+            {hasSiteVisit ? 'Your Appointment' : 'Lead Details'}
+          </h1>
           <StatusBadge status={lead.status} />
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-5">
-          <h2 className="font-semibold text-slate-800 mb-4">Appointment Details</h2>
+          <h2 className="font-semibold text-slate-800 mb-4">
+            {hasSiteVisit ? 'Appointment Details' : 'Project Details'}
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <p className="text-slate-400 text-xs mb-0.5">Date & Time</p>
-              <p className="font-medium text-slate-800">
-                {formatVisitDate(lead.site_visit_date)}
-                {lead.site_visit_time && ` at ${formatVisitTime(lead.site_visit_time)}`}
-              </p>
-            </div>
+            {hasSiteVisit && (
+              <div>
+                <p className="text-slate-400 text-xs mb-0.5">Date & Time</p>
+                <p className="font-medium text-slate-800">
+                  {formatVisitDate(lead.site_visit_date)}
+                  {lead.site_visit_time && ` at ${formatVisitTime(lead.site_visit_time)}`}
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-slate-400 text-xs mb-0.5">Address</p>
               <p className="font-medium text-slate-800">{lead.address}</p>
@@ -360,6 +406,79 @@ export default function LeadDetail() {
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
           <h3 className="font-semibold text-slate-800 mb-2">Project Description</h3>
           <p className="text-sm text-slate-600 whitespace-pre-wrap">{lead.project_description || lead.notes || '—'}</p>
+        </div>
+
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="font-semibold text-slate-800 mb-1">Assigned Contractor</h3>
+          <p className="text-sm text-slate-500 mb-3">
+            Assign a contractor to this lead. They will be able to view
+            the project details and submit their price — even without a
+            site visit if the job can be quoted over the phone.
+          </p>
+
+          {lead.assigned_contractor && !showContractorSelect ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center text-orange-700 font-bold text-sm">
+                  {lead.assigned_contractor.name?.charAt(0)}
+                </div>
+                <div>
+                  <p className="font-medium text-slate-800 text-sm">
+                    {lead.assigned_contractor.name}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {lead.assigned_contractor.phone || lead.assigned_contractor.email}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedContractorId(String(lead.assigned_contractor_id || ''));
+                  setShowContractorSelect(true);
+                }}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                Change
+              </button>
+            </div>
+          ) : (
+            <div>
+              <select
+                value={selectedContractorId}
+                onChange={(e) => setSelectedContractorId(e.target.value)}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3"
+              >
+                <option value="">Select a contractor...</option>
+                {contractors.map((c) => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                {lead.assigned_contractor && (
+                  <button
+                    type="button"
+                    onClick={() => setShowContractorSelect(false)}
+                    className="flex-1 border border-slate-300 text-slate-600 rounded-lg py-2.5 text-sm font-medium"
+                  >
+                    Cancel
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={assignContractor}
+                  disabled={!selectedContractorId || assigningContractor}
+                  className="flex-1 bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium"
+                >
+                  {assigningContractor ? 'Assigning...' : 'Assign Contractor'}
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mt-2">
+                The contractor will see this lead in their jobs list and
+                can submit their price directly.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-6">
