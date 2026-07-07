@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import api from '../api/axios';
 import { formatDate } from '../utils/formatDate';
-import { confirmAction, confirmDanger, showError, showSuccess } from '../utils/swal';
+import { confirmDanger, showError, showSuccess } from '../utils/swal';
 
 function fmt(n) {
   return `$${parseFloat(n || 0).toFixed(2)}`;
