@@ -8,6 +8,7 @@ use App\Models\Job;
 use App\Models\Quote;
 use App\Models\QuoteItem;
 use App\Services\JobNotificationService;
+use App\Services\LeadQuoteWorkflowService;
 use App\Services\PayoutWorkflowService;
 use App\Services\PricingService;
 use Illuminate\Http\JsonResponse;
@@ -19,7 +20,8 @@ class QuoteController extends Controller
     public function __construct(
         protected PricingService $pricing,
         protected JobNotificationService $notifications,
-        protected PayoutWorkflowService $payouts
+        protected PayoutWorkflowService $payouts,
+        protected LeadQuoteWorkflowService $leadQuotes,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -243,10 +245,13 @@ class QuoteController extends Controller
             return response()->json(['message' => 'Quote cannot be approved in current status'], 422);
         }
 
-        $quote->update(['status' => 'approved', 'accepted_at' => now()]);
-        $quote->job->update(['status' => 'quote_approved']);
-        $this->payouts->createPayoutsOnQuoteApproval($quote->fresh());
-        $this->notifications->quoteApproved($quote->fresh());
+        try {
+            $quote = $this->leadQuotes->approveQuote($quote);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => collect($e->errors())->flatten()->first()], 422);
+        }
+        $this->payouts->createPayoutsOnQuoteApproval($quote);
+        $this->notifications->quoteApproved($quote);
 
         return response()->json(['message' => 'Quote approved']);
     }
@@ -260,9 +265,12 @@ class QuoteController extends Controller
         }
 
         $request->validate(['rejection_reason' => 'required|string|max:1000']);
-        $quote->update(['status' => 'rejected', 'rejection_reason' => $request->rejection_reason]);
-        $quote->job->update(['status' => 'waiting_on_customer']);
-        $this->notifications->quoteRejected($quote->fresh());
+        try {
+            $quote = $this->leadQuotes->rejectQuote($quote, $request->rejection_reason);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => collect($e->errors())->flatten()->first()], 422);
+        }
+        $this->notifications->quoteRejected($quote);
 
         return response()->json(['message' => 'Quote rejected']);
     }
@@ -272,6 +280,9 @@ class QuoteController extends Controller
         $quote = Quote::where('customer_token', $token)
             ->with([
                 'customer:id,name,email,phone',
+                'lead:id,contact_name,address,service_category,company_id,assigned_pm_id',
+                'lead.company:id,name,phone,email',
+                'lead.assignedPm:id,name,email,phone',
                 'job:id,address,service_category,status,scope_of_work,scheduled_start_date,estimated_completion_date,scheduled_end_date,company_id,pm_id',
                 'job.company:id,name,phone,email',
                 'job.pm:id,name,email,phone',
@@ -287,11 +298,18 @@ class QuoteController extends Controller
             $quote->update(['status' => 'viewed', 'viewed_at' => now()]);
         }
 
+        $address = $quote->job->address ?? $quote->lead?->address ?? '';
+        $serviceCategory = $quote->job->service_category ?? $quote->lead?->service_category ?? '';
+        $jobStatus = $quote->job->status ?? '';
+        $scopeOfWork = $quote->scope_of_work ?: ($quote->job->scope_of_work ?? $quote->lead?->project_description ?? '');
+        $companyName = optional($quote->job?->company)->name ?? optional($quote->lead?->company)->name ?? 'ServiceOP';
+        $pm = $quote->job?->pm ?? $quote->lead?->assignedPm;
+
         return response()->json([
             'quote_number' => $quote->quote_number,
             'status' => $quote->status,
             'customer_name' => $quote->customer?->name,
-            'scope_of_work' => $quote->scope_of_work ?: ($quote->job->scope_of_work ?? ''),
+            'scope_of_work' => $scopeOfWork,
             'customer_notes' => $quote->customer_notes,
             'subtotal' => $quote->subtotal ?? $quote->customer_price_before_gst,
             'gst' => $quote->gst,
@@ -302,36 +320,35 @@ class QuoteController extends Controller
             'sent_at' => $quote->sent_at,
             'accepted_at' => $quote->accepted_at,
             'job' => [
-                'address' => $quote->job->address ?? '',
-                'service_category' => $quote->job->service_category ?? '',
-                'status' => $quote->job->status ?? '',
-                'scheduled_start_date' => $quote->job->scheduled_start_date,
-                'estimated_completion' => $quote->job->estimated_completion_date ?? $quote->job->scheduled_end_date,
-                'scope_of_work' => $quote->job->scope_of_work ?? '',
-                'company_name' => optional($quote->job->company)->name ?? 'ServiceOP',
-                'pm_name' => optional($quote->job->pm)->name ?? '',
-                'pm_email' => optional($quote->job->pm)->email,
-                'pm_phone' => optional($quote->job->pm)->phone,
+                'address' => $address,
+                'service_category' => $serviceCategory,
+                'status' => $jobStatus,
+                'scheduled_start_date' => $quote->job?->scheduled_start_date,
+                'estimated_completion' => $quote->job?->estimated_completion_date ?? $quote->job?->scheduled_end_date,
+                'scope_of_work' => $scopeOfWork,
+                'company_name' => $companyName,
+                'pm_name' => $pm?->name ?? '',
+                'pm_email' => $pm?->email,
+                'pm_phone' => $pm?->phone,
             ],
         ]);
     }
 
     public function approveByToken(string $token): JsonResponse
     {
-        $quote = Quote::with('job')->where('customer_token', $token)->first();
+        $quote = Quote::with(['job', 'lead'])->where('customer_token', $token)->first();
 
         if (! $quote) {
             return response()->json(['message' => 'This link is invalid or has expired.'], 404);
         }
 
-        if (! in_array($quote->status, ['sent', 'viewed'])) {
-            return response()->json(['message' => 'Quote cannot be approved'], 422);
+        try {
+            $quote = $this->leadQuotes->approveQuote($quote);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => collect($e->errors())->flatten()->first()], 422);
         }
-
-        $quote->update(['status' => 'approved', 'accepted_at' => now()]);
-        $quote->job->update(['status' => 'quote_approved']);
-        $this->payouts->createPayoutsOnQuoteApproval($quote->fresh());
-        $this->notifications->quoteApproved($quote->fresh());
+        $this->payouts->createPayoutsOnQuoteApproval($quote);
+        $this->notifications->quoteApproved($quote);
 
         return response()->json(['message' => 'Quote approved. Thank you!']);
     }
@@ -345,9 +362,12 @@ class QuoteController extends Controller
             return response()->json(['message' => 'This link is invalid or has expired.'], 404);
         }
 
-        $quote->update(['status' => 'rejected', 'rejection_reason' => $request->rejection_reason]);
-        $quote->job->update(['status' => 'waiting_on_customer']);
-        $this->notifications->quoteRejected($quote->fresh());
+        try {
+            $quote = $this->leadQuotes->rejectQuote($quote, $request->rejection_reason);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => collect($e->errors())->flatten()->first()], 422);
+        }
+        $this->notifications->quoteRejected($quote);
 
         return response()->json(['message' => 'Quote rejected. The team has been notified.']);
     }

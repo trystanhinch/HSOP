@@ -17,6 +17,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Services\EmailService;
 use App\Services\JobNotificationService;
+use App\Services\LeadQuoteWorkflowService;
 use App\Services\PayoutWorkflowService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
@@ -31,6 +32,7 @@ class CustomerPortalController extends Controller
         protected EmailService $email,
         protected JobNotificationService $notifications,
         protected PayoutWorkflowService $payouts,
+        protected LeadQuoteWorkflowService $leadQuotes,
         protected UploadStorage $uploads,
     ) {}
 
@@ -53,9 +55,13 @@ class CustomerPortalController extends Controller
     public function show(string $token): JsonResponse
     {
         $lead = $this->leadFromToken($token);
+        $lead->load('assignedPm:id,name,email,phone');
         $job = Job::with(['quote', 'invoice', 'updates.photos', 'updates.postedBy:id,name', 'pm:id,name,email,phone'])
             ->where('lead_id', $lead->id)
             ->first();
+
+        $leadQuote = Quote::where('lead_id', $lead->id)->whereNull('job_id')->latest()->first();
+        $activeQuote = $job?->quote ?? $leadQuote;
 
         return response()->json([
             'lead' => [
@@ -66,22 +72,22 @@ class CustomerPortalController extends Controller
                 'site_visit_date' => $lead->site_visit_date,
                 'site_visit_time' => $lead->site_visit_time,
             ],
-            'quote' => $job?->quote ? [
-                'quote_number' => $job->quote->quote_number,
-                'scope_of_work' => $job->quote->scope_of_work,
-                'customer_notes' => $job->quote->customer_notes,
-                'customer_price_before_gst' => $job->quote->customer_price_before_gst,
-                'gst' => $job->quote->gst,
-                'gst_rate' => $job->quote->gst_rate,
-                'customer_total' => $job->quote->customer_total,
-                'status' => $job->quote->status,
-                'sent_at' => $job->quote->sent_at,
-                'accepted_at' => $job->quote->accepted_at,
+            'quote' => $activeQuote ? [
+                'quote_number' => $activeQuote->quote_number,
+                'scope_of_work' => $activeQuote->scope_of_work,
+                'customer_notes' => $activeQuote->customer_notes,
+                'customer_price_before_gst' => $activeQuote->customer_price_before_gst,
+                'gst' => $activeQuote->gst,
+                'gst_rate' => $activeQuote->gst_rate,
+                'customer_total' => $activeQuote->customer_total,
+                'status' => $activeQuote->status,
+                'sent_at' => $activeQuote->sent_at,
+                'accepted_at' => $activeQuote->accepted_at,
             ] : null,
-            'pm' => $job?->pm ? [
-                'name' => $job->pm->name,
-                'email' => $job->pm->email,
-                'phone' => $job->pm->phone,
+            'pm' => ($job?->pm ?? $lead->assignedPm) ? [
+                'name' => ($job?->pm ?? $lead->assignedPm)->name,
+                'email' => ($job?->pm ?? $lead->assignedPm)->email,
+                'phone' => ($job?->pm ?? $lead->assignedPm)->phone,
             ] : null,
             'job' => $job ? [
                 'id' => $job->id,
@@ -119,16 +125,19 @@ class CustomerPortalController extends Controller
     public function acceptQuote(string $token): JsonResponse
     {
         $lead = $this->leadFromToken($token);
-        $quote = Quote::whereHas('job', fn ($q) => $q->where('lead_id', $lead->id))->firstOrFail();
+        $quote = $this->leadQuotes->findQuoteForLead($lead);
 
-        if (! in_array($quote->status, ['sent', 'viewed'])) {
-            return response()->json(['message' => 'Quote cannot be approved in current status'], 422);
+        if (! $quote) {
+            return response()->json(['message' => 'No quote found for this lead.'], 404);
         }
 
-        $quote->update(['status' => 'approved', 'accepted_at' => now()]);
-        $quote->job->update(['status' => 'quote_approved']);
-        $this->payouts->createPayoutsOnQuoteApproval($quote->fresh());
-        $this->notifications->quoteApproved($quote->fresh());
+        try {
+            $quote = $this->leadQuotes->approveQuote($quote);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => collect($e->errors())->flatten()->first()], 422);
+        }
+        $this->payouts->createPayoutsOnQuoteApproval($quote);
+        $this->notifications->quoteApproved($quote);
 
         return response()->json(['message' => 'Quote approved. Thank you!']);
     }
@@ -137,11 +146,18 @@ class CustomerPortalController extends Controller
     {
         $request->validate(['rejection_reason' => 'required|string|max:1000']);
         $lead = $this->leadFromToken($token);
-        $quote = Quote::whereHas('job', fn ($q) => $q->where('lead_id', $lead->id))->firstOrFail();
+        $quote = $this->leadQuotes->findQuoteForLead($lead);
 
-        $quote->update(['status' => 'rejected', 'rejection_reason' => $request->rejection_reason]);
-        $quote->job->update(['status' => 'waiting_on_customer']);
-        $this->notifications->quoteRejected($quote->fresh());
+        if (! $quote) {
+            return response()->json(['message' => 'No quote found for this lead.'], 404);
+        }
+
+        try {
+            $quote = $this->leadQuotes->rejectQuote($quote, $request->rejection_reason);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => collect($e->errors())->flatten()->first()], 422);
+        }
+        $this->notifications->quoteRejected($quote);
 
         return response()->json(['message' => 'Quote rejected. The team has been notified.']);
     }

@@ -34,6 +34,7 @@ class LeadCustomerResolver
             'password' => bcrypt(Str::random(16)),
             'role' => 'customer',
             'status' => 'active',
+            'phone' => $lead->phone,
         ]);
 
         Customer::create([

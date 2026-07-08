@@ -35,35 +35,46 @@ class JobNotificationService
 
     public function quoteSent(Quote $quote, string $quoteUrl): void
     {
-        $quote->loadMissing(['customer', 'job.pm', 'job.lead']);
+        $quote->loadMissing(['customer', 'job.pm', 'job.lead', 'lead.assignedPm']);
         $customer = $quote->customer;
-        $portalUrl = $quote->job?->lead?->customer_portal_token
-            ? SmsMessageTemplates::customerPortalUrl($quote->job->lead->customer_portal_token)
-            : $quoteUrl;
 
-        $this->sms->sendToUser(
-            $customer,
-            SmsMessageTemplates::quoteSent($customer, $quote, $portalUrl),
-            'quote_sent',
-            $quote->job_id
-        );
+        $portalUrl = $quoteUrl;
+        if ($quote->lead?->customer_portal_token) {
+            $portalUrl = SmsMessageTemplates::customerPortalUrl($quote->lead->customer_portal_token);
+        } elseif ($quote->job?->lead?->customer_portal_token) {
+            $portalUrl = SmsMessageTemplates::customerPortalUrl($quote->job->lead->customer_portal_token);
+        }
 
-        $this->email->send(
-            $customer->email,
-            'Your Quote Is Ready',
-            'emails.notification',
-            [
-                'heading' => 'Your Quote Is Ready',
-                'body' => "Your quote for {$quote->job->address} is ready.\n\nQuote Total: \${$quote->customer_total} (includes GST)",
-                'actionUrl' => $quoteUrl,
-                'actionLabel' => 'View Quote',
-            ],
-            'quote_sent',
-            $customer->id,
-            $quote->job_id
-        );
+        $location = $quote->job?->address ?? $quote->lead?->address ?? $quote->lead?->contact_name ?? 'your project';
 
-        $this->audit('quote_sent', 'quote', $quote->id, null, null, ['quote_url' => $quoteUrl]);
+        if ($customer) {
+            $this->sms->sendToUser(
+                $customer,
+                SmsMessageTemplates::quoteSent($customer, $quote, $portalUrl),
+                'quote_sent',
+                $quote->job_id
+            );
+        }
+
+        $email = $quote->lead?->email ?: $customer?->email;
+        if ($email && ! str_contains($email, '@placeholder.')) {
+            $this->email->send(
+                $email,
+                'Your Quote Is Ready',
+                'emails.notification',
+                [
+                    'heading' => 'Your Quote Is Ready',
+                    'body' => "Your quote for {$location} is ready.\n\nQuote Total: \${$quote->customer_total} (includes GST)",
+                    'actionUrl' => $portalUrl,
+                    'actionLabel' => 'View Quote',
+                ],
+                'quote_sent',
+                $customer?->id,
+                $quote->job_id
+            );
+        }
+
+        $this->audit('quote_sent', 'quote', $quote->id, null, null, ['quote_url' => $portalUrl]);
     }
 
     public function quoteApproved(Quote $quote): void
@@ -119,8 +130,8 @@ class JobNotificationService
 
     public function quoteRejected(Quote $quote): void
     {
-        $quote->loadMissing(['customer', 'job.pm']);
-        $pm = $quote->job->pm;
+        $quote->loadMissing(['customer', 'job.pm', 'lead.assignedPm']);
+        $pm = $quote->job?->pm ?? $quote->lead?->assignedPm;
         $admin = User::where('role', 'owner')->first();
 
         $this->sms->sendToUser(

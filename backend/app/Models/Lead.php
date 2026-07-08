@@ -73,6 +73,11 @@ class Lead extends Model
         return $this->hasOne(Job::class);
     }
 
+    public function quotes(): HasMany
+    {
+        return $this->hasMany(Quote::class);
+    }
+
     public function siteVisitContractor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'site_visit_contractor_id');

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Quote extends Model
 {
     protected $fillable = [
+        'lead_id',
         'company_id',
         'job_id',
         'customer_id',
@@ -63,6 +64,11 @@ class Quote extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class);
     }
 
     public function job(): BelongsTo

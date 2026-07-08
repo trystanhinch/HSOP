@@ -6,12 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Job;
 use App\Models\Lead;
+use App\Models\Quote;
 use App\Models\SiteVisit;
 use App\Models\User;
 use App\Mail\SiteVisitScheduledContractorMail;
 use App\Mail\SiteVisitScheduledCustomerMail;
 use App\Services\EmailService;
 use App\Services\LeadCustomerResolver;
+use App\Services\LeadQuoteWorkflowService;
 use App\Services\PricingService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
@@ -25,7 +27,8 @@ class LeadController extends Controller
     public function __construct(
         protected SmsService $sms,
         protected EmailService $email,
-        protected PricingService $pricing
+        protected PricingService $pricing,
+        protected LeadQuoteWorkflowService $leadQuotes,
     ) {}
     public function index(Request $request): JsonResponse
     {
@@ -76,6 +79,8 @@ class LeadController extends Controller
         if (! in_array($user->role, ['owner', 'pm'])) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $this->normalizeNullableFields($request, ['address', 'phone', 'email', 'project_description', 'internal_notes']);
 
         $data = $request->validate([
             'contact_name' => 'required|string|max:255',
@@ -140,7 +145,16 @@ class LeadController extends Controller
                 ->take(20)
                 ->get();
 
-            return response()->json(array_merge($lead->toArray(), ['activity' => $activity]));
+            $leadQuote = Quote::where('lead_id', $lead->id)->whereNull('job_id')->latest()->first();
+            $pricingPreview = $lead->contractor_price
+                ? $this->pricing->fromContractorPrice((float) $lead->contractor_price)
+                : null;
+
+            return response()->json(array_merge($lead->toArray(), [
+                'activity' => $activity,
+                'lead_quote' => $leadQuote,
+                'pricing_preview' => $pricingPreview,
+            ]));
         }
 
         if ($user->role === 'contractor') {
@@ -192,12 +206,14 @@ class LeadController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        $this->normalizeNullableFields($request, ['address', 'phone', 'email', 'project_description', 'internal_notes']);
+
         $data = $request->validate([
             'contact_name' => 'sometimes|string|max:255',
-            'phone' => 'nullable|string|max:20',
+            'phone' => 'sometimes|nullable|string|max:20',
             'email' => 'nullable|email|max:255',
-            'address' => 'sometimes|string|max:500',
-            'service_category' => 'sometimes|in:drywall_paint,insulation',
+            'address' => 'sometimes|nullable|string|max:500',
+            'service_category' => 'sometimes|nullable|in:drywall_paint,insulation',
             'source' => 'nullable|string|max:100',
             'project_description' => 'nullable|string',
             'internal_notes' => 'nullable|string',
@@ -284,8 +300,8 @@ class LeadController extends Controller
             return response()->json(['message' => 'Lead already converted'], 422);
         }
 
-        if (! $lead->address || ! $lead->contact_name) {
-            return response()->json(['message' => 'Lead is missing required information (name or address)'], 422);
+        if (! $lead->contact_name) {
+            return response()->json(['message' => 'Lead is missing a contact name.'], 422);
         }
 
         $jobId = null;
@@ -534,5 +550,50 @@ class LeadController extends Controller
             'message' => 'Price submitted. The project manager has been notified.',
             'lead' => $lead->fresh(),
         ]);
+    }
+
+    public function sendQuote(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+        if (! in_array($user->role, ['owner', 'pm'], true)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $lead = Lead::findOrFail($id);
+
+        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $request->validate([
+            'scope_of_work' => 'nullable|string',
+            'customer_notes' => 'nullable|string',
+            'internal_notes' => 'nullable|string',
+        ]);
+
+        try {
+            $result = $this->leadQuotes->sendQuote(
+                $lead,
+                $request->input('scope_of_work'),
+                $request->input('customer_notes'),
+                $request->input('internal_notes'),
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => collect($e->errors())->flatten()->first()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Quote sent successfully',
+            ...$result,
+        ]);
+    }
+
+    protected function normalizeNullableFields(Request $request, array $fields): void
+    {
+        foreach ($fields as $field) {
+            if ($request->has($field) && $request->input($field) === '') {
+                $request->merge([$field => null]);
+            }
+        }
     }
 }
