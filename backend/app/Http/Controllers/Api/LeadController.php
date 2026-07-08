@@ -154,6 +154,8 @@ class LeadController extends Controller
                 'activity' => $activity,
                 'lead_quote' => $leadQuote,
                 'pricing_preview' => $pricingPreview,
+                'next_action' => $lead->pendingNextAction()->with('responsibleUser:id,name,role')->first(),
+                'event_timeline' => app(\App\Services\ActivityTimelineService::class)->forSubject($lead, 20),
             ]));
         }
 

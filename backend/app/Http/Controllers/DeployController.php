@@ -480,6 +480,25 @@ class DeployController extends Controller
         ]);
     }
 
+    public function milestone4Phase1(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $steps = [];
+
+        Artisan::call('migrate', ['--force' => true]);
+        $steps['migrate --force'] = trim(Artisan::output());
+
+        Artisan::call('db:seed', ['--class' => 'Milestone4Seeder', '--force' => true]);
+        $steps['db:seed --class=Milestone4Seeder --force'] = trim(Artisan::output());
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Milestone 4 Phase 1 migration and seeder completed.',
+            'steps' => $steps,
+        ]);
+    }
+
     private function authorizeDeploy(string $secret): void
     {
         $expected = env('DEPLOY_SECRET');

@@ -309,7 +309,12 @@ class JobController extends Controller
             $job->setRelation('updates', $job->updates->where('visibility', 'customer_visible')->values());
         }
 
-        return response()->json($job);
+        $timelineService = app(\App\Services\ActivityTimelineService::class);
+
+        return response()->json(array_merge($job->toArray(), [
+            'next_action' => $job->pendingNextAction()->with('responsibleUser:id,name,role')->first(),
+            'event_timeline' => $timelineService->forSubject($job, 20),
+        ]));
     }
 
     public function update(Request $request, string $id): JsonResponse

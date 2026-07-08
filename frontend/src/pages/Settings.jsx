@@ -8,7 +8,7 @@ import AddUserModal from '../components/AddUserModal';
 import DatabaseStructure from './DatabaseStructure';
 import { confirmAction, confirmDanger, showError, showSuccess } from '../utils/swal';
 
-const tabs = ['Company', 'Users & Roles', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure'];
+const tabs = ['Company', 'Users & Roles', 'AI Settings', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure'];
 
 const smsStatusColor = { sent: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-700', disabled: 'bg-slate-100 text-slate-600' };
 
@@ -28,6 +28,9 @@ export default function Settings() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [roleFilter, setRoleFilter] = useState('all');
   const [saving, setSaving] = useState(false);
+  const [aiSettings, setAiSettings] = useState(null);
+  const [aiForm, setAiForm] = useState({ ai_kill_switch: false, module_modes: {} });
+  const [aiSaving, setAiSaving] = useState(false);
 
   const loadAdminUsers = () => {
     api.get('/admin/users').then(({ data }) => setUsers(data)).catch(() => setUsers([]));
@@ -61,6 +64,18 @@ export default function Settings() {
   useEffect(() => {
     if (activeTab === 'Users & Roles') {
       loadAdminUsers();
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'AI Settings') {
+      api.get('/ai/settings').then(({ data }) => {
+        setAiSettings(data);
+        setAiForm({
+          ai_kill_switch: data.ai_kill_switch ?? false,
+          module_modes: data.module_modes || {},
+        });
+      }).catch(() => setAiSettings(null));
     }
   }, [activeTab]);
 
@@ -124,6 +139,39 @@ export default function Settings() {
   const savePayment = (e) => {
     e.preventDefault();
     saveSettings(paymentForm, 'Payment settings saved.');
+  };
+
+  const saveAiSettings = async (e) => {
+    e.preventDefault();
+    const ok = await confirmAction({ title: 'Save AI settings?', text: 'Update AI kill switch and module modes?', confirmText: 'Yes, save' });
+    if (!ok) return;
+    setAiSaving(true);
+    try {
+      await api.put('/ai/settings', aiForm);
+      await showSuccess('AI settings saved.');
+      api.get('/ai/settings').then(({ data }) => {
+        setAiSettings(data);
+        setAiForm({ ai_kill_switch: data.ai_kill_switch ?? false, module_modes: data.module_modes || {} });
+      });
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to save AI settings.');
+    } finally {
+      setAiSaving(false);
+    }
+  };
+
+  const createTestAiLog = async () => {
+    try {
+      await api.post('/ai/action-logs/test', {
+        trigger_event: 'phase1_verification',
+        action_taken: 'test_action',
+        decision: 'Manual test entry from Settings UI.',
+      });
+      await showSuccess('Test AI action log created.');
+      api.get('/ai/settings').then(({ data }) => setAiSettings(data));
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to create test log.');
+    }
   };
 
   const deactivateUser = async (userId) => {
@@ -432,6 +480,89 @@ export default function Settings() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'AI Settings' && (
+        <div className="space-y-6 max-w-4xl">
+          <form onSubmit={saveAiSettings} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+            <h3 className="font-semibold text-slate-800">AI Controls (Owner only)</h3>
+            <label className="flex items-center gap-3 text-sm">
+              <input type="checkbox" checked={aiForm.ai_kill_switch}
+                onChange={(e) => setAiForm({ ...aiForm, ai_kill_switch: e.target.checked })}
+                className="rounded border-slate-300" />
+              <span><strong>AI Kill Switch</strong> — when on, all AI operations are paused</span>
+            </label>
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-slate-700">Per-module operating mode</p>
+              {(aiSettings?.modules || []).map((module) => (
+                <div key={module} className="flex items-center gap-3">
+                  <span className="text-sm text-slate-600 w-40 capitalize">{module.replace(/_/g, ' ')}</span>
+                  <select value={aiForm.module_modes?.[module] || 'suggestion'}
+                    onChange={(e) => setAiForm({
+                      ...aiForm,
+                      module_modes: { ...aiForm.module_modes, [module]: e.target.value },
+                    })}
+                    className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm">
+                    {(aiSettings?.available_modes || ['suggestion', 'assisted', 'autopilot']).map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <button type="submit" disabled={aiSaving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-60">
+              {aiSaving ? 'Saving...' : 'Save AI Settings'}
+            </button>
+          </form>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-slate-800">Action Registry</h3>
+              <button type="button" onClick={createTestAiLog} className="text-sm text-blue-600 font-medium">Create test log</button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[640px]">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-slate-500">Action</th>
+                    <th className="text-left px-3 py-2 font-medium text-slate-500">Approval</th>
+                    <th className="text-left px-3 py-2 font-medium text-slate-500">Modes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(aiSettings?.action_registry || []).map((a) => (
+                    <tr key={a.action_key}>
+                      <td className="px-3 py-2">
+                        <p className="font-medium">{a.label}</p>
+                        <p className="text-xs text-slate-400">{a.action_key}</p>
+                      </td>
+                      <td className="px-3 py-2">{a.requires_human_approval ? 'Yes' : 'No'}</td>
+                      <td className="px-3 py-2 text-xs">{(a.modes_available || []).join(', ')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <h3 className="font-semibold text-slate-800 mb-3">Recent AI Action Logs</h3>
+            {(aiSettings?.recent_action_logs || []).length === 0 ? (
+              <p className="text-sm text-slate-500">No AI action logs yet.</p>
+            ) : (
+              <div className="space-y-2">
+                {aiSettings.recent_action_logs.map((log) => (
+                  <div key={log.id} className="text-sm border-b border-slate-100 pb-2">
+                    <span className="text-slate-400 text-xs">{formatDate(log.created_at)}</span>
+                    <span className="ml-2 font-medium">{log.trigger_event}</span>
+                    <span className="ml-2 text-slate-500">{log.action_taken}</span>
+                    <p className="text-slate-600 text-xs mt-1">{log.decision}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

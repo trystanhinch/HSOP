@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('deploy')->group(function () {
     Route::get('/release/{secret}', [DeployController::class, 'release']);
+    Route::get('/milestone4-phase1/{secret}', [DeployController::class, 'milestone4Phase1']);
     Route::get('/seed-settings/{secret}', [DeployController::class, 'seedSettings']);
     Route::get('/migrate/{secret}', [DeployController::class, 'migrate']);
     Route::get('/seed/{secret}', [DeployController::class, 'seed']);

@@ -60,4 +60,19 @@ class User extends Authenticatable
     {
         return $this->hasOne(Customer::class);
     }
+
+    public function isOwner(): bool
+    {
+        return $this->role === 'owner';
+    }
+
+    public function isAiSuperAdmin(): bool
+    {
+        return $this->role === 'ai_super_admin';
+    }
+
+    public static function aiSuperAdmin(): ?self
+    {
+        return static::where('role', 'ai_super_admin')->first();
+    }
 }

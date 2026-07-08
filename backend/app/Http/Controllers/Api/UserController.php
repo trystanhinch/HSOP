@@ -34,7 +34,9 @@ class UserController extends Controller
         }
 
         return response()->json(
-            User::orderBy('role')->orderBy('name')->get(['id', 'name', 'email', 'role', 'status', 'created_at'])
+            User::whereNot('role', 'ai_super_admin')
+                ->orderBy('role')->orderBy('name')
+                ->get(['id', 'name', 'email', 'role', 'status', 'created_at'])
         );
     }
 

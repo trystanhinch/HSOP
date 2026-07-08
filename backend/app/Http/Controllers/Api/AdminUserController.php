@@ -99,8 +99,8 @@ class AdminUserController extends Controller
 
     public function destroy(User $user): JsonResponse
     {
-        if ($user->role === 'owner') {
-            return response()->json(['message' => 'Cannot delete admin accounts'], 422);
+        if (in_array($user->role, ['owner', 'ai_super_admin'], true)) {
+            return response()->json(['message' => 'Cannot delete this account type'], 422);
         }
 
         $user->update(['status' => 'inactive']);
@@ -110,8 +110,8 @@ class AdminUserController extends Controller
 
     public function resetPassword(User $user): JsonResponse
     {
-        if ($user->role === 'owner') {
-            return response()->json(['message' => 'Cannot reset admin passwords'], 422);
+        if (in_array($user->role, ['owner', 'ai_super_admin'], true)) {
+            return response()->json(['message' => 'Cannot reset password for this account type'], 422);
         }
 
         $newPassword = Str::random(10);

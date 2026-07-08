@@ -64,6 +64,13 @@ class AuthController extends Controller
         }
 
         $user = Auth::user();
+
+        if ($user->role === 'ai_super_admin') {
+            Auth::logout();
+
+            return response()->json(['message' => 'This account cannot be used for interactive login.'], 403);
+        }
+
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([

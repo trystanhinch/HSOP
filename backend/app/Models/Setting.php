@@ -27,4 +27,20 @@ class Setting extends Model
 
         return $value === 'true' || $value === true || $value === '1';
     }
+
+    public static function getBool(string $key, bool $default = false): bool
+    {
+        $value = static::get($key);
+
+        if ($value === null) {
+            return $default;
+        }
+
+        return $value === 'true' || $value === true || $value === '1';
+    }
+
+    public static function setBool(string $key, bool $value): void
+    {
+        static::set($key, $value ? 'true' : 'false');
+    }
 }

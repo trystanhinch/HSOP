@@ -24,6 +24,7 @@ import Messages from './pages/Messages';
 import Invoices from './pages/Invoices';
 import Payouts from './pages/Payouts';
 import Reports from './pages/Reports';
+import CompanySources from './pages/CompanySources';
 import Settings from './pages/Settings';
 import Unauthorized from './pages/Unauthorized';
 import CustomerQuoteView from './pages/CustomerQuoteView';
@@ -66,6 +67,7 @@ export default function App() {
               <Route path="/invoices" element={<RoleGuard roles={['owner', 'pm']}><Invoices /></RoleGuard>} />
               <Route path="/payouts" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><Payouts /></RoleGuard>} />
               <Route path="/reports" element={<RoleGuard roles={['owner']}><Reports /></RoleGuard>} />
+              <Route path="/company-sources" element={<RoleGuard roles={['owner']}><CompanySources /></RoleGuard>} />
               <Route path="/settings" element={<RoleGuard roles={['owner']}><Settings /></RoleGuard>} />
               <Route path="/unauthorized" element={<Unauthorized />} />
             </Route>

@@ -1,6 +1,9 @@
 <?php
 
 use App\Http\Controllers\Api\AdminPmMessageController;
+use App\Http\Controllers\Api\ActivityTimelineController;
+use App\Http\Controllers\Api\AiSettingsController;
+use App\Http\Controllers\Api\CompanySourceController;
 use App\Http\Controllers\Api\CustomerPortalController;
 use App\Http\Controllers\Api\AdminUserController;
 use App\Http\Controllers\Api\AdminController;
@@ -15,6 +18,7 @@ use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\JobUpdateController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\MessageController;
+use App\Http\Controllers\Api\NextActionController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PayoutController;
 use App\Http\Controllers\Api\PmMeetingController;
@@ -75,6 +79,16 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/leads/{lead}/send-quote', [LeadController::class, 'sendQuote'])->middleware('role:owner,pm');
     Route::post('/leads/{lead}/schedule-site-visit', [LeadController::class, 'scheduleSiteVisit'])->middleware('role:owner,pm');
     Route::post('/leads/{lead}/submit-price', [LeadController::class, 'submitPrice'])->middleware('role:contractor');
+
+    Route::get('/leads/{lead}/next-action', [NextActionController::class, 'showForLead']);
+    Route::put('/leads/{lead}/next-action', [NextActionController::class, 'updateForLead'])->middleware('role:owner,pm');
+    Route::get('/leads/{lead}/timeline', [ActivityTimelineController::class, 'indexForLead']);
+    Route::post('/leads/{lead}/timeline', [ActivityTimelineController::class, 'storeForLead'])->middleware('role:owner,pm');
+
+    Route::get('/jobs/{job}/next-action', [NextActionController::class, 'showForJob']);
+    Route::put('/jobs/{job}/next-action', [NextActionController::class, 'updateForJob'])->middleware('role:owner,pm');
+    Route::get('/jobs/{job}/timeline', [ActivityTimelineController::class, 'indexForJob']);
+    Route::post('/jobs/{job}/timeline', [ActivityTimelineController::class, 'storeForJob'])->middleware('role:owner,pm');
 
     Route::get('/jobs/search', [JobController::class, 'search']);
     Route::get('/jobs', [JobController::class, 'index']);
@@ -154,6 +168,20 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/settings', [SettingsController::class, 'index'])->middleware('role:owner');
     Route::post('/settings', [SettingsController::class, 'update'])->middleware('role:owner');
+
+    Route::middleware('role:owner')->group(function () {
+        Route::get('/company-sources', [CompanySourceController::class, 'index']);
+        Route::post('/company-sources', [CompanySourceController::class, 'store']);
+        Route::get('/company-sources/{companySource}', [CompanySourceController::class, 'show']);
+        Route::put('/company-sources/{companySource}', [CompanySourceController::class, 'update']);
+        Route::delete('/company-sources/{companySource}', [CompanySourceController::class, 'destroy']);
+
+        Route::get('/ai/settings', [AiSettingsController::class, 'index']);
+        Route::put('/ai/settings', [AiSettingsController::class, 'update']);
+        Route::get('/ai/action-logs', [AiSettingsController::class, 'actionLogs']);
+        Route::post('/ai/action-logs/test', [AiSettingsController::class, 'storeTestLog']);
+    });
+
     Route::get('/sms-logs', [SmsLogController::class, 'index'])->middleware('role:owner');
     Route::get('/email-logs', [EmailLogController::class, 'index'])->middleware('role:owner');
     Route::put('/users/{user}/toggle-sms', [UserController::class, 'toggleSms'])->middleware('role:owner');

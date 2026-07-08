@@ -8,6 +8,8 @@ import LeadForm from '../components/LeadForm';
 import ContractorLeadPriceForm from '../components/ContractorLeadPriceForm';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
+import NextActionCard from '../components/NextActionCard';
+import EventTimeline from '../components/EventTimeline';
 import { formatDate, formatTime, formatDateTime } from '../utils/formatDate';
 
 const statuses = ['new', 'contacted', 'site_visit_scheduled', 'quote_needed', 'converted', 'lost'];
@@ -42,6 +44,40 @@ export default function LeadDetail() {
   const [quoteNotes, setQuoteNotes] = useState('');
   const [sendingQuote, setSendingQuote] = useState(false);
   const [quoteSent, setQuoteSent] = useState(false);
+  const [savingNextAction, setSavingNextAction] = useState(false);
+  const [addingTimeline, setAddingTimeline] = useState(false);
+
+  const saveNextAction = async (payload) => {
+    setSavingNextAction(true);
+    try {
+      const { data } = await api.put(`/leads/${id}/next-action`, payload);
+      setLead((prev) => ({ ...prev, next_action: data.next_action }));
+      await showSuccess('Next action saved.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to save next action.');
+    } finally {
+      setSavingNextAction(false);
+    }
+  };
+
+  const addTimelineNote = async () => {
+    setAddingTimeline(true);
+    try {
+      const { data } = await api.post(`/leads/${id}/timeline`, {
+        event_type: 'manual_note',
+        description: 'Manual timeline note added from Lead Detail.',
+      });
+      setLead((prev) => ({
+        ...prev,
+        event_timeline: [data, ...(prev.event_timeline || [])],
+      }));
+      await showSuccess('Timeline note added.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to add timeline note.');
+    } finally {
+      setAddingTimeline(false);
+    }
+  };
 
   const load = () => {
     setLoadError(null);
@@ -674,6 +710,23 @@ export default function LeadDetail() {
               ))}
             </div>
           </div>
+        )}
+
+        {isAdminOrPm && (
+          <>
+            <NextActionCard
+              nextAction={lead.next_action}
+              canEdit={isAdminOrPm}
+              onSave={saveNextAction}
+              saving={savingNextAction}
+            />
+            <EventTimeline
+              entries={lead.event_timeline || []}
+              canAdd={isAdminOrPm}
+              onAdd={addTimelineNote}
+              adding={addingTimeline}
+            />
+          </>
         )}
       </div>
 

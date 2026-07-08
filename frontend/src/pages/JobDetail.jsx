@@ -11,6 +11,8 @@ import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 import { formatDate, formatDateTime } from '../utils/formatDate';
 import { getStatusLabel } from '../utils/statusLabels';
+import NextActionCard from '../components/NextActionCard';
+import EventTimeline from '../components/EventTimeline';
 
 const roleLabel = { owner: 'Admin', pm: 'PM', contractor: 'Contractor', customer: 'Customer' };
 
@@ -66,6 +68,8 @@ export default function JobDetail() {
   const [completing, setCompleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [savingNextAction, setSavingNextAction] = useState(false);
+  const [addingTimeline, setAddingTimeline] = useState(false);
 
   const isCustomer = user?.role === 'customer';
   const canManage = ['owner', 'pm'].includes(user?.role);
@@ -117,6 +121,38 @@ export default function JobDetail() {
 
   const loadMessages = (vis) => {
     api.get(`/jobs/${id}/messages`, { params: { visibility: vis } }).then(({ data }) => setMessages(data)).catch(() => setMessages([]));
+  };
+
+  const saveNextAction = async (payload) => {
+    setSavingNextAction(true);
+    try {
+      const { data } = await api.put(`/jobs/${id}/next-action`, payload);
+      setJob((prev) => ({ ...prev, next_action: data.next_action }));
+      await showSuccess('Next action saved.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to save next action.');
+    } finally {
+      setSavingNextAction(false);
+    }
+  };
+
+  const addTimelineNote = async () => {
+    setAddingTimeline(true);
+    try {
+      const { data } = await api.post(`/jobs/${id}/timeline`, {
+        event_type: 'manual_note',
+        description: 'Manual timeline note added from Job Detail.',
+      });
+      setJob((prev) => ({
+        ...prev,
+        event_timeline: [data, ...(prev.event_timeline || [])],
+      }));
+      await showSuccess('Timeline note added.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to add timeline note.');
+    } finally {
+      setAddingTimeline(false);
+    }
   };
 
   useEffect(() => { loadJob(); }, [id]);
@@ -688,6 +724,21 @@ export default function JobDetail() {
               </form>
             </div>
           )}
+
+          {canManage && (
+            <NextActionCard
+              nextAction={job.next_action}
+              canEdit={canManage}
+              onSave={saveNextAction}
+              saving={savingNextAction}
+            />
+          )}
+          <EventTimeline
+            entries={job.event_timeline || []}
+            canAdd={canManage}
+            onAdd={addTimelineNote}
+            adding={addingTimeline}
+          />
         </div>
       )}
 
