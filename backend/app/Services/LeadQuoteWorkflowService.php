@@ -48,12 +48,11 @@ class LeadQuoteWorkflowService
             $lead->refresh();
         }
 
-        $quote = Quote::updateOrCreate(
-            ['lead_id' => $lead->id, 'job_id' => null],
-            [
+        $existingLeadQuote = Quote::leadLevelFor($lead);
+
+        $quoteAttributes = [
                 'customer_id' => $customerId,
                 'company_id' => $lead->company_id,
-                'quote_number' => 'QT-'.str_pad((string) (Quote::count() + 1), 4, '0', STR_PAD_LEFT),
                 'scope_of_work' => $scopeOfWork ?: $lead->project_description ?: $lead->notes,
                 'contractor_base_price' => $totals['contractor_base_price'],
                 'customer_price_before_gst' => $totals['customer_subtotal'],
@@ -73,8 +72,34 @@ class LeadQuoteWorkflowService
                 'status' => 'sent',
                 'customer_token' => Str::random(64),
                 'sent_at' => now(),
-            ]
-        );
+        ];
+
+        if (! $existingLeadQuote) {
+            $quoteAttributes['quote_number'] = Quote::generateNextQuoteNumber();
+        }
+
+        $quote = null;
+        $attempts = 0;
+
+        do {
+            try {
+                $quote = Quote::updateOrCreate(
+                    ['lead_id' => $lead->id, 'job_id' => null],
+                    $quoteAttributes
+                );
+                break;
+            } catch (\Illuminate\Database\QueryException $e) {
+                if ($existingLeadQuote || ! Quote::isDuplicateQuoteNumberException($e) || $attempts >= 9) {
+                    throw $e;
+                }
+                $quoteAttributes['quote_number'] = Quote::generateNextQuoteNumber();
+                $attempts++;
+            }
+        } while ($attempts < 10);
+
+        if (! $quote) {
+            throw new \RuntimeException('Could not generate unique quote number after multiple attempts.');
+        }
 
         $lead->update(['status' => 'quote_needed']);
 

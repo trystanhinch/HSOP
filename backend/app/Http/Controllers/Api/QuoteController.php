@@ -109,11 +109,10 @@ class QuoteController extends Controller
             return response()->json(['message' => 'Please provide contractor_price or ensure contractor price is submitted.'], 422);
         }
 
-        $quote = Quote::create([
+        $quote = Quote::createWithUniqueQuoteNumber([
             'job_id' => $job->id,
             'company_id' => $job->company_id,
             'customer_id' => $job->customer_id,
-            'quote_number' => 'QT-'.str_pad(Quote::count() + 1, 4, '0', STR_PAD_LEFT),
             'scope_of_work' => $request->scope_of_work,
             'subtotal' => $subtotal,
             'customer_price_before_gst' => $subtotal,

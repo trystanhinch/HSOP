@@ -5,6 +5,8 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class Quote extends Model
@@ -62,6 +64,66 @@ class Quote extends Model
             'viewed_at' => 'datetime',
             'accepted_at' => 'datetime',
         ];
+    }
+
+    public static function generateNextQuoteNumber(): string
+    {
+        return DB::transaction(fn () => static::generateNextQuoteNumberWithinTransaction());
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    public static function createWithUniqueQuoteNumber(array $attributes): self
+    {
+        $attempts = 0;
+
+        do {
+            try {
+                return DB::transaction(function () use ($attributes) {
+                    $quoteNumber = static::generateNextQuoteNumberWithinTransaction();
+
+                    return static::create([
+                        ...$attributes,
+                        'quote_number' => $quoteNumber,
+                    ]);
+                });
+            } catch (QueryException $e) {
+                if ($attempts >= 9 || ! static::isDuplicateQuoteNumberException($e)) {
+                    throw $e;
+                }
+                $attempts++;
+            }
+        } while ($attempts < 10);
+
+        throw new \RuntimeException('Could not generate unique quote number after multiple attempts.');
+    }
+
+    protected static function generateNextQuoteNumberWithinTransaction(): string
+    {
+        $attempts = 0;
+
+        do {
+            $lastQuote = static::orderByRaw('CAST(SUBSTRING(quote_number, 4) AS UNSIGNED) DESC')
+                ->lockForUpdate()
+                ->first();
+            $nextNumber = $lastQuote
+                ? (int) substr($lastQuote->quote_number, 3) + 1
+                : 1;
+            $quoteNumber = 'QT-'.str_pad((string) $nextNumber, 4, '0', STR_PAD_LEFT);
+            $attempts++;
+        } while (static::where('quote_number', $quoteNumber)->exists() && $attempts < 10);
+
+        return $quoteNumber;
+    }
+
+    public static function isDuplicateQuoteNumberException(QueryException $e): bool
+    {
+        $message = $e->getMessage();
+
+        return str_contains($message, 'quotes_quote_number_unique')
+            || str_contains($message, 'Duplicate entry')
+            || str_contains($message, '1062');
     }
 
     public static function hasLeadIdColumn(): bool
