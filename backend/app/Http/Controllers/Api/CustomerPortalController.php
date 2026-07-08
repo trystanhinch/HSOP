@@ -60,7 +60,7 @@ class CustomerPortalController extends Controller
             ->where('lead_id', $lead->id)
             ->first();
 
-        $leadQuote = Quote::where('lead_id', $lead->id)->whereNull('job_id')->latest()->first();
+        $leadQuote = Quote::leadLevelFor($lead);
         $activeQuote = $job?->quote ?? $leadQuote;
 
         return response()->json([

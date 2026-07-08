@@ -5,9 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Schema;
 
 class Quote extends Model
 {
+    protected static ?bool $hasLeadIdColumn = null;
+
     protected $fillable = [
         'lead_id',
         'company_id',
@@ -59,6 +62,36 @@ class Quote extends Model
             'viewed_at' => 'datetime',
             'accepted_at' => 'datetime',
         ];
+    }
+
+    public static function hasLeadIdColumn(): bool
+    {
+        if (self::$hasLeadIdColumn === null) {
+            self::$hasLeadIdColumn = Schema::hasColumn('quotes', 'lead_id');
+        }
+
+        return self::$hasLeadIdColumn;
+    }
+
+    /** Quote attached directly to a lead before a job exists (requires quotes.lead_id column). */
+    public static function leadLevelFor(Lead $lead): ?self
+    {
+        if (! self::hasLeadIdColumn()) {
+            return null;
+        }
+
+        return static::where('lead_id', $lead->id)->whereNull('job_id')->latest()->first();
+    }
+
+    /** Most relevant quote for a lead — lead-level first, then via job. */
+    public static function forLead(Lead $lead): ?self
+    {
+        $leadQuote = self::leadLevelFor($lead);
+        if ($leadQuote) {
+            return $leadQuote;
+        }
+
+        return static::whereHas('job', fn ($q) => $q->where('lead_id', $lead->id))->latest()->first();
     }
 
     public function company(): BelongsTo

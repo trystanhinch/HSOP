@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AdminPmMessageController;
 use App\Http\Controllers\Api\CustomerPortalController;
 use App\Http\Controllers\Api\AdminUserController;
 use App\Http\Controllers\Api\AdminController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PayoutController;
+use App\Http\Controllers\Api\PmMeetingController;
 use App\Http\Controllers\Api\ProfitReportController;
 use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\ScheduleController;
@@ -129,6 +131,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/customers', [CustomerController::class, 'index'])->middleware('role:owner,pm');
     Route::get('/customers/{id}', [CustomerController::class, 'show'])->middleware('role:owner,pm');
+    Route::delete('/customers/{id}', [CustomerController::class, 'destroy'])->middleware('role:owner');
+
+    Route::get('/admin-pm-messages/conversations', [AdminPmMessageController::class, 'conversations'])->middleware('role:owner,pm');
+    Route::get('/admin-pm-messages/with/{userId}', [AdminPmMessageController::class, 'thread'])->middleware('role:owner,pm');
+    Route::post('/admin-pm-messages/with/{userId}', [AdminPmMessageController::class, 'store'])->middleware('role:owner,pm');
+
+    Route::get('/pm-meetings', [PmMeetingController::class, 'index'])->middleware('role:owner,pm');
+    Route::post('/pm-meetings', [PmMeetingController::class, 'store'])->middleware('role:owner');
+    Route::put('/pm-meetings/{pmMeeting}', [PmMeetingController::class, 'update'])->middleware('role:owner');
+    Route::delete('/pm-meetings/{pmMeeting}', [PmMeetingController::class, 'destroy'])->middleware('role:owner');
 
     Route::get('/payouts', [PayoutController::class, 'index']);
     Route::get('/payouts/{payout}', [PayoutController::class, 'show']);

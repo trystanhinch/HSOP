@@ -172,11 +172,6 @@ class LeadQuoteWorkflowService
 
     public function findQuoteForLead(Lead $lead): ?Quote
     {
-        $leadQuote = Quote::where('lead_id', $lead->id)->whereNull('job_id')->latest()->first();
-        if ($leadQuote) {
-            return $leadQuote;
-        }
-
-        return Quote::whereHas('job', fn ($q) => $q->where('lead_id', $lead->id))->latest()->first();
+        return Quote::forLead($lead);
     }
 }

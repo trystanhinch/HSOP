@@ -23,6 +23,11 @@ class Message extends Model
         return ['is_read' => 'boolean'];
     }
 
+    public function receiver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'receiver_id');
+    }
+
     public function job(): BelongsTo
     {
         return $this->belongsTo(Job::class);

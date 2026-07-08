@@ -145,7 +145,7 @@ class LeadController extends Controller
                 ->take(20)
                 ->get();
 
-            $leadQuote = Quote::where('lead_id', $lead->id)->whereNull('job_id')->latest()->first();
+            $leadQuote = Quote::leadLevelFor($lead);
             $pricingPreview = $lead->contractor_price
                 ? $this->pricing->fromContractorPrice((float) $lead->contractor_price)
                 : null;

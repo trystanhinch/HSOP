@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Job;
+use App\Models\PmMeeting;
 use App\Models\SiteVisit;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,6 +16,32 @@ class ScheduleController extends Controller
         $month = $request->month ?? now()->format('Y-m');
         [$year, $mon] = explode('-', $month);
         $user = auth()->user();
+
+        if ($user->role === 'owner') {
+            $meetings = PmMeeting::with(['pm:id,name'])
+                ->whereMonth('meeting_date', $mon)
+                ->whereYear('meeting_date', $year)
+                ->orderBy('meeting_date')
+                ->orderBy('meeting_time')
+                ->get()
+                ->map(fn ($m) => [
+                    'type' => 'pm_meeting',
+                    'id' => $m->id,
+                    'title' => $m->title,
+                    'date' => $m->meeting_date?->format('Y-m-d'),
+                    'time' => $m->meeting_time ? substr($m->meeting_time, 0, 5) : null,
+                    'notes' => $m->notes,
+                    'pm_id' => $m->pm_id,
+                    'pm_name' => $m->pm?->name ?? '',
+                    'color' => 'purple',
+                ]);
+
+            return response()->json([
+                'month' => $month,
+                'meetings' => $meetings,
+                'all' => $meetings->values(),
+            ]);
+        }
 
         $siteVisitsQuery = SiteVisit::with([
             'lead:id,contact_name,address,service_category,status',
@@ -73,11 +100,31 @@ class ScheduleController extends Controller
             'color' => in_array($j->status, ['in_progress', 'progress_updated'], true) ? 'blue' : 'yellow',
         ]);
 
+        $meetings = collect();
+        if ($user->role === 'pm') {
+            $meetings = PmMeeting::with(['pm:id,name'])
+                ->where('pm_id', $user->id)
+                ->whereMonth('meeting_date', $mon)
+                ->whereYear('meeting_date', $year)
+                ->get()
+                ->map(fn ($m) => [
+                    'type' => 'pm_meeting',
+                    'id' => $m->id,
+                    'title' => $m->title,
+                    'date' => $m->meeting_date?->format('Y-m-d'),
+                    'time' => $m->meeting_time ? substr($m->meeting_time, 0, 5) : null,
+                    'notes' => $m->notes,
+                    'pm_name' => $m->pm?->name ?? '',
+                    'color' => 'purple',
+                ]);
+        }
+
         return response()->json([
             'month' => $month,
             'site_visits' => $siteVisits,
             'jobs' => $jobs,
-            'all' => $siteVisits->concat($jobs)->sortBy('date')->values(),
+            'meetings' => $meetings,
+            'all' => $siteVisits->concat($jobs)->concat($meetings)->sortBy('date')->values(),
         ]);
     }
 }
