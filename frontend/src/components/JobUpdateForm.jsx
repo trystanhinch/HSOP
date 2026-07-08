@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { Upload, X } from 'lucide-react';
 import api from '../api/axios';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
+import { parseProgressUpdateError, validatePhotoFiles } from '../utils/uploadErrors';
 
 export default function JobUpdateForm({ jobId, onClose, onPosted }) {
   const [text, setText] = useState('');
@@ -13,7 +14,17 @@ export default function JobUpdateForm({ jobId, onClose, onPosted }) {
 
   const handleFiles = (e) => {
     const files = Array.from(e.target.files || []);
-    setPhotos((prev) => [...prev, ...files].slice(0, 10));
+    const merged = [...photos, ...files].slice(0, 10);
+    const validationError = validatePhotoFiles(merged);
+    if (validationError) {
+      setError(validationError);
+      showError(validationError);
+      e.target.value = '';
+      return;
+    }
+    setError('');
+    setPhotos(merged);
+    e.target.value = '';
   };
 
   const removePhoto = (i) => setPhotos((prev) => prev.filter((_, idx) => idx !== i));
@@ -21,6 +32,13 @@ export default function JobUpdateForm({ jobId, onClose, onPosted }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!text.trim()) return;
+
+    const validationError = validatePhotoFiles(photos);
+    if (validationError) {
+      setError(validationError);
+      await showError(validationError);
+      return;
+    }
 
     const ok = await confirmAction({
       title: 'Post progress update?',
@@ -35,13 +53,14 @@ export default function JobUpdateForm({ jobId, onClose, onPosted }) {
     form.append('update_text', text);
     form.append('visibility', visibility);
     photos.forEach((p) => form.append('photos[]', p));
+
     try {
       await api.post(`/jobs/${jobId}/updates`, form);
       await showSuccess('Progress update posted.');
       onPosted?.();
       onClose();
     } catch (err) {
-      const msg = 'Progress update could not be posted. Please try again.';
+      const msg = parseProgressUpdateError(err);
       setError(msg);
       await showError(msg);
     } finally {
@@ -77,10 +96,10 @@ export default function JobUpdateForm({ jobId, onClose, onPosted }) {
           </div>
 
           <div>
-            <input type="file" ref={fileRef} accept="image/*" multiple className="hidden" onChange={handleFiles} />
+            <input type="file" ref={fileRef} accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif" multiple className="hidden" onChange={handleFiles} />
             <button type="button" onClick={() => fileRef.current?.click()}
               className="flex items-center gap-2 text-sm text-blue-600 hover:underline">
-              <Upload className="w-4 h-4" /> Add photos (max 10)
+              <Upload className="w-4 h-4" /> Add photos (max 10, 10 MB each)
             </button>
             {photos.length > 0 && (
               <div className="flex flex-wrap gap-2 mt-2">

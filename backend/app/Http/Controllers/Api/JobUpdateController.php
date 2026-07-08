@@ -10,11 +10,16 @@ use App\Services\JobNotificationService;
 use App\Services\UploadStorage;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class JobUpdateController extends Controller
 {
+    public const MAX_PHOTOS = 10;
+
+    public const MAX_PHOTO_KB = 10240; // 10 MB per photo
+
     public function __construct(
         protected JobNotificationService $notifications,
         protected UploadStorage $uploads,
@@ -48,8 +53,10 @@ class JobUpdateController extends Controller
 
     public function store(Request $request, string $jobId): JsonResponse
     {
+        $user = $request->user();
+        $photoCount = is_array($request->file('photos')) ? count($request->file('photos')) : 0;
+
         try {
-            $user = $request->user();
             $job = Job::findOrFail($jobId);
 
             if ($user->role === 'contractor' && (int) $job->contractor_id !== (int) $user->id) {
@@ -71,38 +78,55 @@ class JobUpdateController extends Controller
             $request->validate([
                 'update_text' => 'required|string',
                 'visibility' => 'in:customer_visible,internal',
-                'photos' => 'nullable|array|max:10',
-                'photos.*' => 'image|max:8192',
+                'photos' => 'nullable|array|max:'.self::MAX_PHOTOS,
+                'photos.*' => 'file|mimes:jpeg,jpg,png,gif,webp,heic,heif|max:'.self::MAX_PHOTO_KB,
+            ], [
+                'photos.max' => 'You can upload up to '.self::MAX_PHOTOS.' photos per update.',
+                'photos.*.max' => 'One or more photos is too large. Max size is 10 MB per photo.',
+                'photos.*.mimes' => 'Only JPG, PNG, WEBP, and HEIC photos are supported.',
+                'photos.*.file' => 'Only JPG, PNG, WEBP, and HEIC photos are supported.',
             ]);
 
-            $update = JobUpdate::create([
-                'job_id' => $job->id,
-                'posted_by' => $user->id,
-                'poster_role' => $user->role,
-                'update_text' => $request->update_text,
-                'visibility' => $request->visibility ?? 'customer_visible',
-            ]);
+            $update = DB::transaction(function () use ($request, $job, $user) {
+                $update = JobUpdate::create([
+                    'job_id' => $job->id,
+                    'posted_by' => $user->id,
+                    'poster_role' => $user->role,
+                    'update_text' => $request->update_text,
+                    'visibility' => $request->visibility ?? 'customer_visible',
+                ]);
 
-            if ($request->hasFile('photos')) {
-                foreach ($request->file('photos') as $photo) {
-                    try {
-                        $path = $this->uploads->store($photo, 'job-updates/'.$job->id);
-                        JobUpdatePhoto::create([
-                            'job_update_id' => $update->id,
-                            'file_name' => $photo->getClientOriginalName(),
-                            'file_url' => $this->uploads->publicUrl($path),
-                            'file_size' => round($photo->getSize() / 1024, 1).' KB',
-                        ]);
-                    } catch (\Throwable $e) {
-                        Log::error('Job update photo upload failed', [
-                            'job_id' => $job->id,
-                            'update_id' => $update->id,
-                            'error' => $e->getMessage(),
-                            'trace' => $e->getTraceAsString(),
-                        ]);
+                if ($request->hasFile('photos')) {
+                    foreach ($request->file('photos') as $index => $photo) {
+                        try {
+                            $path = $this->uploads->store($photo, 'job-updates/'.$job->id);
+                            JobUpdatePhoto::create([
+                                'job_update_id' => $update->id,
+                                'file_name' => $photo->getClientOriginalName(),
+                                'file_url' => $this->uploads->publicUrl($path),
+                                'file_size' => round($photo->getSize() / 1024, 1).' KB',
+                            ]);
+                        } catch (\Throwable $e) {
+                            Log::error('Job update photo upload failed', [
+                                'job_id' => $job->id,
+                                'contractor_id' => $job->contractor_id,
+                                'user_id' => $user->id,
+                                'update_id' => $update->id,
+                                'photo_index' => $index,
+                                'photo_count' => count($request->file('photos')),
+                                'file_name' => $photo->getClientOriginalName(),
+                                'file_size_bytes' => $photo->getSize(),
+                                'error' => $e->getMessage(),
+                                'trace' => $e->getTraceAsString(),
+                            ]);
+
+                            throw $e;
+                        }
                     }
                 }
-            }
+
+                return $update;
+            });
 
             if (in_array($job->status, ['scheduled', 'contractor_assigned'], true)) {
                 $job->update(['status' => 'in_progress']);
@@ -131,7 +155,9 @@ class JobUpdateController extends Controller
         } catch (\Throwable $e) {
             Log::error('Job update store failed', [
                 'job_id' => $jobId,
-                'user_id' => $request->user()?->id,
+                'user_id' => $user?->id,
+                'user_role' => $user?->role,
+                'photo_count' => $photoCount,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
