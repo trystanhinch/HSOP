@@ -38,6 +38,10 @@ export default function LeadDetail() {
   const [selectedContractorId, setSelectedContractorId] = useState('');
   const [assigningContractor, setAssigningContractor] = useState(false);
   const [showContractorSelect, setShowContractorSelect] = useState(false);
+  const [quoteScope, setQuoteScope] = useState('');
+  const [quoteNotes, setQuoteNotes] = useState('');
+  const [sendingQuote, setSendingQuote] = useState(false);
+  const [quoteSent, setQuoteSent] = useState(false);
 
   const load = () => {
     setLoadError(null);
@@ -169,6 +173,24 @@ export default function LeadDetail() {
       await showError(e.response?.data?.message || 'Conversion failed.');
     } finally {
       setConverting(false);
+    }
+  };
+
+  const sendQuoteFromLead = async () => {
+    setSendingQuote(true);
+    setQuoteSent(false);
+    try {
+      await api.post(`/leads/${id}/send-quote`, {
+        scope_of_work: quoteScope || lead?.project_description || lead?.notes || '',
+        customer_notes: quoteNotes || null,
+      });
+      setQuoteSent(true);
+      await showSuccess('Quote sent to customer successfully');
+      load();
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Failed to send quote');
+    } finally {
+      setSendingQuote(false);
     }
   };
 
@@ -329,6 +351,17 @@ export default function LeadDetail() {
     site_visit_time: visitTime,
   };
 
+  const hasJob = Boolean(lead.job);
+  const hasContractorPrice = Boolean(lead.contractor_price);
+  const quoteApproved = lead.lead_quote?.status === 'approved';
+  const pricing = lead.pricing_preview;
+  const contractorPct = pricing?.contractor_pct ?? 80;
+  const customerSubtotal = pricing?.customer_subtotal ?? (hasContractorPrice ? lead.contractor_price / (contractorPct / 100) : 0);
+  const gstAmount = pricing?.gst ?? customerSubtotal * 0.05;
+  const customerTotal = pricing?.customer_total ?? customerSubtotal + gstAmount;
+  const showSendQuote = isAdminOrPm && hasContractorPrice && !hasJob && lead.lead_quote?.status !== 'sent' && lead.lead_quote?.status !== 'approved';
+  const showConvertFallback = !hasJob && lead.status !== 'converted' && (!hasContractorPrice || quoteApproved);
+
   return (
     <div>
       <Link to="/leads" className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 mb-6">
@@ -341,7 +374,7 @@ export default function LeadDetail() {
         <button onClick={() => setPanelOpen(true)} className="ml-auto flex items-center gap-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm hover:bg-slate-50">
           <Pencil className="w-4 h-4" /> Edit
         </button>
-        {lead.status !== 'converted' && (
+        {showConvertFallback && (
           <button onClick={convertToJob} disabled={converting}
             className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 disabled:opacity-60">
             {converting ? 'Converting...' : 'Convert to Job'}
@@ -350,7 +383,7 @@ export default function LeadDetail() {
         {lead.job && <Link to={`/jobs/${lead.job.id}`} className="text-sm text-blue-600 hover:underline">View Job →</Link>}
       </div>
 
-      {isAdminOrPm && lead.contractor_price && lead.status !== 'converted' && (
+      {isAdminOrPm && hasContractorPrice && !hasJob && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
           <h3 className="font-semibold text-orange-800 mb-1">Contractor Price Submitted</h3>
           <p className="text-2xl font-bold text-orange-700">
@@ -364,14 +397,96 @@ export default function LeadDetail() {
               Submitted {new Date(lead.contractor_price_submitted_at).toLocaleString()}
             </p>
           )}
+        </div>
+      )}
+
+      {showSendQuote && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
+          <h3 className="font-semibold text-slate-800 mb-1">Send Quote to Customer</h3>
+          <p className="text-sm text-slate-500 mb-4">
+            Contractor submitted ${Number(lead.contractor_price).toFixed(2)}.
+            Review the pricing and send the estimate to the customer.
+          </p>
+
+          <div className="bg-slate-50 rounded-lg p-4 mb-4 space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-500">Contractor Price</span>
+              <span className="font-medium">${Number(lead.contractor_price).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>Customer Subtotal (÷{(contractorPct / 100).toFixed(2)})</span>
+              <span>${Number(customerSubtotal).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-slate-400">
+              <span>GST ({pricing?.gst_rate ?? 5}%)</span>
+              <span>${Number(gstAmount).toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between font-bold border-t pt-2">
+              <span>Customer Total</span>
+              <span>${Number(customerTotal).toFixed(2)}</span>
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Scope of Work (customer-facing)
+            </label>
+            <textarea
+              value={quoteScope}
+              onChange={(e) => setQuoteScope(e.target.value)}
+              rows={3}
+              placeholder={lead.project_description || lead.notes || 'Describe the work to be done...'}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="mb-4">
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Additional Notes for Customer (optional)
+            </label>
+            <textarea
+              value={quoteNotes}
+              onChange={(e) => setQuoteNotes(e.target.value)}
+              rows={2}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-700">
+            {lead.phone && <p>SMS will be sent to {lead.phone}</p>}
+            {lead.email && <p>Email will be sent to {lead.email}</p>}
+            {!lead.phone && !lead.email && (
+              <p className="text-red-600">No phone or email on file — please add contact info first.</p>
+            )}
+          </div>
+
           <button
             type="button"
-            onClick={convertToJob}
-            disabled={converting}
-            className="mt-3 w-full bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white rounded-lg py-2 text-sm font-medium"
+            onClick={sendQuoteFromLead}
+            disabled={sendingQuote || (!lead.phone && !lead.email)}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg py-3 text-sm font-semibold"
           >
-            {converting ? 'Converting...' : 'Convert to Job & Create Estimate'}
+            {sendingQuote ? 'Sending...' : 'Send Quote to Customer'}
           </button>
+
+          {quoteSent && (
+            <div className="mt-3 bg-green-50 border border-green-200 rounded-lg p-3 text-sm text-green-700">
+              Quote sent successfully.
+              {lead.phone && ' SMS delivered.'}
+              {lead.email && ' Email sent.'}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isAdminOrPm && lead.lead_quote?.status === 'sent' && !hasJob && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 mb-6 text-sm text-blue-800">
+          Quote sent to customer — waiting for approval.
+          {lead.lead_quote.sent_at && (
+            <span className="block text-xs text-blue-600 mt-1">
+              Sent {new Date(lead.lead_quote.sent_at).toLocaleString()}
+            </span>
+          )}
         </div>
       )}
 
