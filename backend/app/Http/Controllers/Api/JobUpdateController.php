@@ -78,14 +78,9 @@ class JobUpdateController extends Controller
             $request->validate([
                 'update_text' => 'required|string',
                 'visibility' => 'in:customer_visible,internal',
-                'photos' => 'nullable|array|max:'.self::MAX_PHOTOS,
-                'photos.*' => 'file|mimes:jpeg,jpg,png,gif,webp,heic,heif|max:'.self::MAX_PHOTO_KB,
-            ], [
-                'photos.max' => 'You can upload up to '.self::MAX_PHOTOS.' photos per update.',
-                'photos.*.max' => 'One or more photos is too large. Max size is 10 MB per photo.',
-                'photos.*.mimes' => 'Only JPG, PNG, WEBP, and HEIC photos are supported.',
-                'photos.*.file' => 'Only JPG, PNG, WEBP, and HEIC photos are supported.',
             ]);
+
+            $this->validateUploadedPhotos($request);
 
             $update = DB::transaction(function () use ($request, $job, $user) {
                 $update = JobUpdate::create([
@@ -165,6 +160,56 @@ class JobUpdateController extends Controller
             return response()->json([
                 'message' => 'Progress update could not be posted. Please try again.',
             ], 500);
+        }
+    }
+
+    protected function validateUploadedPhotos(Request $request): void
+    {
+        if (! $request->hasFile('photos')) {
+            return;
+        }
+
+        $photos = $request->file('photos');
+        if (! is_array($photos)) {
+            $photos = [$photos];
+        }
+
+        if (count($photos) > self::MAX_PHOTOS) {
+            throw ValidationException::withMessages([
+                'photos' => ['You can upload up to '.self::MAX_PHOTOS.' photos per update.'],
+            ]);
+        }
+
+        $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif'];
+        $allowedMimes = [
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+            'image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence',
+            'application/octet-stream',
+        ];
+
+        foreach ($photos as $index => $photo) {
+            if (! $photo || ! $photo->isValid()) {
+                throw ValidationException::withMessages([
+                    "photos.$index" => ['One or more photos could not be uploaded. Please try again.'],
+                ]);
+            }
+
+            $extension = strtolower($photo->getClientOriginalExtension() ?: '');
+            $mime = strtolower($photo->getMimeType() ?: '');
+            $allowedByExtension = in_array($extension, $allowedExtensions, true);
+            $allowedByMime = in_array($mime, $allowedMimes, true);
+
+            if (! $allowedByExtension && ! $allowedByMime) {
+                throw ValidationException::withMessages([
+                    "photos.$index" => ['Only JPG, PNG, WEBP, and HEIC photos are supported.'],
+                ]);
+            }
+
+            if ($photo->getSize() > self::MAX_PHOTO_KB * 1024) {
+                throw ValidationException::withMessages([
+                    "photos.$index" => ['One or more photos is too large. Max size is 10 MB per photo.'],
+                ]);
+            }
         }
     }
 }
