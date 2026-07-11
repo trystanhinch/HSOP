@@ -55,11 +55,12 @@ class SmsMessageTemplates
             return '';
         }
 
+        // Always format from the calendar Y-m-d portion. Never format a UTC
+        // midnight instant in a western timezone (that shifts back one day).
         if ($date instanceof \DateTimeInterface) {
-            return Carbon::instance($date)->format('M j, Y');
+            $date = Carbon::instance($date)->toDateString();
         }
 
-        // Prefer the calendar Y-m-d portion so UTC midnight ISO strings do not shift.
         if (preg_match('/^(\d{4}-\d{2}-\d{2})/', (string) $date, $matches)) {
             return Carbon::createFromFormat('Y-m-d', $matches[1])->format('M j, Y');
         }
