@@ -2,17 +2,10 @@ import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api, { storageUrl } from '../api/axios';
 import { showError, showSuccess, confirmAction } from '../utils/swal';
-import { formatDate, formatDateTime } from '../utils/formatDate';
+import { formatDate, formatDateTime, formatDateLong } from '../utils/formatDate';
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
-}
-
-function formatDateLong(date) {
-  if (!date) return null;
-  return new Date(date).toLocaleDateString('en-CA', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  });
 }
 
 function jobStatusLabel(status) {

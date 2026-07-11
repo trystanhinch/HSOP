@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -33,8 +34,8 @@ class Contractor extends Model
             'services' => 'array',
             'cities' => 'array',
             'payment_info' => 'array',
-            'wcb_expiry_date' => 'date',
-            'insurance_expiry_date' => 'date',
+            'wcb_expiry_date' => DateOnly::class,
+            'insurance_expiry_date' => DateOnly::class,
         ];
     }
 

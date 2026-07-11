@@ -49,10 +49,19 @@ class SmsMessageTemplates
             : self::frontendUrl("jobs/{$job->id}");
     }
 
-    public static function formatDate(?string $date): string
+    public static function formatDate(null|string|\DateTimeInterface $date): string
     {
-        if (! $date) {
+        if ($date === null || $date === '') {
             return '';
+        }
+
+        if ($date instanceof \DateTimeInterface) {
+            return Carbon::instance($date)->format('M j, Y');
+        }
+
+        // Prefer the calendar Y-m-d portion so UTC midnight ISO strings do not shift.
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', (string) $date, $matches)) {
+            return Carbon::createFromFormat('Y-m-d', $matches[1])->format('M j, Y');
         }
 
         return Carbon::parse($date)->format('M j, Y');

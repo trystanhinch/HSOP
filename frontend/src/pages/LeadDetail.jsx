@@ -10,7 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 import NextActionCard from '../components/NextActionCard';
 import EventTimeline from '../components/EventTimeline';
-import { formatDate, formatTime, formatDateTime } from '../utils/formatDate';
+import { formatDate, formatTime, formatDateTime, toDateInputValue } from '../utils/formatDate';
 
 const statuses = ['new', 'contacted', 'site_visit_scheduled', 'quote_needed', 'converted', 'lost'];
 
@@ -84,7 +84,7 @@ export default function LeadDetail() {
     return api.get(`/leads/${id}`)
       .then(({ data }) => {
         setLead(data);
-        setVisitDate(data.site_visit_date?.split('T')[0] || '');
+        setVisitDate(toDateInputValue(data.site_visit_date));
         setVisitTime(data.site_visit_time?.slice(0, 5) || '');
         setContractorId(data.site_visit_contractor_id ? String(data.site_visit_contractor_id) : '');
         setSelectedContractorId(data.assigned_contractor_id ? String(data.assigned_contractor_id) : '');

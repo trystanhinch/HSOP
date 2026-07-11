@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -25,7 +26,7 @@ class ContractorDocument extends Model
     protected function casts(): array
     {
         return [
-            'expiry_date' => 'date',
+            'expiry_date' => DateOnly::class,
             'reviewed_at' => 'datetime',
         ];
     }

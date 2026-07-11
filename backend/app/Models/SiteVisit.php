@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -15,7 +16,7 @@ class SiteVisit extends Model
     protected function casts(): array
     {
         return [
-            'visit_date' => 'date',
+            'visit_date' => DateOnly::class,
         ];
     }
 

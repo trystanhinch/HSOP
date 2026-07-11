@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -19,7 +20,7 @@ class PmMeeting extends Model
     protected function casts(): array
     {
         return [
-            'meeting_date' => 'date',
+            'meeting_date' => DateOnly::class,
         ];
     }
 

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -24,7 +25,7 @@ class Payment extends Model
             'amount' => 'decimal:2',
             'paid_status' => 'boolean',
             'cleared_status' => 'boolean',
-            'paid_date' => 'date',
+            'paid_date' => DateOnly::class,
         ];
     }
 
