@@ -9,7 +9,7 @@ import ContractorPriceSubmission from '../components/ContractorPriceSubmission';
 import QuoteBuilder from '../components/QuoteBuilder';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
-import { formatDate, formatDateTime } from '../utils/formatDate';
+import { formatDate, formatDateTime, toDateInputValue } from '../utils/formatDate';
 import { getStatusLabel } from '../utils/statusLabels';
 import NextActionCard from '../components/NextActionCard';
 import EventTimeline from '../components/EventTimeline';
@@ -95,9 +95,9 @@ export default function JobDetail() {
       .then(({ data }) => {
         setJob(data);
         setScheduleForm({
-          scheduled_start_date: data.scheduled_start_date?.split('T')[0] || '',
+          scheduled_start_date: toDateInputValue(data.scheduled_start_date),
           scheduled_start_time: data.scheduled_start_time || '',
-          estimated_completion_date: data.estimated_completion_date?.split('T')[0] || data.scheduled_end_date?.split('T')[0] || '',
+          estimated_completion_date: toDateInputValue(data.estimated_completion_date) || toDateInputValue(data.scheduled_end_date),
           schedule_notes: data.schedule_notes || '',
         });
         setSplitForm({

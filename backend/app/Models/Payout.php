@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -25,7 +26,7 @@ class Payout extends Model
     {
         return [
             'payout_amount' => 'decimal:2',
-            'paid_date' => 'date',
+            'paid_date' => DateOnly::class,
         ];
     }
 

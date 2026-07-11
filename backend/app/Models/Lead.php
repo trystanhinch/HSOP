@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Models\Concerns\HasActivityTimeline;
 use App\Models\Concerns\HasNextAction;
 use Illuminate\Database\Eloquent\Model;
@@ -41,7 +42,7 @@ class Lead extends Model
     protected function casts(): array
     {
         return [
-            'site_visit_date' => 'date',
+            'site_visit_date' => DateOnly::class,
             'contractor_price_submitted_at' => 'datetime',
         ];
     }

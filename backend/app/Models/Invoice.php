@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -36,7 +37,7 @@ class Invoice extends Model
             'amount' => 'decimal:2',
             'gst' => 'decimal:2',
             'balance' => 'decimal:2',
-            'due_date' => 'date',
+            'due_date' => DateOnly::class,
             'sent_at' => 'datetime',
         ];
     }

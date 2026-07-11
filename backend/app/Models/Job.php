@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\DateOnly;
 use App\Models\Concerns\HasActivityTimeline;
 use App\Models\Concerns\HasNextAction;
 use Illuminate\Database\Eloquent\Model;
@@ -54,11 +55,11 @@ class Job extends Model
     protected function casts(): array
     {
         return [
-            'start_date' => 'date',
-            'end_date' => 'date',
-            'scheduled_start_date' => 'date',
-            'scheduled_end_date' => 'date',
-            'estimated_completion_date' => 'date',
+            'start_date' => DateOnly::class,
+            'end_date' => DateOnly::class,
+            'scheduled_start_date' => DateOnly::class,
+            'scheduled_end_date' => DateOnly::class,
+            'estimated_completion_date' => DateOnly::class,
             'contractor_price_submitted_at' => 'datetime',
             'ready_for_review_at' => 'datetime',
             'completed_at' => 'datetime',
