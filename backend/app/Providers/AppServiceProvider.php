@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Contracts\AiProviderInterface;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -15,6 +16,17 @@ class AppServiceProvider extends ServiceProvider
         if ($this->app->environment('production')) {
             config(['session.driver' => 'file']);
         }
+
+        $this->app->singleton(AiProviderInterface::class, function ($app) {
+            $provider = config('ai.provider', 'mock');
+            $class = config("ai.providers.{$provider}");
+
+            if (! $class || ! class_exists($class)) {
+                throw new \InvalidArgumentException("AI provider [{$provider}] is not configured.");
+            }
+
+            return $app->make($class);
+        });
     }
 
     /**

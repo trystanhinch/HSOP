@@ -31,8 +31,12 @@ export default function Leads() {
 
   const fetchLeads = () => {
     const params = { page };
-    if (status) params.status = status;
-    if (status === 'converted') params.show_converted = 'true';
+    if (status === 'needs_review') {
+      params.needs_review = 'true';
+    } else if (status) {
+      params.status = status;
+      if (status === 'converted') params.show_converted = 'true';
+    }
     if (category) params.category = category;
     if (search) params.search = search;
     api.get('/leads', { params }).then(({ data }) => {
@@ -111,6 +115,7 @@ export default function Leads() {
         <div className="flex flex-col sm:flex-row gap-3">
           <select value={status} onChange={(e) => setFilter('status', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
             <option value="">All Statuses</option>
+            <option value="needs_review">Needs Review</option>
             {['new', 'contacted', 'site_visit_scheduled', 'quote_needed', 'converted', 'lost'].map((s) => (
               <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
             ))}
@@ -140,6 +145,7 @@ export default function Leads() {
                 <th className="text-left px-4 py-3 font-medium text-slate-500 hidden md:table-cell">Address</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500">Category</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-slate-500 hidden md:table-cell">Review</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 hidden lg:table-cell">PM</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">Date</th>
                 {canDelete && <th className="text-right px-4 py-3 font-medium text-slate-500 w-12" />}
@@ -147,7 +153,7 @@ export default function Leads() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {leads.length === 0 ? (
-                <tr><td colSpan={canDelete ? 8 : 7} className="px-4 py-12 text-center text-slate-500">No leads found.</td></tr>
+                <tr><td colSpan={canDelete ? 9 : 8} className="px-4 py-12 text-center text-slate-500">No leads found.</td></tr>
               ) : leads.map((lead) => (
                 <tr key={lead.id} className="hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => navigate(`/leads/${lead.id}`)}>
                   <td className="px-4 py-3 font-medium text-blue-600">{lead.contact_name}</td>
@@ -155,6 +161,11 @@ export default function Leads() {
                   <td className="px-4 py-3 hidden md:table-cell">{lead.address || '—'}</td>
                   <td className="px-4 py-3 capitalize">{formatCategory(lead.service_category)}</td>
                   <td className="px-4 py-3"><StatusBadge status={lead.status} /></td>
+                  <td className="px-4 py-3 hidden md:table-cell">
+                    {lead.needs_manual_review ? (
+                      <span className="text-xs font-medium bg-amber-100 text-amber-800 px-2 py-0.5 rounded">Review</span>
+                    ) : '—'}
+                  </td>
                   <td className="px-4 py-3 hidden lg:table-cell">{lead.assigned_pm?.name || '—'}</td>
                   <td className="px-4 py-3 hidden sm:table-cell">{formatDate(lead.created_at)}</td>
                   {canDelete && (

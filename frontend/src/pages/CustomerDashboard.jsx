@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
+import { formatDate } from '../utils/formatDate';
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
@@ -149,7 +150,9 @@ export default function CustomerDashboard() {
                   <p className="text-sm text-[#64748B] capitalize">{formatCategory(job.service_category)}</p>
                   <div className="mt-1"><StatusBadge status={job.status} /></div>
                   <p className="text-xs text-[#64748B] mt-1">
-                    {job.scheduled_start_date || '—'} → {job.scheduled_end_date || '—'}
+                    {job.scheduled_start_date ? formatDate(job.scheduled_start_date) : '—'}
+                    {' → '}
+                    {job.scheduled_end_date ? formatDate(job.scheduled_end_date) : '—'}
                   </p>
                 </div>
                 <Link to={`/jobs/${job.id}`} className="px-4 py-2 border border-[#E2E8F0] rounded-md text-sm font-medium hover:bg-slate-50 text-center">

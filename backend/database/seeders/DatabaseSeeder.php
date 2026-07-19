@@ -10,6 +10,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(SettingsSeeder::class);
         $this->call(Milestone4Seeder::class);
+        $this->call(MessageTemplateSeeder::class);
         $this->call(DemoSeeder::class);
     }
 }

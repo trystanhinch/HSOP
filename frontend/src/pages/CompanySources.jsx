@@ -112,7 +112,9 @@ export default function CompanySources() {
           <Plus size={16} /> Add Source
         </button>
       </PageHeader>
-      <p className="text-sm text-slate-500 mb-4">Lead intake sources and company listings (Phase 2 will connect intake)</p>
+      <p className="text-sm text-slate-500 mb-4">
+        Configure lead intake sources. When a lead email is parsed, the system matches the source field to these records and uses the default PM for notifications.
+      </p>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="w-full min-w-[800px] text-sm">
@@ -168,8 +170,9 @@ export default function CompanySources() {
           </div>
           <div>
             <label className="text-xs text-slate-500 block mb-1">Google review URL</label>
-            <input value={form.google_review_url} onChange={(e) => setForm({ ...form, google_review_url: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            <input type="url" value={form.google_review_url} onChange={(e) => setForm({ ...form, google_review_url: e.target.value })}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="https://g.page/..." />
+            <p className="text-xs text-slate-400 mt-1">Full public Google review link customers can use to leave a review.</p>
           </div>
           <div>
             <label className="text-xs text-slate-500 block mb-1">Default PM</label>
@@ -178,16 +181,19 @@ export default function CompanySources() {
               <option value="">None</option>
               {pms.map((pm) => <option key={pm.id} value={pm.id}>{pm.name}</option>)}
             </select>
+            <p className="text-xs text-slate-400 mt-1">PM who receives new-lead notifications for leads from this source. If unset, Admin gets a Next Action to assign a PM.</p>
           </div>
           <div>
             <label className="text-xs text-slate-500 block mb-1">Sender identity</label>
             <input value={form.sender_identity} onChange={(e) => setForm({ ...form, sender_identity: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="Name on outbound SMS/email" />
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" placeholder="forms@company.com or display name" />
+            <p className="text-xs text-slate-400 mt-1">Email address or name shown on outbound messages for this source.</p>
           </div>
           <div>
-            <label className="text-xs text-slate-500 block mb-1">Lead parsing rule (placeholder)</label>
+            <label className="text-xs text-slate-500 block mb-1">Lead parsing rule (optional notes)</label>
             <textarea value={form.lead_parsing_rule} onChange={(e) => setForm({ ...form, lead_parsing_rule: e.target.value })} rows={2}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              placeholder="Notes about how leads from this source are formatted (for reference)" />
           </div>
           <div>
             <label className="text-xs text-slate-500 block mb-1">Marketing cost (monthly)</label>

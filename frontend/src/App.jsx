@@ -15,6 +15,7 @@ import LeadDetail from './pages/LeadDetail';
 import Jobs from './pages/Jobs';
 import JobDetail from './pages/JobDetail';
 import Contractors from './pages/Contractors';
+import ContractorLeads from './pages/ContractorLeads';
 import ContractorProfile from './pages/ContractorProfile';
 import Customers from './pages/Customers';
 import CustomerDetail from './pages/CustomerDetail';
@@ -54,6 +55,7 @@ export default function App() {
               <Route path="/dashboard/customer" element={<RoleGuard roles={['customer']}><CustomerDashboard /></RoleGuard>} />
 
               <Route path="/leads" element={<RoleGuard roles={['owner', 'pm']}><Leads /></RoleGuard>} />
+              <Route path="/my-leads" element={<RoleGuard roles={['contractor']}><ContractorLeads /></RoleGuard>} />
               <Route path="/leads/:id" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><LeadDetail /></RoleGuard>} />
               <Route path="/jobs" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><Jobs /></RoleGuard>} />
               <Route path="/jobs/:id" element={<RoleGuard roles={['owner', 'pm', 'contractor', 'customer']}><JobDetail /></RoleGuard>} />

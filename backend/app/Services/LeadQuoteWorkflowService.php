@@ -151,6 +151,8 @@ class LeadQuoteWorkflowService
 
         if ($quote->job_id) {
             $quote->job?->update(['status' => 'waiting_on_customer']);
+        } elseif ($quote->lead_id) {
+            Lead::where('id', $quote->lead_id)->update(['status' => 'lost']);
         }
 
         return $quote->fresh(['job', 'customer', 'lead']);

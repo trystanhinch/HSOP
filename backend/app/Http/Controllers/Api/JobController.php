@@ -24,6 +24,7 @@ use App\Services\PayoutWorkflowService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use App\Services\UploadStorage;
+use App\Services\ActivityTimelineService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,7 @@ class JobController extends Controller
         protected SmsService $sms,
         protected EmailService $email,
         protected UploadStorage $uploads,
+        protected ActivityTimelineService $timeline,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -65,99 +67,9 @@ class JobController extends Controller
                     'url' => '/jobs/'.$j->id,
                 ]);
 
-            $siteVisits = SiteVisit::where('contractor_id', $user->id)
-                ->whereHas('lead', fn ($q) => $q->where('status', '!=', 'converted'))
-                ->with([
-                    'lead:id,contact_name,address,service_category,project_description,status,contractor_price,contractor_price_submitted_at,contractor_price_notes',
-                    'pm:id,name,phone',
-                ])
-                ->orderByDesc('visit_date')
-                ->get()
-                ->map(fn ($sv) => [
-                    'type' => 'site_visit',
-                    'id' => 'sv_'.$sv->id,
-                    'site_visit_id' => $sv->id,
-                    'lead_id' => $sv->lead_id,
-                    'job_title' => 'Site Visit — '.($sv->lead->contact_name ?? 'Customer'),
-                    'address' => $sv->lead->address ?? '',
-                    'service_category' => $sv->lead->service_category ?? '',
-                    'status' => 'site_visit_'.$sv->status,
-                    'visit_date' => $sv->visit_date,
-                    'visit_time' => $sv->visit_time,
-                    'contractor_price_status' => $sv->lead->contractor_price ? 'submitted' : 'pending',
-                    'contractor_submitted_price' => $sv->lead->contractor_price,
-                    'customer' => ['id' => null, 'name' => $sv->lead->contact_name ?? ''],
-                    'pm' => $sv->pm?->only(['id', 'name', 'phone']),
-                    'description' => $sv->lead->project_description ?? '',
-                    'url' => '/leads/'.$sv->lead_id,
-                ]);
-
-            $siteVisitLeadIds = $siteVisits->pluck('lead_id')->filter()->values();
-
-            $leadAppointments = Lead::where('site_visit_contractor_id', $user->id)
-                ->where('status', '!=', 'converted')
-                ->whereDoesntHave('job')
-                ->when($siteVisitLeadIds->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $siteVisitLeadIds))
-                ->with(['assignedPm:id,name,phone'])
-                ->orderByDesc('site_visit_date')
-                ->get()
-                ->map(fn ($lead) => [
-                    'type' => 'site_visit',
-                    'id' => 'lead_'.$lead->id,
-                    'site_visit_id' => null,
-                    'lead_id' => $lead->id,
-                    'job_title' => 'Site Visit — '.($lead->contact_name ?? 'Customer'),
-                    'address' => $lead->address ?? '',
-                    'service_category' => $lead->service_category ?? '',
-                    'status' => $lead->status === 'quote_needed' ? 'site_visit_completed' : 'site_visit_scheduled',
-                    'visit_date' => $lead->site_visit_date,
-                    'visit_time' => $lead->site_visit_time,
-                    'contractor_price_status' => $lead->contractor_price ? 'submitted' : 'pending',
-                    'contractor_submitted_price' => $lead->contractor_price,
-                    'customer' => ['id' => null, 'name' => $lead->contact_name ?? ''],
-                    'pm' => $lead->assignedPm?->only(['id', 'name', 'phone']),
-                    'description' => $lead->project_description ?? '',
-                    'url' => '/leads/'.$lead->id,
-                ]);
-
-            $existingLeadIds = $siteVisits->pluck('lead_id')
-                ->concat($leadAppointments->pluck('lead_id'))
-                ->filter()
-                ->unique()
-                ->values();
-
-            $directLeads = Lead::where('assigned_contractor_id', $user->id)
-                ->whereNotIn('status', ['converted', 'lost'])
-                ->whereDoesntHave('job')
-                ->when($existingLeadIds->isNotEmpty(), fn ($q) => $q->whereNotIn('id', $existingLeadIds))
-                ->with(['assignedPm:id,name,phone'])
-                ->latest()
-                ->get()
-                ->map(fn ($lead) => [
-                    'type' => 'direct_lead',
-                    'id' => 'lead_'.$lead->id,
-                    'lead_id' => $lead->id,
-                    'job_title' => 'Lead — '.($lead->contact_name ?? 'Customer'),
-                    'address' => $lead->address ?? '',
-                    'service_category' => $lead->service_category ?? '',
-                    'status' => 'lead_assigned',
-                    'contractor_price_status' => $lead->contractor_price ? 'submitted' : 'pending',
-                    'contractor_submitted_price' => $lead->contractor_price,
-                    'customer' => ['id' => null, 'name' => $lead->contact_name ?? ''],
-                    'pm' => $lead->assignedPm?->only(['id', 'name', 'phone']),
-                    'description' => $lead->project_description ?? '',
-                    'url' => '/leads/'.$lead->id,
-                ]);
-
-            $all = $jobs->concat($siteVisits)->concat($leadAppointments)->concat($directLeads)->sortByDesc(function ($item) {
-                $date = $item['scheduled_start_date'] ?? $item['visit_date'] ?? null;
-
-                return $date ? strtotime((string) $date) : 0;
-            })->values();
-
             return response()->json([
-                'data' => $all,
-                'meta' => ['total' => $all->count()],
+                'data' => $jobs->values(),
+                'meta' => ['total' => $jobs->count()],
             ]);
         }
 
@@ -628,12 +540,27 @@ class JobController extends Controller
             'pending_customer_approval_at' => now(),
         ]);
 
+        $this->timeline->record(
+            $job,
+            'completion_requested',
+            'Contractor marked job complete — awaiting customer acceptance.',
+            auth()->user()
+        );
+
         $job->load('lead', 'customer');
         $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
 
         $this->sms->sendToUser(
             $job->customer,
-            SmsMessageTemplates::jobCompletePendingApproval($job->customer, $job, $portalUrl),
+            \App\Models\MessageTemplate::render(
+                'job_complete_pending_approval',
+                [
+                    'customer_name' => $job->customer?->name ?? 'there',
+                    'address' => $job->address ?? '',
+                    'portal_url' => $portalUrl,
+                ],
+                SmsMessageTemplates::jobCompletePendingApproval($job->customer, $job, $portalUrl)
+            ),
             'contractor_marked_complete',
             $job->id
         );
@@ -683,6 +610,13 @@ class JobController extends Controller
             'status' => 'payment_pending',
             'customer_accepted_completion_at' => now(),
         ]);
+
+        $this->timeline->record(
+            $job,
+            'completion_accepted',
+            'Customer accepted job completion.',
+            auth()->user()
+        );
 
         $this->ensureInvoiceForJob($job);
 
@@ -734,14 +668,38 @@ class JobController extends Controller
             'revision_description' => $request->description,
         ]);
 
+        $this->timeline->record(
+            $job,
+            'revision_requested',
+            'Customer requested a revision: '.$request->description,
+            auth()->user(),
+            ['revision_request_id' => $revision->id]
+        );
+
         $contractorPortalUrl = SmsMessageTemplates::contractorDashboardUrl();
-        $job->loadMissing('contractor');
+        $job->loadMissing('contractor', 'pm');
+        $revisionBody = \App\Models\MessageTemplate::render(
+            'revision_requested',
+            [
+                'address' => $job->address ?? '',
+                'description' => $request->description,
+            ],
+            SmsMessageTemplates::revisionRequested($job->contractor, $job, $contractorPortalUrl)
+        );
         $this->sms->sendToUser(
             $job->contractor,
-            SmsMessageTemplates::revisionRequested($job->contractor, $job, $contractorPortalUrl),
+            $revisionBody,
             'revision_requested',
             $job->id
         );
+        if ($job->pm) {
+            $this->sms->sendToUser(
+                $job->pm,
+                $revisionBody,
+                'revision_requested',
+                $job->id
+            );
+        }
 
         if ($job->contractor?->email) {
             $this->email->sendMailable(

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Briefcase, FileText, DollarSign, HardHat, TrendingUp, Wallet, Clock } from 'lucide-react';
+import { Users, Briefcase, FileText, DollarSign, HardHat, TrendingUp, Wallet, Clock, AlertTriangle } from 'lucide-react';
 import api from '../api/axios';
 import KPICard from '../components/KPICard';
 import StatusBadge from '../components/StatusBadge';
@@ -44,6 +44,7 @@ export default function AdminDashboard() {
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Pipeline</h3>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <KPICard title="New Leads" value={data.new_leads ?? 0} icon={Users} color="#3B82F6" to="/leads?status=new" />
+          <KPICard title="Needs Review" value={data.leads_needing_review ?? 0} icon={AlertTriangle} color="#F59E0B" to="/leads?status=needs_review" />
           <KPICard title="Needing Followup" value={data.leads_needing_followup ?? 0} icon={Clock} color="#F97316" to="/leads" />
           <KPICard title="Awaiting Price" value={data.jobs_awaiting_price ?? 0} icon={HardHat} color="#64748B" to="/jobs?status=contractor_assigned" />
           <KPICard title="Quotes to Review" value={data.quotes_needing_review ?? 0} icon={FileText} color="#EAB308" to="/quotes" />

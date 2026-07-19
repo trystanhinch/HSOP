@@ -11,6 +11,20 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
+function WorkflowSection({ title, empty, items, renderItem }) {
+  const list = items || [];
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <h3 className="font-semibold text-slate-800 mb-3">{title}</h3>
+      {list.length === 0 ? (
+        <p className="text-sm text-slate-400">{empty}</p>
+      ) : (
+        <div className="space-y-2">{list.map(renderItem)}</div>
+      )}
+    </div>
+  );
+}
+
 export default function PMDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -45,6 +59,146 @@ export default function PMDashboard() {
         <Link to="/schedule" className="px-4 py-2 border border-[#E2E8F0] rounded-md text-sm font-medium text-[#0F172A] hover:bg-slate-50">
           View My Schedule
         </Link>
+      </div>
+
+      {(data.leads_needing_quote_review || []).length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <h3 className="font-semibold text-slate-800 mb-3">Lead Prices Submitted — Review &amp; Send Quote</h3>
+          <div className="space-y-3">
+            {data.leads_needing_quote_review.map((lead) => (
+              <div
+                key={lead.id}
+                className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-blue-800">{lead.contact_name}</p>
+                  <p className="text-xs text-blue-700">{lead.address || 'No address yet'}</p>
+                  <p className="text-xs text-blue-600">
+                    Contractor price: ${Number(lead.contractor_price || 0).toFixed(2)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/leads/${lead.id}`)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg px-4 py-2 font-medium whitespace-nowrap"
+                >
+                  Review Lead &amp; Send Quote
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <WorkflowSection
+        title="Customers needing contact"
+        empty="No overdue/pending contact actions."
+        items={data.customers_needing_contact}
+        renderItem={(item) => (
+          <button type="button" key={item.next_action_id} onClick={() => navigate(`/leads/${item.lead_id}`)}
+            className={`w-full text-left rounded-lg border p-3 ${item.overdue ? 'border-red-200 bg-red-50' : 'border-slate-200'}`}>
+            <p className="text-sm font-medium">{item.contact_name || `Lead #${item.lead_id}`}</p>
+            <p className="text-xs text-slate-500">{item.action_description}</p>
+            <p className="text-xs mt-1">{item.overdue ? 'Overdue' : 'Pending'} · due {formatDate(item.due_at)}</p>
+          </button>
+        )}
+      />
+
+      <WorkflowSection
+        title="Scheduled visits / quote appointments"
+        empty="No upcoming site visits."
+        items={data.scheduled_calls_and_visits}
+        renderItem={(lead) => (
+          <button type="button" key={lead.id} onClick={() => navigate(`/leads/${lead.id}`)}
+            className="w-full text-left rounded-lg border border-slate-200 p-3">
+            <p className="text-sm font-medium">{lead.contact_name}</p>
+            <p className="text-xs text-slate-500">{lead.address || '—'}</p>
+            <p className="text-xs mt-1">{formatDate(lead.site_visit_date)} {lead.site_visit_time || ''}</p>
+          </button>
+        )}
+      />
+
+      <WorkflowSection
+        title="Contractor pricing waiting list"
+        empty="No leads waiting on contractor pricing."
+        items={data.contractor_pricing_waiting}
+        renderItem={(lead) => (
+          <button type="button" key={lead.id} onClick={() => navigate(`/leads/${lead.id}`)}
+            className="w-full text-left rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm font-medium">{lead.contact_name}</p>
+            <p className="text-xs text-slate-500">{lead.address || '—'} · {lead.status}</p>
+          </button>
+        )}
+      />
+
+      <WorkflowSection
+        title="Quotes waiting on customer"
+        empty="No quotes awaiting customer response."
+        items={data.quotes_waiting_on_customer}
+        renderItem={(q) => (
+          <button type="button" key={q.id} onClick={() => navigate(`/jobs/${q.job_id || q.job?.id}`)}
+            className="w-full text-left rounded-lg border border-violet-200 bg-violet-50 p-3">
+            <p className="text-sm font-medium">{q.job?.address || `Quote #${q.id}`}</p>
+            <p className="text-xs text-slate-500">Status: {q.status}</p>
+          </button>
+        )}
+      />
+
+      <WorkflowSection
+        title="Approved jobs needing schedule"
+        empty="No approved jobs waiting to schedule."
+        items={data.approved_needing_schedule}
+        renderItem={(job) => (
+          <button type="button" key={job.id} onClick={() => navigate(`/jobs/${job.id}`)}
+            className="w-full text-left rounded-lg border border-slate-200 p-3">
+            <p className="text-sm font-medium">{job.address}</p>
+            <p className="text-xs text-slate-500">{job.customer?.name} · {job.status}</p>
+          </button>
+        )}
+      />
+
+      <WorkflowSection
+        title="Jobs missing updates / photos"
+        empty="All in-progress jobs have recent updates."
+        items={data.jobs_missing_updates}
+        renderItem={(job) => (
+          <button type="button" key={job.id} onClick={() => navigate(`/jobs/${job.id}`)}
+            className="w-full text-left rounded-lg border border-orange-200 bg-orange-50 p-3">
+            <p className="text-sm font-medium">{job.address}</p>
+            <p className="text-xs text-slate-500">Flagged — no update in configured window</p>
+          </button>
+        )}
+      />
+
+      <WorkflowSection
+        title="Customer revision requests"
+        empty="No open revision requests."
+        items={data.customer_revision_requests}
+        renderItem={(job) => (
+          <button type="button" key={job.id} onClick={() => navigate(`/jobs/${job.id}`)}
+            className="w-full text-left rounded-lg border border-yellow-200 bg-yellow-50 p-3">
+            <p className="text-sm font-medium">{job.address}</p>
+            <p className="text-xs text-slate-500">{job.status}</p>
+          </button>
+        )}
+      />
+
+      <WorkflowSection
+        title="Waiting for completion acceptance"
+        empty="No jobs awaiting customer acceptance."
+        items={data.awaiting_completion_acceptance}
+        renderItem={(job) => (
+          <button type="button" key={job.id} onClick={() => navigate(`/jobs/${job.id}`)}
+            className="w-full text-left rounded-lg border border-slate-200 p-3">
+            <p className="text-sm font-medium">{job.address}</p>
+            <p className="text-xs text-slate-500">{job.customer?.name}</p>
+          </button>
+        )}
+      />
+
+      <div className="bg-white rounded-xl border border-dashed border-slate-300 p-5">
+        <h3 className="font-semibold text-slate-800 mb-1">My payout status</h3>
+        <p className="text-sm text-slate-500">{data.payout_status_note || 'Coming soon — Phase 4.'}</p>
       </div>
 
       {(data.jobs_needing_quote_approval || []).length > 0 && (
@@ -100,7 +254,7 @@ export default function PMDashboard() {
                   onClick={() => navigate(`/leads/${lead.id}`)}
                 >
                   <td className="px-4 py-2 font-medium">{lead.contact_name}</td>
-                  <td className="px-4 py-2 hidden md:table-cell text-[#64748B]">{lead.address}</td>
+                  <td className="px-4 py-2 hidden md:table-cell text-[#64748B]">{lead.address || '—'}</td>
                   <td className="px-4 py-2 capitalize">{formatCategory(lead.service_category)}</td>
                   <td className="px-4 py-2"><StatusBadge status={lead.status} /></td>
                   <td className="px-4 py-2 hidden sm:table-cell">{formatDate(lead.site_visit_date)}</td>

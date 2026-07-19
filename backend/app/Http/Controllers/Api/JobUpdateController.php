@@ -8,6 +8,7 @@ use App\Models\JobUpdate;
 use App\Models\JobUpdatePhoto;
 use App\Services\JobNotificationService;
 use App\Services\UploadStorage;
+use App\Services\ActivityTimelineService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +24,7 @@ class JobUpdateController extends Controller
     public function __construct(
         protected JobNotificationService $notifications,
         protected UploadStorage $uploads,
+        protected ActivityTimelineService $timeline,
     ) {}
 
     public function index(Request $request, string $jobId): JsonResponse
@@ -123,11 +125,23 @@ class JobUpdateController extends Controller
                 return $update;
             });
 
-            if (in_array($job->status, ['scheduled', 'contractor_assigned'], true)) {
+            if (in_array($job->status, ['scheduled', 'contractor_assigned', 'created', 'waiting_to_schedule'], true)) {
                 $job->update(['status' => 'in_progress']);
-            } elseif (in_array($job->status, ['in_progress', 'progress_updated'], true)) {
+            } elseif (in_array($job->status, ['in_progress', 'progress_updated', 'update_posted'], true)) {
                 $job->update(['status' => 'progress_updated']);
             }
+
+            $this->timeline->record(
+                $job->fresh(),
+                'update_posted',
+                'Progress update posted'.($update->visibility === 'internal' ? ' (internal)' : ''),
+                $user,
+                [
+                    'job_update_id' => $update->id,
+                    'visibility' => $update->visibility,
+                    'photo_count' => $update->photos()->count(),
+                ]
+            );
 
             try {
                 if ($update->visibility === 'customer_visible') {

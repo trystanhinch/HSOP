@@ -1,0 +1,9 @@
+Subject: Drywall Richmond [Voicemail] From +17786891281 to Drywall Richmond
+
+From: +17786891281
+To: Drywall Richmond
+Caller Number: +17786891281
+Call Duration: 1:14
+Received: 2026-07-04 10:02:11 PDT
+City: Richmond, BC
+Recording: https://api.twilio.com/2010-04-01/Accounts/ACxxxxxxxx/Recordings/RExxxxxxxx002

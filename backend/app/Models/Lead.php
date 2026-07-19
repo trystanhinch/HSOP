@@ -15,6 +15,7 @@ class Lead extends Model
     use HasActivityTimeline, HasNextAction;
     protected $fillable = [
         'company_id',
+        'company_source_id',
         'customer_id',
         'contact_name',
         'phone',
@@ -24,6 +25,9 @@ class Lead extends Model
         'source',
         'company_listing',
         'notes',
+        'raw_email_copy',
+        'parse_metadata',
+        'needs_manual_review',
         'project_description',
         'internal_notes',
         'assigned_pm_id',
@@ -44,12 +48,19 @@ class Lead extends Model
         return [
             'site_visit_date' => DateOnly::class,
             'contractor_price_submitted_at' => 'datetime',
+            'parse_metadata' => 'array',
+            'needs_manual_review' => 'boolean',
         ];
     }
 
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function companySource(): BelongsTo
+    {
+        return $this->belongsTo(CompanySource::class);
     }
 
     public function customer(): BelongsTo

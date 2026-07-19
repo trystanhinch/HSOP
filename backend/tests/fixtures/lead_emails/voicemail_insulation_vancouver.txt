@@ -1,0 +1,9 @@
+Subject: Insulation Vancouver [Voicemail] From +16043413809 to Insulation Vancouver
+
+From: +16043413809
+To: Insulation Vancouver
+Caller: +16043413809
+Duration: 0:52
+Date/Time: Jul 2, 2026 3:18:44 PM PDT
+City: Vancouver, BC CA
+Recording URL: https://api.twilio.com/2010-04-01/Accounts/ACxxxxxxxx/Recordings/RExxxxxxxx001

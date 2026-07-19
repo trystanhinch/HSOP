@@ -3,13 +3,16 @@
 use App\Http\Controllers\Api\AdminPmMessageController;
 use App\Http\Controllers\Api\ActivityTimelineController;
 use App\Http\Controllers\Api\AiSettingsController;
+use App\Http\Controllers\Api\GmailOAuthController;
+use App\Http\Controllers\Api\MessageTemplateController;
+use App\Http\Controllers\Api\WorkflowAssistController;
 use App\Http\Controllers\Api\CompanySourceController;
 use App\Http\Controllers\Api\CustomerPortalController;
 use App\Http\Controllers\Api\AdminUserController;
 use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyController;
-use App\Http\Controllers\Api\ContractorController;
+use App\Http\Controllers\Api\ContractorLeadController;
 use App\Http\Controllers\Api\ContractorDocumentController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;
@@ -21,7 +24,7 @@ use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\NextActionController;
 use App\Http\Controllers\Api\PaymentController;
 use App\Http\Controllers\Api\PayoutController;
-use App\Http\Controllers\Api\PmMeetingController;
+use App\Http\Controllers\Api\PmContractorMessageController;
 use App\Http\Controllers\Api\ProfitReportController;
 use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\ScheduleController;
@@ -71,9 +74,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/users', [UserController::class, 'store'])->middleware('role:owner');
 
     Route::get('/leads', [LeadController::class, 'index']);
+    Route::get('/leads/review-count', [LeadController::class, 'reviewCount'])->middleware('role:owner');
     Route::post('/leads', [LeadController::class, 'store'])->middleware('role:owner,pm');
     Route::get('/leads/{lead}', [LeadController::class, 'show']);
     Route::put('/leads/{lead}', [LeadController::class, 'update'])->middleware('role:owner,pm');
+    Route::post('/leads/{lead}/resolve-review', [LeadController::class, 'resolveReview'])->middleware('role:owner');
     Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])->middleware('role:owner,pm');
     Route::post('/leads/{lead}/convert-to-job', [LeadController::class, 'convertToJob'])->middleware('role:owner,pm');
     Route::post('/leads/{lead}/send-quote', [LeadController::class, 'sendQuote'])->middleware('role:owner,pm');
@@ -151,6 +156,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/admin-pm-messages/with/{userId}', [AdminPmMessageController::class, 'thread'])->middleware('role:owner,pm');
     Route::post('/admin-pm-messages/with/{userId}', [AdminPmMessageController::class, 'store'])->middleware('role:owner,pm');
 
+    Route::get('/pm-contractor-messages/conversations', [PmContractorMessageController::class, 'conversations'])->middleware('role:pm,contractor');
+    Route::get('/pm-contractor-messages/with/{userId}', [PmContractorMessageController::class, 'thread'])->middleware('role:pm,contractor');
+    Route::post('/pm-contractor-messages/with/{userId}', [PmContractorMessageController::class, 'store'])->middleware('role:pm,contractor');
+
+    Route::get('/contractor/leads', [ContractorLeadController::class, 'index'])->middleware('role:contractor');
+
     Route::get('/pm-meetings', [PmMeetingController::class, 'index'])->middleware('role:owner,pm');
     Route::post('/pm-meetings', [PmMeetingController::class, 'store'])->middleware('role:owner');
     Route::put('/pm-meetings/{pmMeeting}', [PmMeetingController::class, 'update'])->middleware('role:owner');
@@ -179,7 +190,25 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/ai/settings', [AiSettingsController::class, 'index']);
         Route::put('/ai/settings', [AiSettingsController::class, 'update']);
         Route::get('/ai/action-logs', [AiSettingsController::class, 'actionLogs']);
+        Route::get('/ai/action-logs/filters', [AiSettingsController::class, 'actionLogFilters']);
         Route::post('/ai/action-logs/test', [AiSettingsController::class, 'storeTestLog']);
+
+        Route::get('/oauth/gmail/status', [GmailOAuthController::class, 'status']);
+        Route::get('/oauth/gmail/initiate', [GmailOAuthController::class, 'initiate']);
+        Route::post('/oauth/gmail/disconnect', [GmailOAuthController::class, 'disconnect']);
+        Route::post('/oauth/gmail/fetch-now', [GmailOAuthController::class, 'fetchNow']);
+
+        Route::get('/workflow/thresholds', [WorkflowAssistController::class, 'thresholds']);
+        Route::put('/workflow/thresholds', [WorkflowAssistController::class, 'updateThresholds']);
+        Route::get('/message-templates', [MessageTemplateController::class, 'index']);
+        Route::post('/message-templates', [MessageTemplateController::class, 'store']);
+        Route::put('/message-templates/{messageTemplate}', [MessageTemplateController::class, 'update']);
+    });
+
+    Route::middleware('role:owner,pm')->group(function () {
+        Route::post('/leads/{lead}/ai/call-prep', [WorkflowAssistController::class, 'callPrep']);
+        Route::post('/leads/{lead}/ai/draft-message', [WorkflowAssistController::class, 'draftMessage']);
+        Route::post('/leads/{lead}/ai/quote-prep', [WorkflowAssistController::class, 'quotePrep']);
     });
 
     Route::get('/sms-logs', [SmsLogController::class, 'index'])->middleware('role:owner');

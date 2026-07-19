@@ -3,6 +3,7 @@ import { Upload, FileCheck, Clock, XCircle, CheckCircle, AlertCircle, Eye } from
 import api, { storageUrl } from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, confirmDanger, showError, showSuccess } from '../utils/swal';
+import { formatDate } from '../utils/formatDate';
 
 const docTypes = [
   { key: 'wcb', label: 'WCB Certificate', required: true },
@@ -140,7 +141,7 @@ export default function ContractorDocuments({ contractorId }) {
                     {latest && (
                       <p className="text-xs text-slate-400">
                         Uploaded: {new Date(latest.created_at).toLocaleDateString()}
-                        {latest.expiry_date && ` · Expires: ${new Date(latest.expiry_date).toLocaleDateString()}`}
+                        {latest.expiry_date && ` · Expires: ${formatDate(latest.expiry_date)}`}
                         {latest.file_size && ` · ${latest.file_size}`}
                       </p>
                     )}

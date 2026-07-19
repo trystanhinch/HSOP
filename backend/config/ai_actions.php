@@ -11,6 +11,7 @@ return [
         'customer_messaging',
         'payouts',
         'reviews',
+        'escalations',
     ],
 
     'default_mode' => 'suggestion',
