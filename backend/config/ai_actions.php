@@ -16,6 +16,11 @@ return [
 
     'default_mode' => 'suggestion',
 
+    // Escalations start draft-only until Owner promotes to assisted/autopilot.
+    'module_defaults' => [
+        'escalations' => 'suggestion',
+    ],
+
     'modes' => ['suggestion', 'assisted', 'autopilot'],
 
     /*

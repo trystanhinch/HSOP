@@ -95,7 +95,7 @@ return new class extends Migration
             'workflow_contractor_pricing_deadline_hours' => '24',
             'workflow_quote_follow_up_hours' => '48',
             'workflow_job_missing_update_days' => '7',
-            'ai_mode_escalations' => 'assisted',
+            'ai_mode_escalations' => 'suggestion',
         ];
 
         foreach ($defaults as $key => $value) {

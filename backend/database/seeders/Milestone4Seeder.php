@@ -31,10 +31,14 @@ class Milestone4Seeder extends Seeder
 
         foreach (config('ai_actions.modules', []) as $module) {
             $key = "ai_mode_{$module}";
+            $default = config("ai_actions.module_defaults.{$module}", config('ai_actions.default_mode', 'suggestion'));
             if (! Setting::where('key', $key)->exists()) {
-                Setting::set($key, config('ai_actions.default_mode', 'suggestion'));
+                Setting::set($key, $default);
             }
         }
+
+        // Always enforce safe default on Phase 2/3 deploy until Owner opts into auto-send.
+        Setting::set('ai_mode_escalations', 'suggestion');
 
         app(AiActionRegistry::class)->syncToDatabase();
 

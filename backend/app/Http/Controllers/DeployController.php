@@ -514,6 +514,10 @@ class DeployController extends Controller
         Artisan::call('db:seed', ['--class' => 'MessageTemplateSeeder', '--force' => true]);
         $steps['db:seed --class=MessageTemplateSeeder --force'] = trim(Artisan::output());
 
+        // Safety: escalations start in suggestion mode (drafts only) until Trystan confirms auto-send.
+        \App\Models\Setting::set('ai_mode_escalations', 'suggestion');
+        $steps['ai_mode_escalations'] = 'suggestion';
+
         return response()->json([
             'ok' => true,
             'message' => 'Milestone 4 Phase 2 migration and seeders completed (Gmail inbox tables, lead intake fields, workflow thresholds/templates).',
@@ -521,6 +525,7 @@ class DeployController extends Controller
             'notes' => [
                 'Set OPENAI_API_KEY, AI_PROVIDER=openai, GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_REDIRECT_URI=https://api.serviceop.ca/oauth/gmail/callback in App Platform env.',
                 'Gmail remains disconnected until owner completes Settings → Lead Inbox → Connect Gmail as leads@serviceop.ca.',
+                'ai_mode_escalations defaults to suggestion (no auto SMS) until Owner changes it.',
             ],
         ]);
     }
