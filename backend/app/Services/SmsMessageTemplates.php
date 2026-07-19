@@ -55,11 +55,12 @@ class SmsMessageTemplates
             return '';
         }
 
+        // Always format from the calendar Y-m-d portion. Never format a UTC
+        // midnight instant in a western timezone (that shifts back one day).
         if ($date instanceof \DateTimeInterface) {
-            return Carbon::instance($date)->format('M j, Y');
+            $date = Carbon::instance($date)->toDateString();
         }
 
-        // Prefer the calendar Y-m-d portion so UTC midnight ISO strings do not shift.
         if (preg_match('/^(\d{4}-\d{2}-\d{2})/', (string) $date, $matches)) {
             return Carbon::createFromFormat('Y-m-d', $matches[1])->format('M j, Y');
         }
@@ -96,8 +97,15 @@ class SmsMessageTemplates
 
     public static function quoteSent(User $customer, Quote $quote, string $portalUrl): string
     {
-        return 'ServiceOP: Your quote is ready. Total: $'.number_format((float) $quote->customer_total, 2)
-            .'. View quote: '.$portalUrl;
+        return \App\Models\MessageTemplate::render(
+            'quote_sent',
+            [
+                'customer_total' => number_format((float) $quote->customer_total, 2),
+                'portal_url' => $portalUrl,
+            ],
+            'ServiceOP: Your quote is ready. Total: $'.number_format((float) $quote->customer_total, 2)
+                .'. View quote: '.$portalUrl
+        );
     }
 
     public static function quoteApprovedCustomer(string $portalUrl): string
@@ -129,8 +137,16 @@ class SmsMessageTemplates
 
     public static function progressUpdateCustomer(User $customer, Job $job, string $portalUrl): string
     {
-        return 'ServiceOP: A progress update has been posted for your project.'
-            .' View update: '.$portalUrl;
+        return \App\Models\MessageTemplate::render(
+            'progress_update_customer',
+            [
+                'customer_name' => $customer->name ?? 'there',
+                'address' => $job->address ?? '',
+                'portal_url' => $portalUrl,
+            ],
+            'ServiceOP: A progress update has been posted for your project.'
+                .' View update: '.$portalUrl
+        );
     }
 
     public static function jobCompletePendingApproval(User $customer, Job $job, string $portalUrl): string

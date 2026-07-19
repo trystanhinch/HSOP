@@ -1,13 +1,14 @@
 /**
- * Proof script: calendar-date formatting must not shift in Pacific time.
+ * Proof: calendar-date formatting must not shift in Pacific time.
  * Run: node frontend/scripts/prove-date-format.mjs
  */
-import { formatDate, formatDateLong, parseLocalDate } from '../src/utils/formatDate.js';
+import { formatDate, formatDateLong, parseLocalDate, calendarDateParts } from '../src/utils/formatDate.js';
 
 const samples = [
-  '2026-07-13T00:00:00.000000Z', // Laravel default date cast (production Horne St)
-  '2026-07-13',                   // DateOnly cast / input type=date
-  '2026-08-05T00:00:00.000000Z', // fresh proof date
+  ['2026-07-14T00:00:00.000000Z', 'Jul 14, 2026'], // Cloverley (Laravel date cast)
+  ['2026-07-14', 'Jul 14, 2026'],                   // DateOnly / input type=date
+  ['2026-07-13T00:00:00.000000Z', 'Jul 13, 2026'], // Horne St
+  ['2026-08-05', 'Aug 5, 2026'],                    // fresh proof date
 ];
 
 function buggedFormat(dateString) {
@@ -22,22 +23,29 @@ console.log('process TZ hint:', process.env.TZ || '(system default)');
 console.log('offset minutes:', new Date().getTimezoneOffset());
 console.log('');
 
-for (const s of samples) {
-  const parsed = parseLocalDate(s);
-  console.log('input:', s);
-  console.log('  bugged new Date():', buggedFormat(s));
-  console.log('  formatDate():     ', formatDate(s));
-  console.log('  formatDateLong(): ', formatDateLong(s));
-  console.log('  local Y-M-D:      ', parsed
-    ? `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`
-    : null);
+let failed = false;
+for (const [input, expected] of samples) {
+  const got = formatDate(input);
+  const bugged = buggedFormat(input);
+  console.log('input:', input);
+  console.log('  bugged new Date():', bugged);
+  console.log('  formatDate():     ', got);
+  console.log('  formatDateLong(): ', formatDateLong(input));
+  console.log('  parts:            ', calendarDateParts(input));
+  if (got !== expected) {
+    console.error(`  FAIL expected ${expected}`);
+    failed = true;
+  } else {
+    console.log('  PASS');
+  }
   console.log('');
 }
 
-const horneApiValue = '2026-07-13T00:00:00.000000Z';
-const fixed = formatDate(horneApiValue);
-if (fixed !== 'Jul 13, 2026') {
-  console.error('FAIL: Horne St expected Jul 13, 2026, got', fixed);
-  process.exit(1);
+// Cloverley regression: dashboard must not show Jul 13 when API has Jul 14
+if (formatDate('2026-07-14') !== 'Jul 14, 2026') {
+  console.error('FAIL: Cloverley regression');
+  failed = true;
 }
-console.log('PASS: Horne St API value formats as Jul 13, 2026');
+
+if (failed) process.exit(1);
+console.log('ALL PASS');

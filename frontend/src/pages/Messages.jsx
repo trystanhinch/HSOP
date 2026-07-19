@@ -216,11 +216,109 @@ function AdminPmMessagesPanel() {
   );
 }
 
+function PmContractorMessagesPanel() {
+  const { user } = useAuth();
+  const [conversations, setConversations] = useState([]);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMsg, setNewMsg] = useState('');
+
+  const loadConversations = () => {
+    api.get('/pm-contractor-messages/conversations')
+      .then(({ data }) => {
+        setConversations(data);
+        if (!selectedUser && data.length > 0) setSelectedUser(data[0]);
+      })
+      .catch(() => setConversations([]));
+  };
+
+  useEffect(() => { loadConversations(); }, []);
+
+  useEffect(() => {
+    if (!selectedUser) return;
+    api.get(`/pm-contractor-messages/with/${selectedUser.user_id}`)
+      .then(({ data }) => setMessages(data))
+      .catch(() => setMessages([]));
+  }, [selectedUser]);
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMsg.trim() || !selectedUser) return;
+
+    try {
+      await api.post(`/pm-contractor-messages/with/${selectedUser.user_id}`, { content: newMsg });
+      setNewMsg('');
+      const { data } = await api.get(`/pm-contractor-messages/with/${selectedUser.user_id}`);
+      setMessages(data);
+      loadConversations();
+      await showSuccess('Message sent.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to send message.');
+    }
+  };
+
+  const listLabel = user?.role === 'pm' ? 'Contractors' : 'Project Managers';
+
+  return (
+    <div className="flex flex-col md:flex-row gap-4" style={{ height: 'calc(100vh - 200px)' }}>
+      <div className="md:w-72 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0">
+        <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-3">{listLabel}</p>
+        {conversations.map((c) => (
+          <button key={c.user_id} onClick={() => setSelectedUser(c)}
+            className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${selectedUser?.user_id === c.user_id ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}>
+            <p className="text-sm font-medium text-slate-800 truncate">{c.name}</p>
+            {c.last_message && <p className="text-xs text-slate-500 truncate">{c.last_message}</p>}
+            {c.unread_count > 0 && (
+              <span className="inline-block mt-1 text-xs bg-blue-600 text-white rounded-full px-2 py-0.5">{c.unread_count}</span>
+            )}
+          </button>
+        ))}
+        {conversations.length === 0 && (
+          <p className="text-sm text-slate-500 px-4 py-8 text-center">No conversations yet.</p>
+        )}
+      </div>
+
+      <div className="flex-1 bg-white rounded-xl border border-slate-200 flex flex-col min-w-0">
+        {selectedUser ? (
+          <>
+            <div className="px-4 py-3 border-b border-slate-200">
+              <p className="font-medium text-slate-800">{selectedUser.name}</p>
+              <p className="text-xs text-slate-500">{selectedUser.email}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              {messages.map((m) => {
+                const mine = m.sender_id === user?.id;
+                return (
+                  <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] rounded-xl px-4 py-2 text-sm ${mine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
+                      {!mine && <p className="text-xs opacity-70 mb-1">{m.sender?.name}</p>}
+                      {m.content}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <form onSubmit={sendMessage} className="border-t border-slate-200 p-3 flex gap-2">
+              <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)}
+                placeholder={user?.role === 'pm' ? 'Message contractor...' : 'Message your PM...'}
+                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+              <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">Send</button>
+            </form>
+          </>
+        ) : (
+          <div className="flex-1 flex items-center justify-center text-slate-500 text-sm">Select a conversation</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Messages() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'owner';
   const isPm = user?.role === 'pm';
   const [pmTab, setPmTab] = useState('jobs');
+  const [contractorTab, setContractorTab] = useState('jobs');
 
   if (isAdmin) {
     return (
@@ -240,12 +338,18 @@ export default function Messages() {
             className={`px-4 py-2 text-sm rounded-lg ${pmTab === 'jobs' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
             Job Messages
           </button>
+          <button type="button" onClick={() => setPmTab('contractors')}
+            className={`px-4 py-2 text-sm rounded-lg ${pmTab === 'contractors' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+            Contractor Messages
+          </button>
           <button type="button" onClick={() => setPmTab('admin')}
             className={`px-4 py-2 text-sm rounded-lg ${pmTab === 'admin' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
             Admin Messages
           </button>
         </div>
-        {pmTab === 'jobs' ? <JobMessagesPanel /> : <AdminPmMessagesPanel />}
+        {pmTab === 'jobs' && <JobMessagesPanel />}
+        {pmTab === 'contractors' && <PmContractorMessagesPanel />}
+        {pmTab === 'admin' && <AdminPmMessagesPanel />}
       </div>
     );
   }
@@ -253,7 +357,17 @@ export default function Messages() {
   return (
     <div>
       <PageHeader title="Messages" />
-      <JobMessagesPanel />
+      <div className="flex gap-2 mb-4">
+        <button type="button" onClick={() => setContractorTab('jobs')}
+          className={`px-4 py-2 text-sm rounded-lg ${contractorTab === 'jobs' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+          Job Messages
+        </button>
+        <button type="button" onClick={() => setContractorTab('pm')}
+          className={`px-4 py-2 text-sm rounded-lg ${contractorTab === 'pm' ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+          PM Messages
+        </button>
+      </div>
+      {contractorTab === 'jobs' ? <JobMessagesPanel /> : <PmContractorMessagesPanel />}
     </div>
   );
 }

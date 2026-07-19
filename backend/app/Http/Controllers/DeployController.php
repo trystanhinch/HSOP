@@ -499,6 +499,32 @@ class DeployController extends Controller
         ]);
     }
 
+    public function milestone4Phase2(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $steps = [];
+
+        Artisan::call('migrate', ['--force' => true]);
+        $steps['migrate --force'] = trim(Artisan::output());
+
+        Artisan::call('db:seed', ['--class' => 'Milestone4Seeder', '--force' => true]);
+        $steps['db:seed --class=Milestone4Seeder --force'] = trim(Artisan::output());
+
+        Artisan::call('db:seed', ['--class' => 'MessageTemplateSeeder', '--force' => true]);
+        $steps['db:seed --class=MessageTemplateSeeder --force'] = trim(Artisan::output());
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Milestone 4 Phase 2 migration and seeders completed (Gmail inbox tables, lead intake fields, workflow thresholds/templates).',
+            'steps' => $steps,
+            'notes' => [
+                'Set OPENAI_API_KEY, AI_PROVIDER=openai, GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_REDIRECT_URI=https://api.serviceop.ca/oauth/gmail/callback in App Platform env.',
+                'Gmail remains disconnected until owner completes Settings → Lead Inbox → Connect Gmail as leads@serviceop.ca.',
+            ],
+        ]);
+    }
+
     private function authorizeDeploy(string $secret): void
     {
         $expected = env('DEPLOY_SECRET');

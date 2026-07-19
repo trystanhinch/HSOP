@@ -67,11 +67,26 @@ class AiSettingsController extends Controller
     public function actionLogs(Request $request): JsonResponse
     {
         $logs = AiActionLog::with('actor:id,name,role')
+            ->when($request->trigger_event, fn ($q) => $q->where('trigger_event', $request->trigger_event))
             ->when($request->action_taken, fn ($q) => $q->where('action_taken', $request->action_taken))
+            ->when($request->date_from, fn ($q) => $q->whereDate('created_at', '>=', $request->date_from))
+            ->when($request->date_to, fn ($q) => $q->whereDate('created_at', '<=', $request->date_to))
+            ->when($request->errors_only === 'true', fn ($q) => $q->whereNotNull('error')->where('error', '!=', ''))
             ->latest()
-            ->paginate(50);
+            ->paginate((int) ($request->per_page ?? 50));
 
         return response()->json($logs);
+    }
+
+    public function actionLogFilters(): JsonResponse
+    {
+        $events = AiActionLog::query()->distinct()->orderBy('trigger_event')->pluck('trigger_event');
+        $actions = AiActionLog::query()->distinct()->orderBy('action_taken')->pluck('action_taken');
+
+        return response()->json([
+            'trigger_events' => $events,
+            'action_taken' => $actions,
+        ]);
     }
 
     public function storeTestLog(Request $request): JsonResponse

@@ -63,6 +63,14 @@ class CustomerPortalController extends Controller
         $leadQuote = Quote::leadLevelFor($lead);
         $activeQuote = $job?->quote ?? $leadQuote;
 
+        $mapper = app(\App\Services\Workflow\WorkflowStatusMapper::class);
+        $timeline = $job
+            ? app(\App\Services\ActivityTimelineService::class)->forSubject($job, 30)
+                ->filter(fn ($e) => ! in_array($e->event_type, ['escalation_draft'], true)
+                    && (! isset($e->metadata['visibility']) || $e->metadata['visibility'] !== 'internal'))
+                ->values()
+            : collect();
+
         return response()->json([
             'lead' => [
                 'contact_name' => $lead->contact_name,
@@ -92,11 +100,14 @@ class CustomerPortalController extends Controller
             'job' => $job ? [
                 'id' => $job->id,
                 'status' => $job->status,
+                'status_label' => $mapper->customerJobLabel($job->status),
+                'canonical_status' => $mapper->canonicalize('job', $job->status),
                 'scheduled_start_date' => $job->scheduled_start_date,
                 'scheduled_start_time' => $job->scheduled_start_time,
                 'estimated_completion' => $job->estimated_completion_date,
                 'revision_description' => $job->revision_description,
             ] : null,
+            'event_timeline' => $timeline,
             'updates' => $job ? $job->updates()
                 ->where('visibility', 'customer_visible')
                 ->with('photos')

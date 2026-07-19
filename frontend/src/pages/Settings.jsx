@@ -6,9 +6,10 @@ import PageHeader from '../components/PageHeader';
 import { formatDate } from '../utils/formatDate';
 import AddUserModal from '../components/AddUserModal';
 import DatabaseStructure from './DatabaseStructure';
+import AiActivityLogViewer from '../components/AiActivityLogViewer';
 import { confirmAction, confirmDanger, showError, showSuccess } from '../utils/swal';
 
-const tabs = ['Company', 'Users & Roles', 'AI Settings', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure'];
+const tabs = ['Company', 'Users & Roles', 'Lead Inbox', 'Workflow', 'Message Templates', 'AI Settings', 'AI Activity Log', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure'];
 
 const smsStatusColor = { sent: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-700', disabled: 'bg-slate-100 text-slate-600' };
 
@@ -31,6 +32,12 @@ export default function Settings() {
   const [aiSettings, setAiSettings] = useState(null);
   const [aiForm, setAiForm] = useState({ ai_kill_switch: false, module_modes: {} });
   const [aiSaving, setAiSaving] = useState(false);
+  const [gmailStatus, setGmailStatus] = useState(null);
+  const [gmailBusy, setGmailBusy] = useState(false);
+  const [workflowThresholds, setWorkflowThresholds] = useState(null);
+  const [workflowSaving, setWorkflowSaving] = useState(false);
+  const [messageTemplates, setMessageTemplates] = useState([]);
+  const [templateSavingId, setTemplateSavingId] = useState(null);
 
   const loadAdminUsers = () => {
     api.get('/admin/users').then(({ data }) => setUsers(data)).catch(() => setUsers([]));
@@ -90,11 +97,126 @@ export default function Settings() {
 
   useEffect(() => {
     if (tabParam === 'database') setActiveTab('Database Structure');
-  }, [tabParam]);
+    if (tabParam === 'lead-inbox') setActiveTab('Lead Inbox');
+    const gmail = searchParams.get('gmail');
+    if (gmail === 'connected') {
+      showSuccess(`Gmail connected${searchParams.get('mailbox') ? `: ${searchParams.get('mailbox')}` : ''}`);
+      setActiveTab('Lead Inbox');
+      setSearchParams({ tab: 'lead-inbox' });
+    } else if (gmail === 'error') {
+      showError(searchParams.get('reason') || 'Gmail connection failed');
+      setActiveTab('Lead Inbox');
+      setSearchParams({ tab: 'lead-inbox' });
+    }
+  }, [tabParam, searchParams]);
+
+  useEffect(() => {
+    if (activeTab === 'Lead Inbox') {
+      api.get('/oauth/gmail/status').then(({ data }) => setGmailStatus(data)).catch(() => setGmailStatus(null));
+    }
+    if (activeTab === 'Workflow') {
+      api.get('/workflow/thresholds').then(({ data }) => setWorkflowThresholds(data)).catch(() => setWorkflowThresholds(null));
+    }
+    if (activeTab === 'Message Templates') {
+      api.get('/message-templates').then(({ data }) => setMessageTemplates(data || [])).catch(() => setMessageTemplates([]));
+    }
+  }, [activeTab]);
+
+  const saveWorkflowThresholds = async (e) => {
+    e.preventDefault();
+    setWorkflowSaving(true);
+    try {
+      const { data } = await api.put('/workflow/thresholds', {
+        pm_contact_lead_hours: workflowThresholds.pm_contact_lead_hours,
+        pm_contact_escalation_hours: workflowThresholds.pm_contact_escalation_hours,
+        contractor_pricing_deadline_hours: workflowThresholds.contractor_pricing_deadline_hours,
+        quote_follow_up_hours: workflowThresholds.quote_follow_up_hours,
+        job_missing_update_days: workflowThresholds.job_missing_update_days,
+      });
+      setWorkflowThresholds(data);
+      await showSuccess('Workflow thresholds saved.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to save thresholds.');
+    } finally {
+      setWorkflowSaving(false);
+    }
+  };
+
+  const saveTemplate = async (tpl) => {
+    setTemplateSavingId(tpl.id);
+    try {
+      const { data } = await api.put(`/message-templates/${tpl.id}`, {
+        body: tpl.body,
+        label: tpl.label,
+        is_active: tpl.is_active,
+      });
+      setMessageTemplates((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      await showSuccess('Template saved.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to save template.');
+    } finally {
+      setTemplateSavingId(null);
+    }
+  };
 
   const handleTab = (tab) => {
     setActiveTab(tab);
-    setSearchParams(tab === 'Database Structure' ? { tab: 'database' } : {});
+    if (tab === 'Database Structure') setSearchParams({ tab: 'database' });
+    else if (tab === 'Lead Inbox') setSearchParams({ tab: 'lead-inbox' });
+    else if (tab === 'Workflow') setSearchParams({ tab: 'workflow' });
+    else if (tab === 'Message Templates') setSearchParams({ tab: 'message-templates' });
+    else setSearchParams({});
+  };
+
+  const connectGmail = async () => {
+    setGmailBusy(true);
+    try {
+      const { data } = await api.get('/oauth/gmail/initiate');
+      if (data.auth_url) {
+        window.location.href = data.auth_url;
+        return;
+      }
+      await showError('No auth URL returned.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to start Gmail OAuth.');
+    } finally {
+      setGmailBusy(false);
+    }
+  };
+
+  const disconnectGmail = async () => {
+    const ok = await confirmDanger({
+      title: 'Disconnect Gmail?',
+      text: 'Lead email polling will stop until you reconnect.',
+      confirmText: 'Disconnect',
+    });
+    if (!ok) return;
+    setGmailBusy(true);
+    try {
+      await api.post('/oauth/gmail/disconnect');
+      await showSuccess('Gmail disconnected.');
+      const { data } = await api.get('/oauth/gmail/status');
+      setGmailStatus(data);
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to disconnect.');
+    } finally {
+      setGmailBusy(false);
+    }
+  };
+
+  const fetchGmailNow = async () => {
+    setGmailBusy(true);
+    try {
+      const { data } = await api.post('/oauth/gmail/fetch-now');
+      const s = data.stats || {};
+      await showSuccess(`Fetched ${s.fetched ?? 0}, processed ${s.processed ?? 0}, skipped ${s.skipped ?? 0}, failed ${s.failed ?? 0}`);
+      const status = await api.get('/oauth/gmail/status');
+      setGmailStatus(status.data);
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Fetch failed.');
+    } finally {
+      setGmailBusy(false);
+    }
   };
 
   const saveSettings = async (payload, successMsg) => {
@@ -484,6 +606,115 @@ export default function Settings() {
         </div>
       )}
 
+      {activeTab === 'Lead Inbox' && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
+          <h3 className="font-semibold text-slate-800">Gmail lead inbox</h3>
+          <p className="text-sm text-slate-500">
+            Connect <span className="font-medium text-slate-700">{gmailStatus?.expected_mailbox || 'leads@serviceop.ca'}</span> via
+            Google OAuth (readonly). New inbox messages are polled every 5 minutes and run through the lead intake pipeline.
+          </p>
+          {!gmailStatus ? (
+            <p className="text-sm text-slate-500">Loading status…</p>
+          ) : (
+            <dl className="text-sm space-y-2">
+              <div className="flex gap-2"><dt className="text-slate-500 w-36">Google app</dt><dd>{gmailStatus.configured ? 'Configured' : 'Missing GOOGLE_CLIENT_ID / SECRET'}</dd></div>
+              <div className="flex gap-2"><dt className="text-slate-500 w-36">Connection</dt><dd>{gmailStatus.connected ? 'Connected' : 'Not connected'}</dd></div>
+              <div className="flex gap-2"><dt className="text-slate-500 w-36">Mailbox</dt><dd>{gmailStatus.mailbox_email || '—'}</dd></div>
+              <div className="flex gap-2"><dt className="text-slate-500 w-36">Last fetch</dt><dd>{gmailStatus.last_fetched_at ? formatDate(gmailStatus.last_fetched_at) : '—'}</dd></div>
+              <div className="flex gap-2"><dt className="text-slate-500 w-36">Redirect URI</dt><dd className="break-all text-xs font-mono">{gmailStatus.redirect_uri}</dd></div>
+            </dl>
+          )}
+          <div className="flex flex-wrap gap-2 pt-2">
+            {!gmailStatus?.connected ? (
+              <button type="button" disabled={gmailBusy || !gmailStatus?.configured} onClick={connectGmail}
+                className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-60">
+                {gmailBusy ? 'Starting…' : 'Connect Gmail'}
+              </button>
+            ) : (
+              <>
+                <button type="button" disabled={gmailBusy} onClick={fetchGmailNow}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-60">
+                  Fetch now
+                </button>
+                <button type="button" disabled={gmailBusy} onClick={disconnectGmail}
+                  className="px-4 py-2 border border-slate-300 text-slate-700 text-sm rounded-lg disabled:opacity-60">
+                  Disconnect
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'Workflow' && (
+        <form onSubmit={saveWorkflowThresholds} className="bg-white rounded-xl border border-slate-200 p-6 max-w-xl space-y-4">
+          <h3 className="font-semibold text-slate-800">Automation thresholds</h3>
+          <p className="text-sm text-slate-500">Owner-editable defaults for reminders and escalations. Change anytime without a rebuild.</p>
+          {!workflowThresholds ? (
+            <p className="text-sm text-slate-400">Loading…</p>
+          ) : (
+            <>
+              {[
+                ['pm_contact_lead_hours', 'PM must contact new lead within (hours)'],
+                ['pm_contact_escalation_hours', 'Escalate to Owner after reminder (hours)'],
+                ['contractor_pricing_deadline_hours', 'Contractor pricing deadline after site visit (hours)'],
+                ['quote_follow_up_hours', 'Quote follow-up if not approved (hours)'],
+                ['job_missing_update_days', 'Flag in-progress jobs missing updates (days)'],
+              ].map(([key, label]) => (
+                <label key={key} className="block text-sm">
+                  <span className="text-slate-600">{label}</span>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    value={workflowThresholds[key] ?? ''}
+                    onChange={(e) => setWorkflowThresholds({ ...workflowThresholds, [key]: e.target.value })}
+                    className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+                  />
+                </label>
+              ))}
+              <button type="submit" disabled={workflowSaving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-60">
+                {workflowSaving ? 'Saving…' : 'Save thresholds'}
+              </button>
+            </>
+          )}
+        </form>
+      )}
+
+      {activeTab === 'Message Templates' && (
+        <div className="space-y-4 max-w-3xl">
+          <p className="text-sm text-slate-500">Edit automated SMS copy. Use {'{{variable}}'} placeholders shown on each template.</p>
+          {messageTemplates.length === 0 ? (
+            <p className="text-sm text-slate-400">No templates yet — run MessageTemplateSeeder.</p>
+          ) : messageTemplates.map((tpl) => (
+            <div key={tpl.id} className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+              <div className="flex justify-between gap-2">
+                <div>
+                  <p className="font-medium text-slate-800">{tpl.label}</p>
+                  <p className="text-xs text-slate-400 font-mono">{tpl.event_key}</p>
+                </div>
+                <label className="text-xs flex items-center gap-1">
+                  <input type="checkbox" checked={!!tpl.is_active}
+                    onChange={(e) => setMessageTemplates((prev) => prev.map((t) => t.id === tpl.id ? { ...t, is_active: e.target.checked } : t))} />
+                  Active
+                </label>
+              </div>
+              <textarea
+                rows={3}
+                className="w-full border border-slate-300 rounded-lg p-2 text-sm"
+                value={tpl.body}
+                onChange={(e) => setMessageTemplates((prev) => prev.map((t) => t.id === tpl.id ? { ...t, body: e.target.value } : t))}
+              />
+              <p className="text-xs text-slate-400">Variables: {(tpl.variables || []).join(', ') || '—'}</p>
+              <button type="button" disabled={templateSavingId === tpl.id} onClick={() => saveTemplate(tpl)}
+                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg disabled:opacity-60">
+                {templateSavingId === tpl.id ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {activeTab === 'AI Settings' && (
         <div className="space-y-6 max-w-4xl">
           <form onSubmit={saveAiSettings} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
@@ -548,7 +779,12 @@ export default function Settings() {
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-6">
-            <h3 className="font-semibold text-slate-800 mb-3">Recent AI Action Logs</h3>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-slate-800">Recent AI Action Logs</h3>
+              <button type="button" onClick={() => handleTab('AI Activity Log')} className="text-sm text-blue-600 font-medium">
+                View full log →
+              </button>
+            </div>
             {(aiSettings?.recent_action_logs || []).length === 0 ? (
               <p className="text-sm text-slate-500">No AI action logs yet.</p>
             ) : (
@@ -564,6 +800,16 @@ export default function Settings() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {activeTab === 'AI Activity Log' && (
+        <div>
+          <h3 className="font-semibold text-slate-800 mb-4">AI Activity Log</h3>
+          <p className="text-sm text-slate-500 mb-4">
+            Audit trail for AI-driven actions. Entries marked &quot;Placeholder copy&quot; used template text pending Trystan&apos;s approval.
+          </p>
+          <AiActivityLogViewer />
         </div>
       )}
 

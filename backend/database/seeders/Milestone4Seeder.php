@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\CompanySource;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AiActionRegistry;
@@ -36,5 +37,40 @@ class Milestone4Seeder extends Seeder
         }
 
         app(AiActionRegistry::class)->syncToDatabase();
+
+        $this->seedCompanySources();
+    }
+
+    private function seedCompanySources(): void
+    {
+        // Trystan/Admin owner — both groups default to this user for now.
+        $adminId = User::query()
+            ->where('role', 'owner')
+            ->orderBy('id')
+            ->value('id');
+
+        CompanySource::updateOrCreate(
+            ['company_name' => 'Fraser Valley Drywall'],
+            [
+                'sender_identity' => 'Fraser Valley Drywall',
+                'service_categories' => ['Drywall', 'Drywall repair', 'Finishing', 'Painting'],
+                'default_pm_id' => $adminId,
+                'domain' => null,
+                'google_review_url' => null,
+                'status' => 'active',
+            ]
+        );
+
+        CompanySource::updateOrCreate(
+            ['company_name' => 'Insulation Ethos'],
+            [
+                'sender_identity' => 'Insulation Ethos',
+                'service_categories' => ['Insulation'],
+                'default_pm_id' => $adminId,
+                'domain' => null,
+                'google_review_url' => null,
+                'status' => 'active',
+            ]
+        );
     }
 }

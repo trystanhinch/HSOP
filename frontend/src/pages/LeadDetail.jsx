@@ -10,9 +10,14 @@ import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 import NextActionCard from '../components/NextActionCard';
 import EventTimeline from '../components/EventTimeline';
+import LeadReviewPanel from '../components/LeadReviewPanel';
 import { formatDate, formatTime, formatDateTime, toDateInputValue } from '../utils/formatDate';
 
-const statuses = ['new', 'contacted', 'site_visit_scheduled', 'quote_needed', 'converted', 'lost'];
+const statuses = [
+  'new', 'duplicate_review', 'pm_assigned', 'customer_contacted', 'call_scheduled',
+  'site_visit_scheduled', 'converted', 'disqualified',
+  'contacted', 'quote_needed', 'lost',
+];
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
@@ -46,6 +51,13 @@ export default function LeadDetail() {
   const [quoteSent, setQuoteSent] = useState(false);
   const [savingNextAction, setSavingNextAction] = useState(false);
   const [addingTimeline, setAddingTimeline] = useState(false);
+  const [editingAddress, setEditingAddress] = useState(false);
+  const [addressDraft, setAddressDraft] = useState('');
+  const [savingAddress, setSavingAddress] = useState(false);
+  const [callPrep, setCallPrep] = useState(null);
+  const [messageDraft, setMessageDraft] = useState('');
+  const [quotePrep, setQuotePrep] = useState(null);
+  const [aiBusy, setAiBusy] = useState(false);
 
   const saveNextAction = async (payload) => {
     setSavingNextAction(true);
@@ -79,6 +91,43 @@ export default function LeadDetail() {
     }
   };
 
+  const runCallPrep = async () => {
+    setAiBusy(true);
+    try {
+      const { data } = await api.post(`/leads/${id}/ai/call-prep`);
+      setCallPrep(data);
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Call prep failed.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const runDraftMessage = async () => {
+    setAiBusy(true);
+    try {
+      const { data } = await api.post(`/leads/${id}/ai/draft-message`);
+      setMessageDraft(data.draft || '');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Draft failed.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
+  const runQuotePrep = async () => {
+    setAiBusy(true);
+    try {
+      const { data } = await api.post(`/leads/${id}/ai/quote-prep`);
+      setQuotePrep(data);
+      if (data.scope_wording) setQuoteScope(data.scope_wording);
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Quote prep failed.');
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   const load = () => {
     setLoadError(null);
     return api.get(`/leads/${id}`)
@@ -90,6 +139,7 @@ export default function LeadDetail() {
         setSelectedContractorId(data.assigned_contractor_id ? String(data.assigned_contractor_id) : '');
         setVisitNotes(data.site_visit_notes || '');
         setScheduleAddress(data.address || '');
+        setAddressDraft(data.address || '');
         setShowContractorSelect(false);
       })
       .catch((e) => {
@@ -158,7 +208,7 @@ export default function LeadDetail() {
         site_visit_time: visitTime,
         site_visit_contractor_id: contractorId,
         site_visit_notes: visitNotes || undefined,
-        ...(!lead.address && scheduleAddress ? { address: scheduleAddress } : {}),
+        ...(scheduleAddress ? { address: scheduleAddress } : {}),
       });
       setSiteVisitSaved(true);
       await showSuccess('Site visit scheduled.');
@@ -167,6 +217,20 @@ export default function LeadDetail() {
       await showError(e.response?.data?.message || 'Failed to schedule site visit.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const saveAddress = async () => {
+    setSavingAddress(true);
+    try {
+      await api.put(`/leads/${id}`, { address: addressDraft || null });
+      setEditingAddress(false);
+      await showSuccess('Address saved.');
+      load();
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Failed to save address.');
+    } finally {
+      setSavingAddress(false);
     }
   };
 
@@ -253,8 +317,8 @@ export default function LeadDetail() {
       return (
         <div className="text-center py-12">
           <p className="text-red-600 mb-4">You are not assigned to this lead.</p>
-          <button type="button" onClick={() => navigate('/jobs')} className="text-sm text-blue-600 hover:underline">
-            ← Back to Jobs
+          <button type="button" onClick={() => navigate('/my-leads')} className="text-sm text-blue-600 hover:underline">
+            ← Back to Leads
           </button>
         </div>
       );
@@ -264,9 +328,9 @@ export default function LeadDetail() {
 
     return (
       <div className="max-w-3xl mx-auto space-y-6">
-        <button type="button" onClick={() => navigate('/jobs')}
+        <button type="button" onClick={() => navigate('/my-leads')}
           className="text-sm text-slate-500 hover:text-slate-700 flex items-center gap-1">
-          <ArrowLeft size={16} /> Back to Jobs
+          <ArrowLeft size={16} /> Back to Leads
         </button>
 
         <div className="flex items-center gap-3">
@@ -292,7 +356,7 @@ export default function LeadDetail() {
             )}
             <div>
               <p className="text-slate-400 text-xs mb-0.5">Address</p>
-              <p className="font-medium text-slate-800">{lead.address}</p>
+              <p className="font-medium text-slate-800">{lead.address || '—'}</p>
             </div>
             <div>
               <p className="text-slate-400 text-xs mb-0.5">Service Category</p>
@@ -419,6 +483,54 @@ export default function LeadDetail() {
         {lead.job && <Link to={`/jobs/${lead.job.id}`} className="text-sm text-blue-600 hover:underline">View Job →</Link>}
       </div>
 
+      {user?.role === 'owner' && lead.needs_manual_review && (
+        <LeadReviewPanel lead={lead} onResolved={load} />
+
+        {isAdminOrPm && (
+          <div className="bg-white rounded-xl border border-indigo-200 p-5 mb-6 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-slate-800">AI assistance</h3>
+                <p className="text-xs text-indigo-600">AI-drafted — review before using. Not auto-sent.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" disabled={aiBusy} onClick={runCallPrep} className="text-xs px-3 py-1.5 bg-indigo-600 text-white rounded-lg disabled:opacity-50">Call prep</button>
+                <button type="button" disabled={aiBusy} onClick={runDraftMessage} className="text-xs px-3 py-1.5 border border-indigo-300 text-indigo-700 rounded-lg disabled:opacity-50">Draft message</button>
+                {lead.contractor_price && (
+                  <button type="button" disabled={aiBusy} onClick={runQuotePrep} className="text-xs px-3 py-1.5 border border-indigo-300 text-indigo-700 rounded-lg disabled:opacity-50">Quote prep</button>
+                )}
+              </div>
+            </div>
+            {callPrep?.call_prep && (
+              <div className="text-sm bg-indigo-50 rounded-lg p-3 space-y-1">
+                <p className="font-medium">{callPrep.call_prep.scope_summary || callPrep.short_summary}</p>
+                {(callPrep.call_prep.suggested_questions || []).length > 0 && (
+                  <ul className="list-disc ml-4 text-xs text-slate-600">
+                    {callPrep.call_prep.suggested_questions.map((q) => <li key={q}>{q}</li>)}
+                  </ul>
+                )}
+              </div>
+            )}
+            {messageDraft && (
+              <textarea className="w-full border border-slate-300 rounded-lg p-2 text-sm" rows={4} value={messageDraft} onChange={(e) => setMessageDraft(e.target.value)} />
+            )}
+            {quotePrep?.pricing && (
+              <div className="text-xs text-slate-600 bg-slate-50 rounded-lg p-3">
+                <p className="font-medium text-slate-800 mb-1">Calculated pricing (review before send)</p>
+                <p>Contractor: ${Number(quotePrep.pricing.contractor_price).toFixed(2)} · Customer total: ${Number(quotePrep.pricing.customer_total).toFixed(2)}</p>
+                {quotePrep.scope_wording && <p className="mt-2">{quotePrep.scope_wording}</p>}
+              </div>
+            )}
+          </div>
+        )}
+      )}
+
+      {isAdminOrPm && !lead.address && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-900">
+          <strong>No address on file.</strong> Add the job site address below or via Edit — contractors need it before attending.
+        </div>
+      )}
+
       {isAdminOrPm && hasContractorPrice && !hasJob && (
         <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 mb-6">
           <h3 className="font-semibold text-orange-800 mb-1">Contractor Price Submitted</h3>
@@ -532,13 +644,53 @@ export default function LeadDetail() {
           <div className="flex justify-between"><span className="text-slate-500">Name</span><span>{lead.contact_name}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Phone</span><span>{lead.phone || '—'}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Email</span><span>{lead.email || '—'}</span></div>
-          <div className="flex justify-between"><span className="text-slate-500">Address</span><span className="text-right max-w-[60%]">{lead.address}</span></div>
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500 shrink-0">Address</span>
+            {isAdminOrPm && editingAddress ? (
+              <div className="flex-1 text-right space-y-2">
+                <input
+                  type="text"
+                  value={addressDraft}
+                  onChange={(e) => setAddressDraft(e.target.value)}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-left"
+                  placeholder="Job site address"
+                />
+                <div className="flex gap-2 justify-end">
+                  <button type="button" onClick={() => { setEditingAddress(false); setAddressDraft(lead.address || ''); }}
+                    className="px-3 py-1.5 text-xs border border-slate-300 rounded-lg">Cancel</button>
+                  <button type="button" onClick={saveAddress} disabled={savingAddress}
+                    className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded-lg disabled:opacity-50">
+                    {savingAddress ? 'Saving...' : 'Save address'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <span className="text-right max-w-[60%]">
+                {lead.address || <span className="text-amber-600">Not set</span>}
+                {isAdminOrPm && (
+                  <button type="button" onClick={() => setEditingAddress(true)}
+                    className="block ml-auto mt-1 text-xs text-blue-600 hover:underline">
+                    {lead.address ? 'Edit address' : 'Add address'}
+                  </button>
+                )}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-3 text-sm">
           <h3 className="font-semibold text-slate-800">Lead Details</h3>
           <div className="flex justify-between"><span className="text-slate-500">Category</span><span className="capitalize">{formatCategory(lead.service_category)}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Source</span><span>{lead.source || '—'}</span></div>
+          {lead.company_source && (
+            <div className="flex justify-between">
+              <span className="text-slate-500">Company Source</span>
+              <span className="text-right max-w-[60%]">
+                {lead.company_source.company_name}
+                {lead.company_source.sender_identity ? ` (${lead.company_source.sender_identity})` : ''}
+              </span>
+            </div>
+          )}
           <div className="flex justify-between"><span className="text-slate-500">PM</span><span>{lead.assigned_pm?.name || '—'}</span></div>
           <div>
             <label className="text-slate-500 text-xs block mb-1">Status</label>
@@ -637,19 +789,19 @@ export default function LeadDetail() {
               </div>
             )}
 
-            {!lead.address && (
-              <div>
-                <label className="text-xs text-slate-500 block mb-1">Job Address *</label>
-                <input
-                  type="text"
-                  value={scheduleAddress}
-                  onChange={(e) => setScheduleAddress(e.target.value)}
-                  placeholder="Enter the job site address"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
-                />
-                <p className="text-xs text-slate-400 mt-1">Required before scheduling a site visit.</p>
-              </div>
-            )}
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Job Address {lead.address ? '' : '*'}</label>
+              <input
+                type="text"
+                value={scheduleAddress}
+                onChange={(e) => setScheduleAddress(e.target.value)}
+                placeholder="Enter the job site address"
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                {lead.address ? 'Update here if the address needs correction.' : 'Required before scheduling a site visit.'}
+              </p>
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -684,7 +836,7 @@ export default function LeadDetail() {
                 className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
             </div>
 
-            <button onClick={saveSiteVisit} disabled={!visitDate || !visitTime || !contractorId || (!lead.address && !scheduleAddress) || saving}
+            <button onClick={saveSiteVisit} disabled={!visitDate || !visitTime || !contractorId || !(lead.address || scheduleAddress) || saving}
               className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium">
               {saving ? 'Scheduling...' : 'Save Site Visit & Notify'}
             </button>

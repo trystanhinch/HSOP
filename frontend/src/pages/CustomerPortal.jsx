@@ -8,59 +8,75 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
-function jobStatusLabel(status) {
+function jobStatusLabel(status, statusLabel) {
+  if (statusLabel) return statusLabel;
   const labels = {
-    quote_approved: 'Pending Scheduling',
+    created: 'Project created',
+    waiting_to_schedule: 'Waiting to schedule',
+    quote_approved: 'Waiting to schedule',
     scheduled: 'Scheduled',
-    in_progress: 'In Progress',
-    progress_updated: 'In Progress',
-    pending_customer_approval: 'Ready for Your Review',
-    payment_pending: 'Awaiting Payment',
+    in_progress: 'Your project is underway',
+    progress_updated: 'Your project is underway',
+    update_posted: 'Your project is underway',
+    pending_customer_approval: 'Work complete — please review',
+    completion_requested: 'Work complete — please review',
+    revision_requested: 'Revision requested',
+    revision_in_progress: 'Revision in progress',
+    corrections_required: 'Revision in progress',
+    payment_pending: 'Awaiting payment',
+    completion_accepted: 'Completion accepted',
     completed: 'Completed',
     paid_completed: 'Completed',
+    closed: 'Project closed',
   };
   return labels[status] || (status || '').replace(/_/g, ' ');
 }
 
-function statusBannerText(jobStatus, quoteStatus) {
-  if (quoteStatus === 'approved' && jobStatus === 'quote_approved') {
-    return '✓ Quote Approved — Pending Scheduling';
+function statusBannerText(jobStatus, quoteStatus, statusLabel) {
+  if (quoteStatus === 'approved' && ['quote_approved', 'waiting_to_schedule'].includes(jobStatus)) {
+    return 'Quote approved — waiting to schedule';
   }
   switch (jobStatus) {
     case 'estimate_accepted':
     case 'quote_approved':
+    case 'waiting_to_schedule':
     case 'start_date_scheduled':
-      return '✓ Quote Approved — Pending Scheduling';
+      return 'Quote approved — waiting to schedule';
     case 'scheduled':
-      return '📅 Your project is scheduled';
+      return 'Your project is scheduled';
     case 'in_progress':
     case 'progress_updated':
-      return '🔨 Work is in progress';
+    case 'update_posted':
+      return 'Your project is underway';
     case 'pending_customer_approval':
-      return '✅ Work complete — Please review and accept';
+    case 'completion_requested':
+      return 'Work complete — please review and accept';
     case 'revision_requested':
     case 'corrections_required':
-      return '🔄 Revision in progress';
+    case 'revision_in_progress':
+      return 'Revision in progress';
     case 'payment_pending':
-      return '💳 Please complete your payment';
+    case 'completion_accepted':
+      return 'Please complete your payment';
     case 'etransfer_pending_confirmation':
-      return '💳 E-transfer received — awaiting confirmation';
+      return 'E-transfer received — awaiting confirmation';
     case 'paid_completed':
     case 'paid':
     case 'completed':
-      return '🎉 Project complete — Thank you!';
+    case 'closed':
+      return 'Project complete — thank you';
     default:
-      return '📋 Your project is active';
+      return statusLabel || 'Your project is active';
   }
 }
 
 function statusBannerClass(jobStatus) {
-  if (['paid_completed', 'paid', 'completed'].includes(jobStatus)) {
+  if (['paid_completed', 'paid', 'completed', 'closed'].includes(jobStatus)) {
     return 'bg-green-50 border-green-200';
   }
-  if (jobStatus === 'pending_customer_approval') return 'bg-orange-50 border-orange-200';
-  if (['revision_requested', 'corrections_required'].includes(jobStatus)) return 'bg-yellow-50 border-yellow-200';
-  if (['payment_pending', 'etransfer_pending_confirmation'].includes(jobStatus)) return 'bg-blue-50 border-blue-200';
+  if (['pending_customer_approval', 'completion_requested'].includes(jobStatus)) return 'bg-orange-50 border-orange-200';
+  if (['revision_requested', 'corrections_required', 'revision_in_progress'].includes(jobStatus)) return 'bg-yellow-50 border-yellow-200';
+  if (['payment_pending', 'etransfer_pending_confirmation', 'completion_accepted'].includes(jobStatus)) return 'bg-blue-50 border-blue-200';
   return 'bg-green-50 border-green-200';
 }
 
@@ -167,6 +183,7 @@ export default function CustomerPortal() {
   const pm = data.pm;
   const invoice = data.invoice;
   const jobStatus = job?.status;
+  const statusLabel = job?.status_label;
   const updates = data.updates || [];
   const quoteApproved = quote?.status === 'approved';
 
@@ -187,9 +204,9 @@ export default function CustomerPortal() {
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         {job && (
           <section className={`rounded-xl p-4 border ${statusBannerClass(jobStatus)}`}>
-            <p className="font-semibold text-slate-800 text-sm">{statusBannerText(jobStatus, quote?.status)}</p>
+            <p className="font-semibold text-slate-800 text-sm">{statusBannerText(jobStatus, quote?.status, statusLabel)}</p>
             {jobStatus && (
-              <p className="text-xs text-slate-600 mt-1">Project status: {jobStatusLabel(jobStatus)}</p>
+              <p className="text-xs text-slate-600 mt-1">Project status: {jobStatusLabel(jobStatus, statusLabel)}</p>
             )}
             {job.scheduled_start_date && ['quote_approved', 'scheduled', 'in_progress'].includes(jobStatus) && (
               <p className="text-xs text-slate-600 mt-1">
@@ -219,7 +236,7 @@ export default function CustomerPortal() {
               Your quote has been approved. Track your project status and progress updates below.
             </p>
             <div className="text-sm space-y-1">
-              <div className="flex justify-between"><span className="text-slate-500">Status</span><span className="font-medium">{jobStatusLabel(jobStatus)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Status</span><span className="font-medium">{jobStatusLabel(jobStatus, statusLabel)}</span></div>
               {quote?.quote_number && (
                 <div className="flex justify-between"><span className="text-slate-500">Quote #</span><span>{quote.quote_number}</span></div>
               )}
@@ -359,9 +376,9 @@ export default function CustomerPortal() {
           </section>
         )}
 
-        {jobStatus === 'pending_customer_approval' && (
+        {(jobStatus === 'pending_customer_approval' || jobStatus === 'completion_requested') && (
           <section className="bg-white rounded-xl border-2 border-orange-300 p-5">
-            <h2 className="font-semibold text-slate-800 mb-2">✅ Work Complete — Your Review</h2>
+            <h2 className="font-semibold text-slate-800 mb-2">Work Complete — Your Review</h2>
             <p className="text-sm text-slate-600 mb-4">
               The contractor has marked the work as complete. Please review the progress updates
               and photos above, then accept or request changes.

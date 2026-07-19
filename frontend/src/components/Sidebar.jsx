@@ -26,6 +26,7 @@ const roleBg = { owner: 'bg-purple-600', pm: 'bg-blue-600', contractor: 'bg-oran
 const allNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'pm', 'contractor', 'customer'], dashboard: true },
   { label: 'Leads', icon: Users, path: '/leads', roles: ['owner', 'pm'] },
+  { label: 'Leads', icon: Users, path: '/my-leads', roles: ['contractor'] },
   { label: 'Jobs', icon: Briefcase, path: '/jobs', roles: ['owner', 'pm', 'contractor'] },
   { label: 'My Profile', icon: HardHat, path: '__contractor_profile__', roles: ['contractor'] },
   { label: 'Contractors', icon: HardHat, path: '/contractors', roles: ['owner', 'pm'] },
@@ -44,11 +45,15 @@ const allNavItems = [
 export default function Sidebar({ onNavClick }) {
   const { user } = useAuth();
   const [contractorId, setContractorId] = useState(null);
+  const [reviewCount, setReviewCount] = useState(0);
   const navItems = allNavItems.filter((item) => item.roles.includes(user?.role));
 
   useEffect(() => {
     if (user?.role === 'contractor') {
       api.get('/me/contractor').then(({ data }) => setContractorId(data.id)).catch(() => {});
+    }
+    if (user?.role === 'owner') {
+      api.get('/leads/review-count').then(({ data }) => setReviewCount(data.count || 0)).catch(() => setReviewCount(0));
     }
   }, [user?.role]);
 
@@ -76,7 +81,12 @@ export default function Sidebar({ onNavClick }) {
               }
             >
               <Icon size={18} />
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.label === 'Leads' && reviewCount > 0 && (
+                <span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+                  {reviewCount}
+                </span>
+              )}
             </NavLink>
           );
         })}

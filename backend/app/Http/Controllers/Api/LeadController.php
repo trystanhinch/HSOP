@@ -38,7 +38,7 @@ class LeadController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $query = Lead::with(['assignedPm:id,name', 'customer:id,name', 'company:id,name']);
+        $query = Lead::with(['assignedPm:id,name', 'customer:id,name', 'company:id,name', 'companySource:id,company_name']);
 
         if ($user->role === 'pm') {
             $query->where('assigned_pm_id', $user->id);
@@ -60,6 +60,10 @@ class LeadController extends Controller
             $query->where('company_id', $request->company_id);
         }
 
+        if ($request->needs_review === 'true') {
+            $query->where('needs_manual_review', true);
+        }
+
         if ($request->search) {
             $search = $request->search;
             $query->where(function ($q) use ($search) {
@@ -71,6 +75,17 @@ class LeadController extends Controller
         }
 
         return response()->json($query->latest()->paginate(20));
+    }
+
+    public function reviewCount(Request $request): JsonResponse
+    {
+        if ($request->user()->role !== 'owner') {
+            return response()->json(['count' => 0]);
+        }
+
+        return response()->json([
+            'count' => Lead::where('needs_manual_review', true)->count(),
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -127,6 +142,8 @@ class LeadController extends Controller
             'assignedContractor:id,name,email,phone',
             'customer:id,name',
             'company:id,name',
+            'companySource:id,company_name,sender_identity,domain,default_pm_id',
+            'companySource.defaultPm:id,name,email,phone',
             'photos',
             'job:id,status',
             'siteVisitContractor:id,name,email,phone',
@@ -221,9 +238,10 @@ class LeadController extends Controller
             'internal_notes' => 'nullable|string',
             'assigned_pm_id' => 'nullable|exists:users,id',
             'assigned_contractor_id' => 'nullable|exists:users,id',
-            'status' => 'sometimes|in:new,contacted,site_visit_scheduled,quote_needed,converted,lost',
+            'status' => 'sometimes|in:new,duplicate_review,pm_assigned,customer_contacted,call_scheduled,site_visit_scheduled,converted,disqualified,contacted,quote_needed,lost',
             'site_visit_date' => 'nullable|date',
             'site_visit_time' => 'nullable|date_format:H:i',
+            'needs_manual_review' => 'sometimes|boolean',
         ]);
 
         if (isset($data['project_description'])) {
@@ -249,6 +267,63 @@ class LeadController extends Controller
             'assignedPm:id,name',
             'assignedContractor:id,name,email,phone',
             'company:id,name',
+            'companySource:id,company_name,sender_identity',
+        ]));
+    }
+
+    public function resolveReview(Request $request, string $id): JsonResponse
+    {
+        $user = $request->user();
+        if ($user->role !== 'owner') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $lead = Lead::findOrFail($id);
+
+        if (! $lead->needs_manual_review) {
+            return response()->json(['message' => 'This lead is not flagged for manual review.'], 422);
+        }
+
+        $this->normalizeNullableFields($request, ['address', 'phone', 'email', 'project_description', 'internal_notes']);
+
+        $data = $request->validate([
+            'contact_name' => 'required|string|max:255',
+            'phone' => 'nullable|string|max:20|required_without:email',
+            'email' => 'nullable|email|max:255|required_without:phone',
+            'address' => 'nullable|string|max:500',
+            'service_category' => 'nullable|in:drywall_paint,insulation',
+            'project_description' => 'nullable|string',
+            'assigned_pm_id' => 'nullable|exists:users,id',
+        ]);
+
+        if (isset($data['project_description'])) {
+            $data['notes'] = $data['project_description'];
+        }
+
+        $data['needs_manual_review'] = false;
+
+        $lead->update($data);
+
+        app(\App\Services\ActivityTimelineService::class)->record(
+            $lead,
+            'manual_review_resolved',
+            'Admin reviewed and corrected intake data.',
+            $user,
+            ['resolved_by' => $user->id],
+        );
+
+        AuditLog::create([
+            'user_id' => $user->id,
+            'user_role' => $user->role,
+            'object_type' => 'lead',
+            'object_id' => $lead->id,
+            'action_type' => 'review_resolved',
+            'new_value' => json_encode($data),
+        ]);
+
+        return response()->json($lead->fresh()->load([
+            'assignedPm:id,name,email,phone',
+            'companySource:id,company_name,sender_identity',
         ]));
     }
 

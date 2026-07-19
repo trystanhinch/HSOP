@@ -1,0 +1,8 @@
+Name: Sample Customer
+Phone: 604-555-0101
+Email: customer@example.com
+Service: Residential drywall / painting
+Message: Popcorn ceiling removal in main bathroom and repainting.
+Source: Coquitlam Drywall website / Google lead form
+Submitted: 2026-07-06 9:15 AM
+Marketing consent: Yes
