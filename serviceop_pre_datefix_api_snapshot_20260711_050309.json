@@ -1,0 +1,71 @@
+﻿{
+    "jobs":  [
+                 {
+                     "scheduled_start_date":  null,
+                     "start_date":  null,
+                     "id":  14,
+                     "scheduled_end_date":  null,
+                     "scheduled_start_time":  null,
+                     "customer":  "Allie",
+                     "end_date":  null,
+                     "address":  "1180 Cloverley St. North Vancouver",
+                     "estimated_completion_date":  null,
+                     "status":  "quote_approved",
+                     "contractor":  "Francis"
+                 },
+                 {
+                     "scheduled_start_date":  null,
+                     "start_date":  null,
+                     "id":  13,
+                     "scheduled_end_date":  null,
+                     "scheduled_start_time":  null,
+                     "customer":  "Terry",
+                     "end_date":  null,
+                     "address":  "Unit 110, 5725 Agronomy Road, Vancouver, BC",
+                     "estimated_completion_date":  null,
+                     "status":  "quote_sent",
+                     "contractor":  "Francis"
+                 },
+                 {
+                     "scheduled_start_date":  "2026-07-13T00:00:00.000000Z",
+                     "start_date":  null,
+                     "id":  12,
+                     "scheduled_end_date":  "2026-07-15T00:00:00.000000Z",
+                     "scheduled_start_time":  "09:00:00",
+                     "customer":  "Mike",
+                     "end_date":  null,
+                     "address":  "7789 Horne St. Mission, BC",
+                     "estimated_completion_date":  "2026-07-15T00:00:00.000000Z",
+                     "status":  "scheduled",
+                     "contractor":  "Francis"
+                 },
+                 {
+                     "scheduled_start_date":  "2026-07-09T00:00:00.000000Z",
+                     "start_date":  null,
+                     "id":  11,
+                     "scheduled_end_date":  "2026-07-10T00:00:00.000000Z",
+                     "scheduled_start_time":  "08:00:00",
+                     "customer":  "Louis",
+                     "end_date":  null,
+                     "address":  null,
+                     "estimated_completion_date":  "2026-07-10T00:00:00.000000Z",
+                     "status":  "in_progress",
+                     "contractor":  "Francis"
+                 },
+                 {
+                     "scheduled_start_date":  null,
+                     "start_date":  null,
+                     "id":  6,
+                     "scheduled_end_date":  null,
+                     "scheduled_start_time":  null,
+                     "customer":  "Andrew",
+                     "end_date":  null,
+                     "address":  "Coquitlam",
+                     "estimated_completion_date":  null,
+                     "status":  "quote_sent",
+                     "contractor":  "Francis"
+                 }
+             ],
+    "note":  "API snapshot — full mysqldump blocked by DO trusted-sources firewall from local IP",
+    "taken_at":  "2026-07-11T00:03:11.2127243Z"
+}

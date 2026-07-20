@@ -1,0 +1,67 @@
+{
+    "leads_count":  0,
+    "ai_kill_switch":  false,
+    "jobs_count":  9,
+    "taken_at":  "2026-07-19T14:32:28.9661690Z",
+    "company_sources_count":  0,
+    "note":  "API snapshot — mysqldump blocked by DO trusted-sources",
+    "jobs":  [
+                 {
+                     "status":  "contractor_assigned",
+                     "scheduled_start_date":  null,
+                     "id":  18,
+                     "address":  "1997 Parkway Blvd. Coquitlam"
+                 },
+                 {
+                     "status":  "contractor_assigned",
+                     "scheduled_start_date":  null,
+                     "id":  17,
+                     "address":  "2022 Parkside lane"
+                 },
+                 {
+                     "status":  "quote_sent",
+                     "scheduled_start_date":  null,
+                     "id":  16,
+                     "address":  "4096 Skyline drive, NV"
+                 },
+                 {
+                     "status":  "scheduled",
+                     "scheduled_start_date":  "2026-08-05",
+                     "id":  15,
+                     "address":  "999 Date Fix Test St, Vancouver, BC"
+                 },
+                 {
+                     "status":  "scheduled",
+                     "scheduled_start_date":  "2026-07-14",
+                     "id":  14,
+                     "address":  "1180 Cloverley St. North Vancouver"
+                 },
+                 {
+                     "status":  "quote_sent",
+                     "scheduled_start_date":  null,
+                     "id":  13,
+                     "address":  "Unit 110, 5725 Agronomy Road, Vancouver, BC"
+                 },
+                 {
+                     "status":  "revision_requested",
+                     "scheduled_start_date":  "2026-07-13",
+                     "id":  12,
+                     "address":  "7789 Horne St. Mission, BC"
+                 },
+                 {
+                     "status":  "paid",
+                     "scheduled_start_date":  "2026-07-09",
+                     "id":  11,
+                     "address":  null
+                 },
+                 {
+                     "status":  "quote_sent",
+                     "scheduled_start_date":  null,
+                     "id":  6,
+                     "address":  "Coquitlam"
+                 }
+             ],
+    "leads":  [
+
+              ]
+}
