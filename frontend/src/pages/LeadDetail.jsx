@@ -485,8 +485,9 @@ export default function LeadDetail() {
 
       {user?.role === 'owner' && lead.needs_manual_review && (
         <LeadReviewPanel lead={lead} onResolved={load} />
+      )}
 
-        {isAdminOrPm && (
+      {isAdminOrPm && (
           <div className="bg-white rounded-xl border border-indigo-200 p-5 mb-6 space-y-3">
             <div className="flex items-center justify-between gap-2">
               <div>
@@ -522,7 +523,6 @@ export default function LeadDetail() {
               </div>
             )}
           </div>
-        )}
       )}
 
       {isAdminOrPm && !lead.address && (
