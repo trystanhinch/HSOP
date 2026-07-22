@@ -81,4 +81,56 @@ class StripeConnectController extends Controller
     {
         return $this->start($request, $payments);
     }
+
+    /**
+     * Actively poll Stripe Accounts API and update local onboarding status.
+     * Use after Connect return, or when account.updated webhooks were missed.
+     */
+    public function sync(Request $request, PaymentProviderInterface $payments): JsonResponse
+    {
+        $actor = $request->user();
+        if (! in_array($actor->role, ['contractor', 'pm', 'owner'], true)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $user = $actor;
+        if ($request->user_id && $actor->role === 'owner') {
+            $user = User::findOrFail((int) $request->user_id);
+        }
+
+        if (config('payment.provider') !== 'stripe' || ! $payments instanceof StripePaymentProvider) {
+            return response()->json(['message' => 'Stripe Connect is not enabled'], 422);
+        }
+
+        if (! $user->stripe_account_id) {
+            return response()->json([
+                'message' => 'No Stripe Connect account linked yet',
+                'provider' => 'stripe',
+                'stripe_account_id' => null,
+                'onboarding_status' => $user->stripe_onboarding_status,
+                'payout_ready' => false,
+                'requirements_due' => [],
+            ], 422);
+        }
+
+        try {
+            $result = $payments->syncConnectedAccount($user);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'message' => 'Unable to refresh Stripe account status',
+                'error' => $e->getMessage(),
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Stripe status refreshed',
+            'stripe_account_id' => $result['account_id'],
+            'onboarding_status' => $result['onboarding_status'],
+            'payout_ready' => $result['payout_ready'],
+            'requirements_due' => $result['requirements_due'],
+            'charges_enabled' => $result['charges_enabled'],
+            'payouts_enabled' => $result['payouts_enabled'],
+            'details_submitted' => $result['details_submitted'],
+        ]);
+    }
 }

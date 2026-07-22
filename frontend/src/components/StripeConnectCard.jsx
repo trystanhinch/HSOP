@@ -15,6 +15,37 @@ export default function StripeConnectCard() {
       .catch(() => setStatus(null));
   };
 
+  const syncFromStripe = async ({ silent = false } = {}) => {
+    setBusy(true);
+    try {
+      const { data } = await api.post('/stripe/connect/sync');
+      setStatus((prev) => ({
+        ...(prev || {}),
+        provider: 'stripe',
+        stripe_account_id: data.stripe_account_id,
+        onboarding_status: data.onboarding_status,
+        payout_ready: data.payout_ready,
+        requirements_due: data.requirements_due || [],
+      }));
+      if (!silent) {
+        await showSuccess(
+          data.payout_ready
+            ? 'Stripe payouts are ready.'
+            : `Stripe status: ${data.onboarding_status || 'pending'}`
+        );
+      }
+      return data;
+    } catch (e) {
+      if (!silent) {
+        await showError(e.response?.data?.message || e.message || 'Unable to refresh Stripe status');
+      }
+      load();
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => { load(); }, []);
 
   const start = async () => {
@@ -39,8 +70,16 @@ export default function StripeConnectCard() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('stripe') === 'return') {
-      showSuccess('Stripe onboarding returned — status will update shortly.');
-      load();
+      (async () => {
+        const data = await syncFromStripe({ silent: true });
+        if (data?.payout_ready) {
+          await showSuccess('Stripe onboarding complete — ready for payouts.');
+        } else {
+          await showSuccess('Stripe onboarding returned — status refreshed from Stripe.');
+        }
+        // Clean query so refresh doesn't re-toast
+        window.history.replaceState({}, '', window.location.pathname);
+      })();
     }
   }, []);
 
@@ -77,16 +116,28 @@ export default function StripeConnectCard() {
           <p className="text-xs text-amber-700">Requirements due: {due.slice(0, 5).join(', ')}{due.length > 5 ? '…' : ''}</p>
         )}
       </div>
-      {!ready && (
-        <button
-          type="button"
-          onClick={start}
-          disabled={busy}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
-        >
-          {busy ? 'Opening Stripe…' : (status.stripe_account_id ? 'Continue Stripe setup' : 'Connect Stripe')}
-        </button>
-      )}
+      <div className="flex flex-wrap gap-2">
+        {!ready && (
+          <button
+            type="button"
+            onClick={start}
+            disabled={busy}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+          >
+            {busy ? 'Opening Stripe…' : (status.stripe_account_id ? 'Continue Stripe setup' : 'Connect Stripe')}
+          </button>
+        )}
+        {status.stripe_account_id && (
+          <button
+            type="button"
+            onClick={() => syncFromStripe()}
+            disabled={busy}
+            className="px-4 py-2 border border-slate-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 disabled:opacity-50"
+          >
+            {busy ? 'Refreshing…' : 'Refresh Stripe status'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

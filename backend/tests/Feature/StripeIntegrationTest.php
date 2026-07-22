@@ -292,6 +292,20 @@ class StripeIntegrationTest extends TestCase
         $this->assertTrue($contractor->stripe_payout_ready);
     }
 
+    public function test_connect_sync_endpoint_requires_linked_account(): void
+    {
+        $pm = User::create([
+            'name' => 'PM Sync', 'email' => 'pm-sync-'.uniqid().'@test.local',
+            'password' => bcrypt('password'), 'role' => 'pm', 'status' => 'active',
+        ]);
+        $token = $pm->createToken('test')->plainTextToken;
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/stripe/connect/sync')
+            ->assertStatus(422)
+            ->assertJsonFragment(['message' => 'No Stripe Connect account linked yet']);
+    }
+
     public function test_company_transfer_marks_paid_without_stripe_api(): void
     {
         $ctx = $this->makeInvoiceContext();

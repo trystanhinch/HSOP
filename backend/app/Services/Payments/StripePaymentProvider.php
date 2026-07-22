@@ -513,6 +513,43 @@ class StripePaymentProvider implements PaymentProviderInterface
         return ['handled' => true, 'invoice_id' => $invoice->id, 'status' => $newStatus];
     }
 
+    /**
+     * Poll Stripe Accounts API and sync local onboarding / payout_ready flags.
+     * Safety net when Connect account.updated webhooks are missed.
+     *
+     * @return array{provider: string, account_id: string|null, onboarding_status: string|null, payout_ready: bool, requirements_due: array<int, string>, charges_enabled: bool|null, payouts_enabled: bool|null, details_submitted: bool|null}
+     */
+    public function syncConnectedAccount(User $user): array
+    {
+        if (! $user->stripe_account_id) {
+            return [
+                'provider' => 'stripe',
+                'account_id' => null,
+                'onboarding_status' => $user->stripe_onboarding_status,
+                'payout_ready' => (bool) $user->stripe_payout_ready,
+                'requirements_due' => $user->stripe_requirements_due ?? [],
+                'charges_enabled' => null,
+                'payouts_enabled' => null,
+                'details_submitted' => null,
+            ];
+        }
+
+        $stripe = $this->stripeFactory->make();
+        $account = $stripe->accounts->retrieve($user->stripe_account_id);
+        $applied = $this->applyConnectedAccountStatus($user, $account->toArray());
+
+        return [
+            'provider' => 'stripe',
+            'account_id' => $user->stripe_account_id,
+            'onboarding_status' => $applied['status'],
+            'payout_ready' => $applied['payout_ready'],
+            'requirements_due' => $applied['requirements_due'],
+            'charges_enabled' => $applied['charges_enabled'],
+            'payouts_enabled' => $applied['payouts_enabled'],
+            'details_submitted' => $applied['details_submitted'],
+        ];
+    }
+
     private function onAccountUpdated(array $account): array
     {
         $accountId = $account['id'] ?? null;
@@ -525,6 +562,17 @@ class StripePaymentProvider implements PaymentProviderInterface
             return ['handled' => false, 'invoice_id' => null, 'status' => null];
         }
 
+        $applied = $this->applyConnectedAccountStatus($user, $account);
+
+        return ['handled' => true, 'invoice_id' => null, 'status' => $applied['status']];
+    }
+
+    /**
+     * @param  array<string, mixed>  $account
+     * @return array{status: string, payout_ready: bool, requirements_due: array<int, string>, charges_enabled: bool, payouts_enabled: bool, details_submitted: bool}
+     */
+    private function applyConnectedAccountStatus(User $user, array $account): array
+    {
         $requirements = $account['requirements'] ?? [];
         $due = array_values(array_unique(array_merge(
             $requirements['currently_due'] ?? [],
@@ -543,13 +591,22 @@ class StripePaymentProvider implements PaymentProviderInterface
             $status = 'restricted';
         }
 
+        $payoutReady = $payoutsEnabled && $chargesEnabled && $status === 'complete';
+
         $user->update([
             'stripe_onboarding_status' => $status,
             'stripe_requirements_due' => $due,
-            'stripe_payout_ready' => $payoutsEnabled && $chargesEnabled && $status === 'complete',
+            'stripe_payout_ready' => $payoutReady,
         ]);
 
-        return ['handled' => true, 'invoice_id' => null, 'status' => $status];
+        return [
+            'status' => $status,
+            'payout_ready' => $payoutReady,
+            'requirements_due' => $due,
+            'charges_enabled' => $chargesEnabled,
+            'payouts_enabled' => $payoutsEnabled,
+            'details_submitted' => $detailsSubmitted,
+        ];
     }
 
     private function onTransferUpdate(string $type, array $transfer): array

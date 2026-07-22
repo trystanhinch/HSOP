@@ -155,6 +155,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/stripe/connect/status', [\App\Http\Controllers\Api\StripeConnectController::class, 'status'])->middleware('role:owner,pm,contractor');
     Route::post('/stripe/connect/start', [\App\Http\Controllers\Api\StripeConnectController::class, 'start'])->middleware('role:pm,contractor');
     Route::post('/stripe/connect/refresh', [\App\Http\Controllers\Api\StripeConnectController::class, 'refresh'])->middleware('role:pm,contractor');
+    Route::post('/stripe/connect/sync', [\App\Http\Controllers\Api\StripeConnectController::class, 'sync'])->middleware('role:owner,pm,contractor');
     Route::post('/jobs/{job}/stripe/checkout', [\App\Http\Controllers\Api\StripeCheckoutController::class, 'jobCheckout'])->middleware('role:owner,pm,customer');
     Route::get('/reviews', [\App\Http\Controllers\Api\ReviewFeedbackController::class, 'index'])->middleware('role:owner,pm');
     Route::put('/reviews/{reviewFeedback}/follow-up', [\App\Http\Controllers\Api\ReviewFeedbackController::class, 'updateFollowUp'])->middleware('role:owner,pm');

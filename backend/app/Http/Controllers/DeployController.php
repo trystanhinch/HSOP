@@ -588,6 +588,45 @@ class DeployController extends Controller
         ]);
     }
 
+    /**
+     * Sync a Connect account's onboarding status from Stripe Accounts API.
+     * Usage: /deploy/sync-stripe-connect/{secret}?account_id=acct_xxx
+     */
+    public function syncStripeConnect(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $accountId = request('account_id');
+        if (! is_string($accountId) || ! str_starts_with($accountId, 'acct_')) {
+            return response()->json(['ok' => false, 'message' => 'account_id query param required (acct_…)'], 422);
+        }
+
+        $user = \App\Models\User::where('stripe_account_id', $accountId)->first();
+        if (! $user) {
+            return response()->json(['ok' => false, 'message' => 'No local user linked to this Stripe account'], 404);
+        }
+
+        if (config('payment.provider') !== 'stripe') {
+            return response()->json(['ok' => false, 'message' => 'PAYMENT_PROVIDER is not stripe'], 422);
+        }
+
+        /** @var \App\Services\Payments\StripePaymentProvider $payments */
+        $payments = app(\App\Contracts\PaymentProviderInterface::class);
+        if (! $payments instanceof \App\Services\Payments\StripePaymentProvider) {
+            return response()->json(['ok' => false, 'message' => 'Stripe provider not bound'], 422);
+        }
+
+        $before = $user->only(['id', 'email', 'role', 'stripe_account_id', 'stripe_onboarding_status', 'stripe_payout_ready']);
+        $result = $payments->syncConnectedAccount($user->fresh());
+
+        return response()->json([
+            'ok' => true,
+            'before' => $before,
+            'after' => $result,
+            'user' => $user->fresh()->only(['id', 'email', 'role', 'stripe_account_id', 'stripe_onboarding_status', 'stripe_payout_ready', 'stripe_requirements_due']),
+        ]);
+    }
+
     private function authorizeDeploy(string $secret): void
     {
         $expected = env('DEPLOY_SECRET');
