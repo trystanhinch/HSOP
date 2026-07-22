@@ -21,6 +21,10 @@ class User extends Authenticatable
         'role',
         'status',
         'sms_enabled',
+        'stripe_account_id',
+        'stripe_onboarding_status',
+        'stripe_requirements_due',
+        'stripe_payout_ready',
     ];
 
     protected $hidden = [
@@ -33,6 +37,8 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
             'sms_enabled' => 'boolean',
+            'stripe_requirements_due' => 'array',
+            'stripe_payout_ready' => 'boolean',
         ];
     }
 

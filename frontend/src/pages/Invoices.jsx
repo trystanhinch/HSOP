@@ -170,6 +170,22 @@ export default function Invoices() {
             <p className="text-sm text-slate-500">{inv.customer?.name || '—'}</p>
             <p className="text-sm text-slate-500">Job #{inv.job_id}</p>
             <p className="text-sm font-medium mt-1">Balance: ${Number(inv.balance || 0).toFixed(2)}</p>
+            <a href={`${api.defaults.baseURL}/invoices/${inv.id}/pdf`} 
+              onClick={async (e) => {
+                e.preventDefault();
+                try {
+                  const res = await api.get(`/invoices/${inv.id}/pdf`, { responseType: 'blob' });
+                  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `${inv.invoice_number || 'invoice'}.pdf`;
+                  a.click();
+                  window.URL.revokeObjectURL(url);
+                } catch (err) {
+                  await showError('PDF download failed');
+                }
+              }}
+              className="mt-2 inline-block text-sm text-blue-600 hover:underline">Download PDF</a>
             {canSend(inv) && (
               <button type="button" onClick={() => sendInvoice(inv)}
                 className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 text-sm font-medium">

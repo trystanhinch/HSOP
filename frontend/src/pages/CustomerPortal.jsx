@@ -1,8 +1,198 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import api, { storageUrl } from '../api/axios';
 import { showError, showSuccess, confirmAction } from '../utils/swal';
 import { formatDate, formatDateTime, formatDateLong } from '../utils/formatDate';
+
+const ISSUE_LABELS = {
+  quality: 'Quality',
+  communication: 'Communication',
+  scheduling: 'Scheduling',
+  cleanliness: 'Cleanliness',
+  payment: 'Payment',
+  contractor: 'Contractor',
+  pm: 'Project manager',
+  other: 'Other',
+};
+
+function PortalReviewSection({ token }) {
+  const [review, setReview] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [stars, setStars] = useState(0);
+  const [comment, setComment] = useState('');
+  const [issueCategory, setIssueCategory] = useState('');
+  const [photo, setPhoto] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const loadReview = () => {
+    setLoading(true);
+    api.get(`/portal/${token}/review`)
+      .then(({ data }) => setReview(data))
+      .catch(() => setReview(null))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => { loadReview(); }, [token]);
+
+  const submit = async () => {
+    if (!stars) {
+      await showError('Please select a star rating.');
+      return;
+    }
+    if (stars < 5 && !issueCategory) {
+      await showError('Please select an issue category.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const form = new FormData();
+      form.append('star_rating', String(stars));
+      if (comment.trim()) form.append('comment', comment.trim());
+      if (stars < 5) form.append('issue_category', issueCategory);
+      if (photo) form.append('photo', photo);
+      const { data } = await api.post(`/portal/${token}/review`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setReview(data.review);
+      await showSuccess(data.message || 'Thank you for your feedback');
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Failed to submit review.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <section className="bg-white rounded-xl border border-slate-200 p-5">
+        <p className="text-sm text-slate-500">Loading review…</p>
+      </section>
+    );
+  }
+
+  if (!review) {
+    return null;
+  }
+
+  if (review.already_submitted) {
+    const five = review.feedback?.star_rating === 5;
+    return (
+      <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+        <h2 className="font-semibold text-slate-800">Your rating</h2>
+        <p className="text-sm text-slate-600">
+          You rated this project {review.feedback?.star_rating}★. Thank you!
+        </p>
+        {five && (
+          <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center space-y-2">
+            <p className="font-medium text-green-800">Thank you for the great feedback!</p>
+            {review.show_google_button && review.google_review_url ? (
+              <a
+                href={review.google_review_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-block bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg px-4 py-2"
+              >
+                Leave a Google Review
+              </a>
+            ) : (
+              <p className="text-sm text-green-700">
+                We appreciate you choosing ServiceOP.
+              </p>
+            )}
+          </div>
+        )}
+        {!five && review.feedback?.comment && (
+          <p className="text-sm text-slate-500 italic">&ldquo;{review.feedback.comment}&rdquo;</p>
+        )}
+      </section>
+    );
+  }
+
+  if (!review.can_submit) {
+    return null;
+  }
+
+  const showDetails = stars > 0 && stars < 5;
+
+  return (
+    <section className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+      <div>
+        <h2 className="font-semibold text-slate-800">Rate your experience</h2>
+        <p className="text-sm text-slate-500 mt-1">
+          How was your ServiceOP project{review.job?.address ? ` at ${review.job.address}` : ''}?
+        </p>
+      </div>
+      <div className="flex gap-2 justify-center">
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            onClick={() => setStars(n)}
+            className={`w-11 h-11 rounded-lg text-xl border transition ${
+              stars >= n
+                ? 'bg-amber-400 border-amber-500 text-white'
+                : 'bg-slate-50 border-slate-200 text-slate-400 hover:border-amber-300'
+            }`}
+            aria-label={`${n} star${n > 1 ? 's' : ''}`}
+          >
+            ★
+          </button>
+        ))}
+      </div>
+      {stars === 5 && (
+        <p className="text-sm text-center text-green-700">Optional comment — then submit to continue.</p>
+      )}
+      {showDetails && (
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">What went wrong?</label>
+            <select
+              value={issueCategory}
+              onChange={(e) => setIssueCategory(e.target.value)}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">Select a category…</option>
+              {(review.issue_categories || Object.keys(ISSUE_LABELS)).map((c) => (
+                <option key={c} value={c}>{ISSUE_LABELS[c] || c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-slate-600 block mb-1">Photo (optional)</label>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => setPhoto(e.target.files?.[0] || null)}
+              className="w-full text-sm"
+            />
+          </div>
+        </div>
+      )}
+      {stars > 0 && (
+        <div>
+          <label className="text-xs font-medium text-slate-600 block mb-1">Comment (optional)</label>
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            rows={3}
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            placeholder={stars < 5 ? 'Tell us more so we can make it right…' : 'Anything else you loved?'}
+          />
+        </div>
+      )}
+      {stars > 0 && (
+        <button
+          type="button"
+          onClick={submit}
+          disabled={submitting || (stars < 5 && !issueCategory)}
+          className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg py-2.5 text-sm font-medium"
+        >
+          {submitting ? 'Submitting…' : 'Submit rating'}
+        </button>
+      )}
+    </section>
+  );
+}
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
@@ -82,6 +272,8 @@ function statusBannerClass(jobStatus) {
 
 export default function CustomerPortal() {
   const { token } = useParams();
+  const [searchParams] = useSearchParams();
+  const showReviewTab = searchParams.get('tab') === 'review';
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [revisionText, setRevisionText] = useState('');
@@ -202,6 +394,10 @@ export default function CustomerPortal() {
       </header>
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+        {(showReviewTab || ['paid_completed', 'paid', 'completed', 'closed'].includes(jobStatus)) && (
+          <PortalReviewSection token={token} />
+        )}
+
         {job && (
           <section className={`rounded-xl p-4 border ${statusBannerClass(jobStatus)}`}>
             <p className="font-semibold text-slate-800 text-sm">{statusBannerText(jobStatus, quote?.status, statusLabel)}</p>

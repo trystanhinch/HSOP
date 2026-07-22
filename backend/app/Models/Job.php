@@ -45,6 +45,7 @@ class Job extends Model
         'split_company_pct',
         'pending_customer_approval_at',
         'customer_accepted_completion_at',
+        'review_request_sent_at',
         'revision_description',
         'payment_method',
         'payment_confirmed_at',
@@ -65,6 +66,7 @@ class Job extends Model
             'completed_at' => 'datetime',
             'pending_customer_approval_at' => 'datetime',
             'customer_accepted_completion_at' => 'datetime',
+            'review_request_sent_at' => 'datetime',
             'payment_confirmed_at' => 'datetime',
             'contractor_submitted_price' => 'decimal:2',
             'split_contractor_pct' => 'decimal:2',
@@ -136,6 +138,11 @@ class Job extends Model
     public function updates(): HasMany
     {
         return $this->hasMany(JobUpdate::class);
+    }
+
+    public function reviewFeedback(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(ReviewFeedback::class);
     }
 
     public function files(): HasMany

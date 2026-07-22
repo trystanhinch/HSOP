@@ -4,6 +4,7 @@ import { Users, Briefcase, FileText, Clock } from 'lucide-react';
 import api from '../api/axios';
 import KPICard from '../components/KPICard';
 import StatusBadge from '../components/StatusBadge';
+import StripeConnectCard from '../components/StripeConnectCard';
 import { useAuth } from '../context/AuthContext';
 import { formatDate } from '../utils/formatDate';
 
@@ -60,6 +61,8 @@ export default function PMDashboard() {
           View My Schedule
         </Link>
       </div>
+
+      <StripeConnectCard />
 
       {(data.leads_needing_quote_review || []).length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -192,6 +195,19 @@ export default function PMDashboard() {
             className="w-full text-left rounded-lg border border-slate-200 p-3">
             <p className="text-sm font-medium">{job.address}</p>
             <p className="text-xs text-slate-500">{job.customer?.name}</p>
+          </button>
+        )}
+      />
+
+      <WorkflowSection
+        title="Customer Feedback Needing Follow-up"
+        empty="No open customer feedback follow-ups."
+        items={data.customer_feedback_follow_up}
+        renderItem={(fb) => (
+          <button type="button" key={fb.id} onClick={() => navigate(fb.job_id ? `/jobs/${fb.job_id}` : '/jobs')}
+            className="w-full text-left rounded-lg border border-rose-200 bg-rose-50 p-3">
+            <p className="text-sm font-medium">{fb.star_rating}★ — {fb.job?.address || `Job #${fb.job_id}`}</p>
+            <p className="text-xs text-slate-500">{fb.customer?.name || 'Customer'} · {fb.issue_category || 'feedback'} · {fb.follow_up_status}</p>
           </button>
         )}
       />

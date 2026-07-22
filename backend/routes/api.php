@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AccountingController;
 use App\Http\Controllers\Api\AdminPmMessageController;
 use App\Http\Controllers\Api\ActivityTimelineController;
 use App\Http\Controllers\Api\AiSettingsController;
@@ -51,6 +52,10 @@ Route::post('/portal/{token}/accept-completion', [CustomerPortalController::clas
 Route::post('/portal/{token}/request-revision', [CustomerPortalController::class, 'requestRevision']);
 Route::post('/portal/{token}/notify-payment', [CustomerPortalController::class, 'notifyPayment']);
 Route::get('/portal/{token}/payment-details', [CustomerPortalController::class, 'paymentDetails']);
+Route::get('/portal/{token}/review', [\App\Http\Controllers\Api\ReviewFeedbackController::class, 'portalShow']);
+Route::post('/portal/{token}/review', [\App\Http\Controllers\Api\ReviewFeedbackController::class, 'portalSubmit']);
+Route::post('/portal/{token}/stripe/checkout', [\App\Http\Controllers\Api\StripeCheckoutController::class, 'portalCheckout']);
+Route::post('/stripe/webhook', \App\Http\Controllers\Api\StripeWebhookController::class);
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
@@ -136,7 +141,27 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/invoices/{invoice}/mark-paid', [PaymentController::class, 'markPaid'])->middleware('role:owner');
     Route::post('/invoices/{invoice}/send', [InvoiceController::class, 'send'])->middleware('role:owner,pm');
     Route::get('/invoices/{invoice}/payments', [PaymentController::class, 'history']);
+    Route::get('/invoices/{invoice}/pdf', [InvoiceController::class, 'pdf']);
     Route::post('/quotes/{quote}/create-invoice', [InvoiceController::class, 'fromQuote'])->middleware('role:owner,pm');
+    Route::post('/jobs/{job}/create-invoice', [InvoiceController::class, 'fromJob'])->middleware('role:owner,pm');
+
+    Route::get('/accounting/dashboard', [AccountingController::class, 'dashboard'])->middleware('role:owner');
+    Route::get('/accounting/export', [AccountingController::class, 'export'])->middleware('role:owner');
+    Route::get('/accounting/source-performance', [\App\Http\Controllers\Api\OpsReportController::class, 'sourcePerformance'])->middleware('role:owner');
+    Route::post('/accounting/invoices/{invoice}/mock-pay', [AccountingController::class, 'mockPay'])->middleware('role:owner');
+    Route::post('/accounting/payouts/{payout}/mock-transfer', [AccountingController::class, 'mockTransfer'])->middleware('role:owner');
+    Route::post('/accounting/payouts/{payout}/execute-transfer', [AccountingController::class, 'executeTransfer'])->middleware('role:owner');
+
+    Route::get('/stripe/connect/status', [\App\Http\Controllers\Api\StripeConnectController::class, 'status'])->middleware('role:owner,pm,contractor');
+    Route::post('/stripe/connect/start', [\App\Http\Controllers\Api\StripeConnectController::class, 'start'])->middleware('role:pm,contractor');
+    Route::post('/stripe/connect/refresh', [\App\Http\Controllers\Api\StripeConnectController::class, 'refresh'])->middleware('role:pm,contractor');
+    Route::post('/jobs/{job}/stripe/checkout', [\App\Http\Controllers\Api\StripeCheckoutController::class, 'jobCheckout'])->middleware('role:owner,pm,customer');
+    Route::get('/reviews', [\App\Http\Controllers\Api\ReviewFeedbackController::class, 'index'])->middleware('role:owner,pm');
+    Route::put('/reviews/{reviewFeedback}/follow-up', [\App\Http\Controllers\Api\ReviewFeedbackController::class, 'updateFollowUp'])->middleware('role:owner,pm');
+
+    Route::get('/ops-reports', [\App\Http\Controllers\Api\OpsReportController::class, 'index'])->middleware('role:owner');
+    Route::post('/ops-reports/generate', [\App\Http\Controllers\Api\OpsReportController::class, 'generate'])->middleware('role:owner');
+    Route::get('/ops-reports/{aiOpsReport}', [\App\Http\Controllers\Api\OpsReportController::class, 'show'])->middleware('role:owner');
 
     Route::get('/jobs/{job}/messages', [MessageController::class, 'index']);
     Route::post('/jobs/{job}/messages', [MessageController::class, 'store']);

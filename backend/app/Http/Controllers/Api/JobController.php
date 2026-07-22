@@ -17,9 +17,12 @@ use App\Models\User;
 use App\Mail\JobReadyForReviewMail;
 use App\Mail\PaymentConfirmedMail;
 use App\Mail\RevisionRequestedMail;
+use App\Services\Accounting\InvoicePaymentService;
+use App\Services\Accounting\InvoiceService;
 use App\Services\EmailService;
 use App\Services\JobNotificationService;
 use App\Services\PricingService;
+use App\Services\PayoutEligibilityService;
 use App\Services\PayoutWorkflowService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
@@ -36,6 +39,9 @@ class JobController extends Controller
     public function __construct(
         protected JobNotificationService $notifications,
         protected PayoutWorkflowService $payouts,
+        protected PayoutEligibilityService $eligibility,
+        protected InvoiceService $invoiceService,
+        protected InvoicePaymentService $invoicePayments,
         protected PricingService $pricing,
         protected SmsService $sms,
         protected EmailService $email,
@@ -619,6 +625,7 @@ class JobController extends Controller
         );
 
         $this->ensureInvoiceForJob($job);
+        $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
 
         $paymentUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/payment/'.$job->id;
 
@@ -668,6 +675,7 @@ class JobController extends Controller
             'revision_description' => $request->description,
         ]);
 
+        $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
         $this->timeline->record(
             $job,
             'revision_requested',
@@ -785,21 +793,16 @@ class JobController extends Controller
             'completed_at' => now(),
         ]);
 
-        if ($job->invoice) {
-            $job->invoice->update(['status' => 'paid', 'balance' => 0]);
-            Payment::create([
-                'invoice_id' => $job->invoice->id,
-                'amount' => $job->invoice->amount,
-                'method' => 'e_transfer',
-                'paid_status' => true,
-                'cleared_status' => true,
-                'marked_by' => auth()->id(),
-                'paid_date' => $request->payment_date,
+        if ($job->invoice && $job->invoice->status !== 'paid') {
+            $this->invoicePayments->markPaid($job->invoice, [
+                'amount' => $job->invoice->balance,
+                'payment_date' => $request->payment_date,
                 'reference_number' => $request->payment_reference,
+                'payment_method' => 'e_transfer',
             ]);
+        } else {
+            $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
         }
-
-        $this->payouts->markPayoutsReady($job);
 
         $job->loadMissing(['customer', 'lead']);
         if ($job->customer) {
@@ -850,6 +853,7 @@ class JobController extends Controller
                 'status' => $job->status,
             ],
             'invoice' => $job->invoice ? [
+                'id' => $job->invoice->id,
                 'amount' => $job->invoice->amount,
                 'gst' => $job->invoice->gst,
                 'subtotal' => $job->invoice->subtotal ?? $job->quote?->customer_price_before_gst,
@@ -864,35 +868,24 @@ class JobController extends Controller
             ] : null),
             'company_email' => Setting::where('key', 'company_email')->value('value') ?? 'payments@hsop.ca',
             'payment_instructions' => Setting::where('key', 'payment_instructions')->value('value'),
+            'card_payments_enabled' => config('payment.provider') === 'stripe',
+            'payment_provider' => config('payment.provider'),
+            'stripe_publishable_key' => config('payment.provider') === 'stripe'
+                ? config('payment.stripe.publishable')
+                : null,
         ]);
     }
 
     protected function ensureInvoiceForJob(Job $job): void
     {
+        $job->loadMissing(['invoice', 'quote', 'lead.companySource']);
         if ($job->invoice) {
             return;
         }
 
-        $quote = $job->quote;
-        if (! $quote) {
-            return;
-        }
-
-        Invoice::create([
-            'job_id' => $job->id,
-            'quote_id' => $quote->id,
-            'company_id' => $quote->company_id,
-            'customer_id' => $quote->customer_id,
-            'invoice_number' => 'INV-'.str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT),
-            'scope_of_work' => $quote->scope_of_work,
-            'subtotal' => $quote->subtotal ?? $quote->customer_price_before_gst,
-            'gst' => $quote->gst,
-            'gst_rate' => $quote->gst_rate,
-            'balance' => $quote->customer_total,
-            'amount' => $quote->customer_total,
-            'status' => 'awaiting_payment',
-            'due_date' => now()->addDays(30)->toDateString(),
-        ]);
+        $this->invoiceService->createFromJob($job);
+        $job->unsetRelation('invoice');
+        $job->load('invoice');
     }
 
     public function markReadyForReview(Job $job): JsonResponse

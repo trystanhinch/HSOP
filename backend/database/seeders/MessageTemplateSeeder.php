@@ -80,6 +80,13 @@ class MessageTemplateSeeder extends Seeder
                 'variables' => ['customer_name', 'pm_name'],
                 'body' => 'Hi {{customer_name}}, this is {{pm_name}} from ServiceOP following up on your project inquiry. When is a good time to chat?',
             ],
+            [
+                'event_key' => 'review_request_customer',
+                'label' => 'Review request (customer)',
+                'channel' => 'sms',
+                'variables' => ['customer_name', 'review_url', 'address'],
+                'body' => 'Hi {{customer_name}}, thanks for choosing ServiceOP! Please rate your experience (1-5 stars): {{review_url}}',
+            ],
         ];
 
         foreach ($templates as $tpl) {

@@ -38,6 +38,8 @@ export default function Settings() {
   const [workflowSaving, setWorkflowSaving] = useState(false);
   const [messageTemplates, setMessageTemplates] = useState([]);
   const [templateSavingId, setTemplateSavingId] = useState(null);
+  const [opsReports, setOpsReports] = useState([]);
+  const [opsReportBusy, setOpsReportBusy] = useState(false);
 
   const loadAdminUsers = () => {
     api.get('/admin/users').then(({ data }) => setUsers(data)).catch(() => setUsers([]));
@@ -83,9 +85,23 @@ export default function Settings() {
           module_modes: data.module_modes || {},
         });
       }).catch(() => setAiSettings(null));
+      api.get('/ops-reports').then(({ data }) => setOpsReports(data.data || data || [])).catch(() => setOpsReports([]));
     }
   }, [activeTab]);
 
+  const generateOpsReport = async () => {
+    setOpsReportBusy(true);
+    try {
+      await api.post('/ops-reports/generate', { period: 'daily' });
+      const { data } = await api.get('/ops-reports');
+      setOpsReports(data.data || data || []);
+      await showSuccess('Daily ops report generated');
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Failed to generate report');
+    } finally {
+      setOpsReportBusy(false);
+    }
+  };
   useEffect(() => {
     if (activeTab === 'SMS Log') {
       api.get('/sms-logs').then(({ data }) => setSmsLogs(data.data || data)).catch(() => setSmsLogs([]));
@@ -747,6 +763,35 @@ export default function Settings() {
               {aiSaving ? 'Saving...' : 'Save AI Settings'}
             </button>
           </form>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="font-semibold text-slate-800">AI ops reports</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Daily/weekly snapshots (also scheduled automatically). Same view on Accounting.</p>
+              </div>
+              <button
+                type="button"
+                onClick={generateOpsReport}
+                disabled={opsReportBusy}
+                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg disabled:opacity-60"
+              >
+                {opsReportBusy ? 'Generating…' : 'Generate daily'}
+              </button>
+            </div>
+            {opsReports.length === 0 ? (
+              <p className="text-sm text-slate-500">No reports yet.</p>
+            ) : (
+              <ul className="space-y-3">
+                {opsReports.slice(0, 5).map((r) => (
+                  <li key={r.id} className="border border-slate-100 rounded-lg p-3">
+                    <p className="text-xs text-slate-500 mb-1">{r.period} · {r.report_date} · {r.provider}</p>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{r.summary_text}</p>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <div className="bg-white rounded-xl border border-slate-200 p-6">
             <div className="flex items-center justify-between mb-3">

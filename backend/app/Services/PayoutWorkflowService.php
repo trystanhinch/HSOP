@@ -7,72 +7,35 @@ use App\Models\Job;
 use App\Models\Payout;
 use App\Models\Quote;
 
+/**
+ * Legacy entry points — delegates eligibility/scheduling to PayoutEligibilityService.
+ */
 class PayoutWorkflowService
 {
+    public function __construct(private PayoutEligibilityService $eligibility) {}
+
     public function createPayoutsOnQuoteApproval(Quote $quote): void
     {
         $quote->loadMissing('job');
         $job = $quote->job;
-
-        if (! $job || ! $job->contractor_id) {
+        if (! $job) {
             return;
         }
 
-        Payout::firstOrCreate(
-            ['job_id' => $job->id, 'payout_type' => 'contractor'],
-            [
-                'contractor_id' => $job->contractor_id,
-                'payout_amount' => $quote->contractor_base_price ?? $job->contractor_submitted_price ?? 0,
-                'status' => 'not_ready',
-                'payout_type' => 'contractor',
-            ]
-        );
-
-        if ($job->pm_id && ($quote->pm_amount ?? 0) > 0) {
-            Payout::firstOrCreate(
-                ['job_id' => $job->id, 'payout_type' => 'pm'],
-                [
-                    'contractor_id' => $job->pm_id,
-                    'payout_amount' => $quote->pm_amount,
-                    'status' => 'not_ready',
-                    'payout_type' => 'pm',
-                ]
-            );
-        }
+        $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
     }
 
     public function markPayoutsReady(Job $job): void
     {
-        Payout::where('job_id', $job->id)->update(['status' => 'ready_for_payout']);
+        $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
     }
 
     public function syncPayoutReadiness(Job $job): ?Payout
     {
-        $job->loadMissing(['invoice', 'payout']);
+        $result = $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
+        $contractor = collect($result['payouts'])->first(fn ($p) => ($p->split_type ?: $p->payout_type) === 'contractor');
 
-        $isPaid = in_array($job->status, ['paid_completed', 'paid', 'completed'], true);
-        if (! $isPaid || ! $job->invoice || $job->invoice->status !== 'paid' || ! $job->contractor_id) {
-            return $job->payout;
-        }
-
-        $payout = Payout::firstOrCreate(
-            ['job_id' => $job->id, 'payout_type' => 'contractor'],
-            [
-                'contractor_id' => $job->contractor_id,
-                'payout_amount' => $job->contractor_submitted_price ?? 0,
-                'status' => 'ready_for_payout',
-                'eligibility_status' => 'eligible_job_complete_paid',
-                'payout_type' => 'contractor',
-            ]
-        );
-
-        if (in_array($payout->status, ['not_ready', 'pending', 'hold_issue'], true)) {
-            $payout->update(['status' => 'ready_for_payout']);
-        }
-
-        $this->markPayoutsReady($job);
-
-        return $payout->fresh();
+        return $contractor;
     }
 
     public function onInvoicePaid(Invoice $invoice): ?Payout
@@ -82,19 +45,6 @@ class PayoutWorkflowService
             return null;
         }
 
-        if ($job->contractor_id) {
-            Payout::firstOrCreate(
-                ['job_id' => $job->id, 'payout_type' => 'contractor'],
-                [
-                    'contractor_id' => $job->contractor_id,
-                    'payout_amount' => $job->contractor_submitted_price ?? 0,
-                    'status' => in_array($job->status, ['completed', 'paid_completed', 'paid'], true) ? 'ready_for_payout' : 'pending',
-                    'eligibility_status' => 'eligible_invoice_paid',
-                    'payout_type' => 'contractor',
-                ]
-            );
-        }
-
-        return $this->syncPayoutReadiness($job->fresh(['invoice']));
+        return $this->syncPayoutReadiness($job);
     }
 }

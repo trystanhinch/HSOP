@@ -16,3 +16,16 @@ Schedule::command('gmail:fetch-leads')
 Schedule::command('workflow:escalation-sweep')
     ->everyFifteenMinutes()
     ->withoutOverlapping();
+
+Schedule::command('ops:generate-report daily')
+    ->dailyAt('07:00')
+    ->withoutOverlapping();
+
+Schedule::command('ops:generate-report weekly')
+    ->weeklyOn(1, '07:15')
+    ->withoutOverlapping();
+
+Schedule::command('payouts:process-scheduled')
+    ->hourly()
+    ->withoutOverlapping()
+    ->when(fn () => config('payment.provider') === 'stripe');

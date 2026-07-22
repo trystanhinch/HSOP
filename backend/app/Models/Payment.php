@@ -17,6 +17,7 @@ class Payment extends Model
         'marked_by',
         'paid_date',
         'reference_number',
+        'status',
     ];
 
     protected function casts(): array

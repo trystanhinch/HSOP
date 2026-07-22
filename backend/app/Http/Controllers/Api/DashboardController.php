@@ -135,6 +135,14 @@ class DashboardController extends Controller
             ->take(10)
             ->get(['id', 'address', 'status', 'customer_id', 'pending_customer_approval_at']);
 
+        $feedbackFollowUp = \App\Models\ReviewFeedback::where('pm_id', $id)
+            ->where('star_rating', '<', 5)
+            ->whereIn('follow_up_status', ['new', 'pm_notified', 'customer_contacted', 'escalated'])
+            ->with(['job:id,address', 'customer:id,name'])
+            ->latest()
+            ->take(10)
+            ->get();
+
         return response()->json([
             'my_leads' => Lead::where('assigned_pm_id', $id)->whereNotIn('status', ['converted', 'disqualified', 'lost'])->count(),
             'my_active_jobs' => Job::where('pm_id', $id)->whereIn('status', ['new_job', 'created', 'contractor_assigned', 'in_progress', 'scheduled', 'ready_for_review', 'update_posted', 'waiting_to_schedule'])->count(),
@@ -174,7 +182,8 @@ class DashboardController extends Controller
             'jobs_missing_updates' => $missingUpdates,
             'customer_revision_requests' => $revisionRequests,
             'awaiting_completion_acceptance' => $awaitingCompletionAcceptance,
-            'payout_status_note' => 'Coming soon — payout amounts land in Phase 4.',
+            'customer_feedback_follow_up' => $feedbackFollowUp,
+            'payout_status_note' => 'Payout eligibility + scheduling live (Stripe transfer still mocked until keys).',
             'workflow_thresholds' => app(\App\Services\Workflow\WorkflowSettings::class)->all(),
         ]);
     }

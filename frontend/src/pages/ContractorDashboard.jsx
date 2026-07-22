@@ -4,6 +4,7 @@ import { Briefcase, Hammer, Calendar, Wallet, CheckCircle, AlertTriangle } from 
 import api from '../api/axios';
 import KPICard from '../components/KPICard';
 import StatusBadge from '../components/StatusBadge';
+import StripeConnectCard from '../components/StripeConnectCard';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
@@ -91,6 +92,8 @@ export default function ContractorDashboard() {
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <h2 className="text-xl font-semibold text-slate-900">Welcome back, {user?.name?.split(' ')[0] || 'Contractor'}</h2>
       </div>
+
+      <StripeConnectCard />
 
       {jobsNeedingPrice.length > 0 && (
         <div className="space-y-3">

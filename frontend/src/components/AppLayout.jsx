@@ -17,6 +17,7 @@ function getPageTitle(pathname, search) {
     '/leads': 'Leads', '/jobs': 'Jobs', '/contractors': 'Contractors',
     '/customers': 'Customers', '/quotes': 'Quotes', '/schedule': 'Schedule',
     '/messages': 'Messages', '/invoices': 'Invoices', '/payouts': 'Payouts',
+    '/accounting': 'Accounting',
     '/reports': 'Reports', '/settings': 'Settings', '/unauthorized': 'Access Denied',
   };
   return titles[pathname] || 'ServiceOP';

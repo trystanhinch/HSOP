@@ -15,9 +15,11 @@ use App\Models\RevisionRequest;
 use App\Models\RevisionRequestPhoto;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Accounting\InvoiceService;
 use App\Services\EmailService;
 use App\Services\JobNotificationService;
 use App\Services\LeadQuoteWorkflowService;
+use App\Services\PayoutEligibilityService;
 use App\Services\PayoutWorkflowService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
@@ -32,6 +34,8 @@ class CustomerPortalController extends Controller
         protected EmailService $email,
         protected JobNotificationService $notifications,
         protected PayoutWorkflowService $payouts,
+        protected PayoutEligibilityService $eligibility,
+        protected InvoiceService $invoiceService,
         protected LeadQuoteWorkflowService $leadQuotes,
         protected UploadStorage $uploads,
     ) {}
@@ -188,6 +192,7 @@ class CustomerPortalController extends Controller
         ]);
 
         $this->ensureInvoice($job);
+        $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
 
         $paymentUrl = $this->frontendUrl('payment/'.$job->id);
         $customer = User::find($job->customer_id);
@@ -338,6 +343,7 @@ class CustomerPortalController extends Controller
                 'status' => $job->status,
             ],
             'invoice' => $job->invoice ? [
+                'id' => $job->invoice->id,
                 'amount' => $job->invoice->amount,
                 'gst' => $job->invoice->gst,
                 'subtotal' => $job->invoice->subtotal ?? $job->quote?->customer_price_before_gst,
@@ -347,34 +353,24 @@ class CustomerPortalController extends Controller
             'company_email' => Setting::where('key', 'company_email')->value('value') ?? 'payments@hsop.ca',
             'payment_instructions' => Setting::where('key', 'payment_instructions')->value('value'),
             'token' => $token,
+            'card_payments_enabled' => config('payment.provider') === 'stripe',
+            'payment_provider' => config('payment.provider'),
+            // Publishable key only — never the secret
+            'stripe_publishable_key' => config('payment.provider') === 'stripe'
+                ? config('payment.stripe.publishable')
+                : null,
         ]);
     }
 
     protected function ensureInvoice(Job $job): void
     {
+        $job->loadMissing(['invoice', 'quote', 'lead.companySource']);
         if ($job->invoice) {
             return;
         }
 
-        $quote = $job->quote;
-        if (! $quote) {
-            return;
-        }
-
-        Invoice::create([
-            'job_id' => $job->id,
-            'quote_id' => $quote->id,
-            'company_id' => $quote->company_id,
-            'customer_id' => $quote->customer_id,
-            'invoice_number' => 'INV-'.str_pad(Invoice::count() + 1, 4, '0', STR_PAD_LEFT),
-            'scope_of_work' => $quote->scope_of_work,
-            'subtotal' => $quote->subtotal ?? $quote->customer_price_before_gst,
-            'gst' => $quote->gst,
-            'gst_rate' => $quote->gst_rate,
-            'balance' => $quote->customer_total,
-            'amount' => $quote->customer_total,
-            'status' => 'awaiting_payment',
-            'due_date' => now()->addDays(30)->toDateString(),
-        ]);
+        $this->invoiceService->createFromJob($job);
+        $job->unsetRelation('invoice');
+        $job->load('invoice');
     }
 }

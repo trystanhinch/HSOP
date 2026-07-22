@@ -32,3 +32,11 @@ backend/bootstrap/cache/*.php
 # Test output
 frontend/test-results/
 frontend/playwright-report/
+
+# Local secret rotation packets (never commit)
+backend/.secrets-rotation-PENDING.env
+backend/.secrets-rotation-*.env
+tmp-secret-rotation-verify-meta.json
+tmp-leaked-env-inventory.json
+tmp-inventory-leaked-envs.mjs
+

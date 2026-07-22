@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Contracts\AiProviderInterface;
+use App\Contracts\PaymentProviderInterface;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -23,6 +24,17 @@ class AppServiceProvider extends ServiceProvider
 
             if (! $class || ! class_exists($class)) {
                 throw new \InvalidArgumentException("AI provider [{$provider}] is not configured.");
+            }
+
+            return $app->make($class);
+        });
+
+        $this->app->singleton(PaymentProviderInterface::class, function ($app) {
+            $provider = config('payment.provider', 'mock');
+            $class = config("payment.providers.{$provider}");
+
+            if (! $class || ! class_exists($class)) {
+                throw new \InvalidArgumentException("Payment provider [{$provider}] is not configured.");
             }
 
             return $app->make($class);

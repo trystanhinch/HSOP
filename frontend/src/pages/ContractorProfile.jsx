@@ -4,6 +4,7 @@ import { ArrowLeft, Edit2 } from 'lucide-react';
 import api from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import ContractorDocuments from '../components/ContractorDocuments';
+import StripeConnectCard from '../components/StripeConnectCard';
 import { getRoleDashboard } from '../utils/getRoleDashboard';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
@@ -248,6 +249,8 @@ export default function ContractorProfile() {
         </div>
 
         <div className="space-y-6">
+          {user?.role === 'contractor' && <StripeConnectCard />}
+
           <div className="bg-white rounded-xl border border-slate-200 p-6">
             <h3 className="text-sm font-semibold mb-4">Services & Cities</h3>
             <div className="flex flex-wrap gap-2 mb-3">
