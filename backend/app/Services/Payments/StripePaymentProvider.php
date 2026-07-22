@@ -471,11 +471,27 @@ class StripePaymentProvider implements PaymentProviderInterface
         $newStatus = str_contains($type, 'dispute') ? 'disputed' : 'refunded';
         $invoice->update(['status' => $newStatus]);
 
+        // Hold unpaid / in-flight payouts.
         Payout::where('job_id', $invoice->job_id)
-            ->whereNotIn('status', ['paid'])
+            ->whereNotIn('status', ['paid', 'failed', 'not_eligible'])
             ->update([
                 'status' => 'on_hold',
                 'eligibility_status' => 'Held due to Stripe '.$type,
+            ]);
+
+        // Company platform-retain "paid" rows are bookkeeping only (no Stripe transfer) —
+        // reverse them so refunds don't leave false company_paid on the dashboard.
+        Payout::where('job_id', $invoice->job_id)
+            ->where('status', 'paid')
+            ->where(function ($q) {
+                $q->whereNull('stripe_transfer_id')
+                    ->orWhere('stripe_transfer_id', 'like', 'platform_retain_%');
+            })
+            ->update([
+                'status' => 'on_hold',
+                'eligibility_status' => 'Held due to Stripe '.$type,
+                'paid_date' => null,
+                'stripe_transfer_id' => null,
             ]);
 
         $owner = User::where('role', 'owner')->first();

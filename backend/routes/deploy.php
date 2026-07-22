@@ -20,4 +20,5 @@ Route::prefix('deploy')->group(function () {
     Route::get('/storage-diagnostic/{secret}', [DeployController::class, 'storageDiagnostic']);
     Route::get('/fix-photo-urls/{secret}', [DeployController::class, 'fixPhotoUrls']);
     Route::get('/clean-test-data/{secret}', [DeployController::class, 'cleanTestData']);
+    Route::get('/void-verification-invoice-5/{secret}', [DeployController::class, 'voidVerificationInvoice5']);
 });

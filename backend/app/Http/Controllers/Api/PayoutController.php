@@ -80,7 +80,16 @@ class PayoutController extends Controller
             'payout_method' => 'nullable|string|max:50',
             'payout_due_date' => 'nullable|date',
             'admin_notes' => 'nullable|string',
+            'status' => 'sometimes|in:not_eligible,waiting_for_payment,waiting_for_completion_acceptance,waiting_for_revision_closure,eligible,scheduled,queued,pending,in_transit,paid,failed,on_hold,not_ready,ready_for_payout,approved,hold_issue',
+            'eligibility_status' => 'nullable|string|max:255',
         ]);
+
+        if (array_key_exists('status', $data) && $data['status'] !== 'paid') {
+            $data['paid_date'] = null;
+            if (($payout->stripe_transfer_id ?? '') !== '' && str_starts_with((string) $payout->stripe_transfer_id, 'platform_retain_')) {
+                $data['stripe_transfer_id'] = null;
+            }
+        }
 
         $payout->update($data);
 

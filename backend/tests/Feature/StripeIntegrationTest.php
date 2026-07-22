@@ -219,6 +219,46 @@ class StripeIntegrationTest extends TestCase
         $this->assertSame('on_hold', Payout::where('job_id', $ctx['job']->id)->value('status'));
     }
 
+    public function test_refund_holds_company_platform_retain_paid_payout(): void
+    {
+        $ctx = $this->makeInvoiceContext();
+        $invoice = $ctx['invoice'];
+        $invoice->update([
+            'status' => 'paid',
+            'amount_paid' => $invoice->amount,
+            'balance' => 0,
+            'stripe_payment_intent_id' => 'pi_refund_company_test',
+        ]);
+        Payout::create([
+            'job_id' => $ctx['job']->id,
+            'payout_type' => 'company',
+            'split_type' => 'company',
+            'payout_amount' => 100,
+            'status' => 'paid',
+            'paid_date' => now()->toDateString(),
+            'stripe_transfer_id' => 'platform_retain_99',
+        ]);
+
+        $stripe = app(StripePaymentProvider::class);
+        $result = $stripe->handleWebhook([
+            'id' => 'evt_ref_'.uniqid(),
+            'type' => 'charge.refunded',
+            'data' => [
+                'object' => [
+                    'id' => 'ch_test',
+                    'payment_intent' => 'pi_refund_company_test',
+                ],
+            ],
+        ]);
+
+        $this->assertTrue($result['handled']);
+        $this->assertSame('refunded', $invoice->fresh()->status);
+        $payout = Payout::where('job_id', $ctx['job']->id)->where('payout_type', 'company')->first();
+        $this->assertSame('on_hold', $payout->status);
+        $this->assertNull($payout->paid_date);
+        $this->assertNull($payout->stripe_transfer_id);
+    }
+
     public function test_account_updated_sets_payout_ready(): void
     {
         $contractor = User::create([

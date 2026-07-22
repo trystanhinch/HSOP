@@ -25,6 +25,7 @@ Route::get('/', function () use ($liveApi, $liveApp) {
             'seed' => $liveApi.'/deploy/seed/{secret}',
             'setup' => $liveApi.'/deploy/setup/{secret}',
             'repair' => $liveApi.'/deploy/repair/{secret}',
+            'void_verification_invoice_5' => $liveApi.'/deploy/void-verification-invoice-5/{secret}',
         ],
     ]);
 });

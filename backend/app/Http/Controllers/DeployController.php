@@ -530,6 +530,64 @@ class DeployController extends Controller
         ]);
     }
 
+    /**
+     * One-shot: void Stripe verification invoice #5 (Louis / job #11) so Accounting
+     * does not show false revenue / company_paid. Does not mutate Job #11 fields.
+     */
+    public function voidVerificationInvoice5(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $invoice = \App\Models\Invoice::find(5);
+        if (! $invoice || (int) $invoice->job_id !== 11) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Invoice #5 for job #11 not found',
+            ], 404);
+        }
+
+        $jobBefore = \App\Models\Job::find(11)?->only([
+            'id', 'status', 'customer_id', 'contractor_id', 'pm_id',
+            'customer_accepted_completion_at', 'scheduled_start_date', 'completed_at',
+        ]);
+
+        if ($invoice->status !== 'refunded' && $invoice->status !== 'cancelled') {
+            $invoice->update([
+                'status' => 'refunded',
+                'notes' => trim(($invoice->notes ?? '')."\nVoided verification test — Stripe refunded, not real revenue."),
+            ]);
+        }
+
+        $note = 'Voided with verification invoice #5 — Stripe refunded, not real revenue';
+        $payouts = \App\Models\Payout::where('job_id', 11)->get();
+        foreach ($payouts as $payout) {
+            $payout->update([
+                'status' => 'not_eligible',
+                'eligibility_status' => $note,
+                'paid_date' => null,
+                'stripe_transfer_id' => str_starts_with((string) $payout->stripe_transfer_id, 'platform_retain_')
+                    ? null
+                    : $payout->stripe_transfer_id,
+                'admin_notes' => $note,
+            ]);
+        }
+
+        $jobAfter = \App\Models\Job::find(11)?->only([
+            'id', 'status', 'customer_id', 'contractor_id', 'pm_id',
+            'customer_accepted_completion_at', 'scheduled_start_date', 'completed_at',
+        ]);
+
+        return response()->json([
+            'ok' => true,
+            'message' => 'Verification invoice #5 voided; job #11 payouts marked not_eligible; job fields untouched.',
+            'invoice' => $invoice->fresh()->only(['id', 'job_id', 'status', 'amount', 'amount_paid']),
+            'payouts' => \App\Models\Payout::where('job_id', 11)->get(['id', 'payout_type', 'payout_amount', 'status', 'eligibility_status']),
+            'job_before' => $jobBefore,
+            'job_after' => $jobAfter,
+            'job_unchanged' => $jobBefore === $jobAfter,
+        ]);
+    }
+
     private function authorizeDeploy(string $secret): void
     {
         $expected = env('DEPLOY_SECRET');
