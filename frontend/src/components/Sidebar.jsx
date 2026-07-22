@@ -16,6 +16,7 @@ import {
   Settings,
   Database,
   Building2,
+  Bot,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { getRoleDashboard } from '../utils/getRoleDashboard';
@@ -38,6 +39,7 @@ const allNavItems = [
   { label: 'Invoices', icon: Receipt, path: '/invoices', roles: ['owner', 'pm'] },
   { label: 'Payouts', icon: DollarSign, path: '/payouts', roles: ['owner', 'pm', 'contractor'] },
   { label: 'Accounting', icon: Wallet, path: '/accounting', roles: ['owner'] },
+  { label: 'AI Command Center', icon: Bot, path: '/ai-command-center', roles: ['owner'] },
   { label: 'Reports', icon: BarChart2, path: '/reports', roles: ['owner'] },
   { label: 'Company Sources', icon: Building2, path: '/company-sources', roles: ['owner'] },
   { label: 'DB Structure', icon: Database, path: '/settings?tab=database', roles: ['owner'] },

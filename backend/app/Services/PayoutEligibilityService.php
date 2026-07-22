@@ -20,11 +20,14 @@ class PayoutEligibilityService
         private BusinessDayCalculator $businessDays,
     ) {}
 
-    public function evaluateForJob(Job $job): array
+    /**
+     * Read-only eligibility check (no payout writes / review side effects).
+     *
+     * @return array{eligible: bool, status: string, reason: string}
+     */
+    public function checkEligibility(Job $job): array
     {
-        $job->loadMissing(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']);
-
-        $before = Payout::where('job_id', $job->id)->get()->keyBy(fn ($p) => $p->split_type ?: $p->payout_type);
+        $job->loadMissing(['invoice', 'revisionRequests']);
 
         $invoicePaid = $job->invoice && $job->invoice->status === 'paid';
         $completionAccepted = (bool) $job->customer_accepted_completion_at;
@@ -32,22 +35,44 @@ class PayoutEligibilityService
             ->whereIn('status', ['open', 'pending', 'in_progress'])
             ->exists();
 
-        $status = 'not_eligible';
-        $reason = 'Preconditions not met';
-
         if ($openRevision) {
-            $status = 'waiting_for_revision_closure';
-            $reason = 'Open revision request';
-        } elseif (! $completionAccepted) {
-            $status = 'waiting_for_completion_acceptance';
-            $reason = 'Completion not accepted';
-        } elseif (! $invoicePaid) {
-            $status = 'waiting_for_payment';
-            $reason = 'Invoice not paid';
-        } else {
-            $status = 'eligible';
-            $reason = 'Payment received, completion accepted, no open revision';
+            return [
+                'eligible' => false,
+                'status' => 'waiting_for_revision_closure',
+                'reason' => 'Open revision request',
+            ];
         }
+        if (! $completionAccepted) {
+            return [
+                'eligible' => false,
+                'status' => 'waiting_for_completion_acceptance',
+                'reason' => 'Completion not accepted',
+            ];
+        }
+        if (! $invoicePaid) {
+            return [
+                'eligible' => false,
+                'status' => 'waiting_for_payment',
+                'reason' => 'Invoice not paid',
+            ];
+        }
+
+        return [
+            'eligible' => true,
+            'status' => 'eligible',
+            'reason' => 'Payment received, completion accepted, no open revision',
+        ];
+    }
+
+    public function evaluateForJob(Job $job): array
+    {
+        $job->loadMissing(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']);
+
+        $before = Payout::where('job_id', $job->id)->get()->keyBy(fn ($p) => $p->split_type ?: $p->payout_type);
+
+        $check = $this->checkEligibility($job);
+        $status = $check['status'];
+        $reason = $check['reason'];
 
         $amounts = $this->splitAmounts($job);
         $payouts = [];
@@ -122,8 +147,8 @@ class PayoutEligibilityService
                 'job_id' => $job->id,
                 'invoice_id' => $job->invoice?->id,
                 'invoice_status' => $job->invoice?->status,
-                'completion_accepted' => $completionAccepted,
-                'open_revision' => $openRevision,
+                'completion_accepted' => (bool) $job->customer_accepted_completion_at,
+                'open_revision' => $status === 'waiting_for_revision_closure',
                 'amounts' => $amounts,
             ],
             'decision' => $status === 'eligible' ? 'eligible' : 'not_eligible',

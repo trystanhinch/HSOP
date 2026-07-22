@@ -12,6 +12,7 @@ return [
         'payouts',
         'reviews',
         'escalations',
+        'command_center',
     ],
 
     'default_mode' => 'suggestion',
@@ -93,6 +94,27 @@ return [
             'requires_human_approval' => false,
             'modes_available' => ['suggestion', 'assisted', 'autopilot'],
             'description' => 'Add an internal note to a lead or job.',
+        ],
+        'command_center_query' => [
+            'label' => 'Command Center Query',
+            'permission_level' => 'owner',
+            'requires_human_approval' => false,
+            'modes_available' => ['suggestion', 'assisted', 'autopilot'],
+            'description' => 'Owner AI Command Center read-only data queries.',
+        ],
+        'command_center_draft_pm_message' => [
+            'label' => 'Command Center Draft PM Message',
+            'permission_level' => 'owner',
+            'requires_human_approval' => true,
+            'modes_available' => ['suggestion', 'assisted', 'autopilot'],
+            'description' => 'Draft a PM message from Command Center; requires owner confirm to send.',
+        ],
+        'command_center_create_next_action' => [
+            'label' => 'Command Center Create Next Action',
+            'permission_level' => 'owner',
+            'requires_human_approval' => false,
+            'modes_available' => ['suggestion', 'assisted', 'autopilot'],
+            'description' => 'Create a NextAction from Command Center (low risk).',
         ],
     ],
 ];

@@ -163,6 +163,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/ops-reports/generate', [\App\Http\Controllers\Api\OpsReportController::class, 'generate'])->middleware('role:owner');
     Route::get('/ops-reports/{aiOpsReport}', [\App\Http\Controllers\Api\OpsReportController::class, 'show'])->middleware('role:owner');
 
+    Route::get('/command-center/sessions', [\App\Http\Controllers\Api\CommandCenterController::class, 'sessions'])->middleware('role:owner');
+    Route::post('/command-center/sessions', [\App\Http\Controllers\Api\CommandCenterController::class, 'storeSession'])->middleware('role:owner');
+    Route::get('/command-center/sessions/{aiCommandSession}', [\App\Http\Controllers\Api\CommandCenterController::class, 'show'])->middleware('role:owner');
+    Route::post('/command-center/ask', [\App\Http\Controllers\Api\CommandCenterController::class, 'ask'])->middleware('role:owner');
+    Route::post('/command-center/confirm', [\App\Http\Controllers\Api\CommandCenterController::class, 'confirm'])->middleware('role:owner');
+
     Route::get('/jobs/{job}/messages', [MessageController::class, 'index']);
     Route::post('/jobs/{job}/messages', [MessageController::class, 'store']);
 
