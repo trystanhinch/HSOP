@@ -73,7 +73,12 @@ class PublicIntakePipeline
 
         $needsReview = $parsed->needsManualReview
             || ($classification['flags']['ambiguous_service'] ?? false)
-            || $serviceCategory === null;
+            || $serviceCategory === null
+            || (bool) ($session->conversation_state['needs_manual_review'] ?? false);
+
+        $attachments = is_array($session->conversation_state['attachments'] ?? null)
+            ? $session->conversation_state['attachments']
+            : [];
 
         $lead = Lead::create([
             'contact_name' => $parsed->contactName() ?: 'Website visitor',
@@ -101,12 +106,25 @@ class PublicIntakePipeline
                 'submitted_at' => $parsed->submittedAt,
                 'conversation_transcript' => $session->messages(),
                 'collected_fields' => $session->conversation_state['collected'] ?? [],
-                'ai_usage' => $classification['usage'] ?? null,
+                'attachments' => $attachments,
+                'ai_usage' => $session->conversation_state['last_usage'] ?? ($classification['usage'] ?? null),
             ],
             'needs_manual_review' => $needsReview,
             'assigned_pm_id' => $companySource?->default_pm_id,
             'status' => 'new',
         ]);
+
+        foreach ($attachments as $attachment) {
+            $url = $attachment['url'] ?? null;
+            if (! is_string($url) || $url === '') {
+                continue;
+            }
+            \App\Models\LeadPhoto::create([
+                'lead_id' => $lead->id,
+                'file_url' => $url,
+                'uploaded_by' => $aiUser?->id,
+            ]);
+        }
 
         $this->customerResolver->resolveForLead($lead->fresh());
         $lead->refresh();
@@ -137,7 +155,7 @@ class PublicIntakePipeline
             parsed: $parsed,
             duplicate: false,
             duplicateMatchType: null,
-            lead: $lead->fresh(['companySource', 'assignedPm', 'brand']),
+            lead: $lead->fresh(['companySource', 'assignedPm', 'brand', 'photos']),
             classification: $classification,
             aiSummary: $aiSummary,
             companySourceId: $companySource?->id,

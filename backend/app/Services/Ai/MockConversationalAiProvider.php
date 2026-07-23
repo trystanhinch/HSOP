@@ -18,6 +18,30 @@ class MockConversationalAiProvider implements ConversationalAiProviderInterface
 
     public function respond(array $history, array $collected = [], array $context = []): array
     {
+        $final = [
+            'reply' => '',
+            'collected' => $collected,
+            'ready_to_submit' => $this->ready($collected),
+            'provider' => 'mock',
+            'usage' => null,
+        ];
+        foreach ($this->streamRespond($history, $collected, $context) as $event) {
+            if (($event['event'] ?? '') === 'done') {
+                $final = [
+                    'reply' => (string) ($event['reply'] ?? ''),
+                    'collected' => $event['collected'] ?? $collected,
+                    'ready_to_submit' => (bool) ($event['ready_to_submit'] ?? false),
+                    'provider' => (string) ($event['provider'] ?? 'mock'),
+                    'usage' => $event['usage'] ?? null,
+                ];
+            }
+        }
+
+        return $final;
+    }
+
+    public function streamRespond(array $history, array $collected = [], array $context = []): \Generator
+    {
         $lastUser = '';
         for ($i = count($history) - 1; $i >= 0; $i--) {
             if (($history[$i]['role'] ?? '') === 'user') {
@@ -45,14 +69,18 @@ class MockConversationalAiProvider implements ConversationalAiProviderInterface
         if (! $this->authorizer->isAiEnabled()) {
             $reply = "Thanks — the {$company} assistant is temporarily paused. Please share your name, phone, and project details and a team member will follow up.";
             $this->log($history, $collected, $reply, 'mock_kill_switch', $context);
-
-            return [
+            yield ['event' => 'delta', 'text' => $reply];
+            yield [
+                'event' => 'done',
                 'reply' => $reply,
                 'collected' => $collected,
                 'ready_to_submit' => $this->ready($collected),
                 'provider' => 'mock_kill_switch',
                 'usage' => null,
+                'needs_manual_review' => true,
             ];
+
+            return;
         }
 
         $updated = $this->extractFields($lastUser, $collected, $services);
@@ -78,15 +106,22 @@ class MockConversationalAiProvider implements ConversationalAiProviderInterface
             }
         }
 
-        // Keep system prompt in logs for Phase 2 parity (truncated)
         $this->log($history, $updated, $reply, 'mock', $context, $systemPrompt);
 
-        return [
+        // Simulate streaming chunks for SSE clients / tests
+        $chunks = str_split($reply, 40);
+        foreach ($chunks as $chunk) {
+            yield ['event' => 'delta', 'text' => $chunk];
+        }
+        yield ['event' => 'collected', 'collected' => $updated];
+        yield [
+            'event' => 'done',
             'reply' => $reply,
             'collected' => $updated,
             'ready_to_submit' => $this->ready($updated),
             'provider' => 'mock',
             'usage' => null,
+            'needs_manual_review' => false,
         ];
     }
 

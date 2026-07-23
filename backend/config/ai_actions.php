@@ -117,5 +117,12 @@ return [
             'modes_available' => ['suggestion', 'assisted', 'autopilot'],
             'description' => 'Create a NextAction from Command Center (low risk).',
         ],
+        'public_intake_chat' => [
+            'label' => 'Public Intake Chat',
+            'permission_level' => 'ai_super_admin',
+            'requires_human_approval' => false,
+            'modes_available' => ['suggestion', 'assisted', 'autopilot'],
+            'description' => 'Conversational AI for the public multi-tenant website intake chat.',
+        ],
     ],
 ];

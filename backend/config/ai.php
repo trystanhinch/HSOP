@@ -15,10 +15,11 @@ return [
         'openai' => \App\Services\Ai\OpenAiProvider::class,
     ],
 
-    // Sibling conversational contract (public intake chat). Phase 1: mock only.
+    // Sibling conversational contract (public intake chat).
     'conversational_provider' => env('AI_CONVERSATIONAL_PROVIDER', 'mock'),
     'conversational_providers' => [
         'mock' => \App\Services\Ai\MockConversationalAiProvider::class,
+        'openai' => \App\Services\Ai\OpenAiConversationalProvider::class,
     ],
 
     'openai' => [

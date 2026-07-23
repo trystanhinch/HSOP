@@ -8,6 +8,7 @@ use App\Services\PublicIntake\PublicIntakeSessionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Cookie;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class PublicIntakeController extends Controller
 {
@@ -37,7 +38,28 @@ class PublicIntakeController extends Controller
         ]), $session->session_token, $brand);
     }
 
-    public function message(Request $request): JsonResponse
+    public function session(Request $request): JsonResponse
+    {
+        /** @var Brand $brand */
+        $brand = $request->attributes->get('brand');
+        $token = $this->resolveToken($request, $request->query('session_token') ?: $request->input('session_token'));
+        if (! $token) {
+            return response()->json(['message' => 'Missing intake session token'], 401);
+        }
+
+        $session = $this->sessions->findValidByToken($token, $brand);
+        if (! $session) {
+            return response()->json(['message' => 'Intake session expired or not found'], 404);
+        }
+
+        return $this->withIntakeCookie(
+            response()->json($this->sessions->resumePayload($session, $brand)),
+            $session->session_token,
+            $brand
+        );
+    }
+
+    public function message(Request $request): JsonResponse|StreamedResponse
     {
         /** @var Brand $brand */
         $brand = $request->attributes->get('brand');
@@ -45,6 +67,54 @@ class PublicIntakeController extends Controller
         $data = $request->validate([
             'message' => 'required|string|max:4000',
             'session_token' => 'nullable|string|max:64',
+            'stream' => 'nullable|boolean',
+        ]);
+
+        $token = $this->resolveToken($request, $data['session_token'] ?? null);
+        if (! $token) {
+            return response()->json(['message' => 'Missing intake session token'], 401);
+        }
+
+        $session = $this->sessions->findValidByToken($token, $brand);
+        if (! $session) {
+            return response()->json(['message' => 'Intake session expired or not found'], 404);
+        }
+
+        $wantsStream = $request->boolean('stream')
+            || str_contains((string) $request->header('Accept'), 'text/event-stream');
+
+        if (! $wantsStream) {
+            try {
+                $result = $this->sessions->message($session, $brand, $data['message']);
+            } catch (\RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return $this->withIntakeCookie(response()->json([
+                'session_id' => $result['session']->id,
+                'session_token' => $result['session']->session_token,
+                'reply' => $result['reply'],
+                'ready_to_submit' => $result['ready_to_submit'],
+                'collected' => $result['collected'],
+                'provider' => $result['provider'],
+                'usage' => $result['usage'] ?? null,
+                'needs_manual_review' => $result['needs_manual_review'] ?? false,
+                'expires_at' => $result['session']->expires_at?->toIso8601String(),
+            ]), $result['session']->session_token, $brand);
+        }
+
+        return $this->sseMessage($session, $brand, $data['message']);
+    }
+
+    public function media(Request $request): JsonResponse
+    {
+        /** @var Brand $brand */
+        $brand = $request->attributes->get('brand');
+
+        $data = $request->validate([
+            'session_token' => 'nullable|string|max:64',
+            'photos' => 'required|array|min:1|max:'.PublicIntakeSessionService::MAX_PHOTOS,
+            'photos.*' => 'file',
         ]);
 
         $token = $this->resolveToken($request, $data['session_token'] ?? null);
@@ -58,20 +128,16 @@ class PublicIntakeController extends Controller
         }
 
         try {
-            $result = $this->sessions->message($session, $brand, $data['message']);
+            $attachments = $this->sessions->attachMedia($session, $brand, $request->file('photos', []));
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
         return $this->withIntakeCookie(response()->json([
-            'session_id' => $result['session']->id,
-            'session_token' => $result['session']->session_token,
-            'reply' => $result['reply'],
-            'ready_to_submit' => $result['ready_to_submit'],
-            'collected' => $result['collected'],
-            'provider' => $result['provider'],
-            'expires_at' => $result['session']->expires_at?->toIso8601String(),
-        ]), $result['session']->session_token, $brand);
+            'session_id' => $session->id,
+            'attachments' => $attachments,
+            'count' => count($attachments),
+        ]), $session->session_token, $brand);
     }
 
     public function submit(Request $request): JsonResponse
@@ -133,7 +199,67 @@ class PublicIntakeController extends Controller
             'company_source_id' => $result->companySourceId,
             'needs_manual_review' => $result->lead?->needs_manual_review,
             'parse_metadata' => $result->lead?->parse_metadata,
+            'photos' => $result->lead?->photos?->map(fn ($p) => [
+                'id' => $p->id,
+                'file_url' => $p->file_url,
+            ])->values() ?? [],
         ]);
+    }
+
+    private function sseMessage(\App\Models\IntakeSession $session, Brand $brand, string $message): StreamedResponse
+    {
+        $sessions = $this->sessions;
+        $cookieName = config('public.intake_cookie', 'serviceop_intake_token');
+        $minutes = ((int) config('public.intake_session_ttl_hours', 48)) * 60;
+
+        $response = new StreamedResponse(function () use ($sessions, $session, $brand, $message) {
+            // Keep buffers intact under PHPUnit; flush only for real HTTP clients.
+            if (! app()->runningUnitTests()) {
+                while (ob_get_level() > 0) {
+                    ob_end_flush();
+                }
+            }
+
+            $send = function (string $event, array $data) {
+                echo 'event: '.$event."\n";
+                echo 'data: '.json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n\n";
+                if (function_exists('flush')) {
+                    flush();
+                }
+            };
+
+            try {
+                foreach ($sessions->streamMessage($session, $brand, $message) as $payload) {
+                    $event = (string) ($payload['event'] ?? 'message');
+                    $send($event, $payload);
+                }
+            } catch (\Throwable $e) {
+                $send('error', [
+                    'event' => 'error',
+                    'message' => $e->getMessage(),
+                    'needs_manual_review' => true,
+                ]);
+            }
+        });
+
+        $response->headers->set('Content-Type', 'text/event-stream; charset=UTF-8');
+        $response->headers->set('Cache-Control', 'no-cache, no-transform');
+        $response->headers->set('X-Accel-Buffering', 'no');
+        $response->headers->set('Connection', 'keep-alive');
+        $response->headers->set('X-Resolved-Brand', $brand->slug);
+        $response->headers->setCookie(Cookie::create(
+            $cookieName,
+            $session->session_token,
+            now()->addMinutes($minutes)->getTimestamp(),
+            '/',
+            null,
+            false,
+            true,
+            false,
+            Cookie::SAMESITE_LAX,
+        ));
+
+        return $response;
     }
 
     private function resolveToken(Request $request, ?string $bodyToken): ?string
@@ -163,7 +289,6 @@ class PublicIntakeController extends Controller
             Cookie::SAMESITE_LAX,
         ));
 
-        // Help SSR clients know which brand resolved
         $response->headers->set('X-Resolved-Brand', $brand->slug);
 
         return $response;

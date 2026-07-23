@@ -89,6 +89,14 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(10)->by('submit:'.$token);
         });
+
+        RateLimiter::for('public-intake-media', function (Request $request) {
+            $token = $request->input('session_token')
+                ?: $request->cookie(config('public.intake_cookie', 'serviceop_intake_token'))
+                ?: $request->ip();
+
+            return Limit::perMinute(20)->by('media:'.$token);
+        });
     }
 
     /**
