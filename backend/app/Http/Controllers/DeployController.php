@@ -627,6 +627,111 @@ class DeployController extends Controller
         ]);
     }
 
+    /**
+     * Safe config check — reports whether webhook secrets are loaded (never values).
+     */
+    public function stripeWebhookConfig(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $platform = (string) config('payment.stripe.webhook_secret', '');
+        $connect = (string) config('payment.stripe.connect_webhook_secret', '');
+
+        return response()->json([
+            'ok' => true,
+            'payment_provider' => config('payment.provider'),
+            'platform_webhook_secret_set' => $platform !== '',
+            'platform_webhook_secret_len' => strlen($platform),
+            'connect_webhook_secret_set' => $connect !== '',
+            'connect_webhook_secret_len' => strlen($connect),
+            'secrets_identical' => $platform !== '' && $platform === $connect,
+            'dual_secret_ready' => $platform !== '' && $connect !== '' && $platform !== $connect,
+            'env_keys' => [
+                'platform' => 'STRIPE_WEBHOOK_SECRET',
+                'connect' => 'STRIPE_CONNECT_WEBHOOK_SECRET',
+            ],
+            'recent_account_updated_webhooks' => \App\Models\StripeWebhookEvent::query()
+                ->where('type', 'account.updated')
+                ->latest('id')
+                ->limit(8)
+                ->get(['id', 'event_id', 'status', 'payload_meta', 'processed_at', 'created_at']),
+        ]);
+    }
+
+    /**
+     * Force-stale local Connect flags, bump Stripe account metadata to emit
+     * account.updated, then report whether the Connect webhook auto-synced.
+     * Usage: /deploy/probe-connect-webhook/{secret}?account_id=acct_xxx
+     */
+    public function probeConnectWebhook(string $secret): JsonResponse
+    {
+        $this->authorizeDeploy($secret);
+
+        $accountId = request('account_id');
+        if (! is_string($accountId) || ! str_starts_with($accountId, 'acct_')) {
+            return response()->json(['ok' => false, 'message' => 'account_id required'], 422);
+        }
+
+        $user = \App\Models\User::where('stripe_account_id', $accountId)->first();
+        if (! $user) {
+            return response()->json(['ok' => false, 'message' => 'User not found for account'], 404);
+        }
+
+        $beforeForce = $user->only(['stripe_onboarding_status', 'stripe_payout_ready']);
+        $user->update([
+            'stripe_onboarding_status' => 'pending',
+            'stripe_payout_ready' => false,
+        ]);
+
+        $stripe = app(\App\Services\Payments\StripeClientFactory::class)->make();
+        $marker = 'probe_'.now()->format('YmdHis');
+        $stripe->accounts->update($accountId, [
+            'metadata' => [
+                'serviceop_webhook_probe' => $marker,
+            ],
+        ]);
+
+        $deadline = now()->addSeconds(25);
+        $autoSynced = false;
+        while (now()->lt($deadline)) {
+            usleep(750000);
+            $user->refresh();
+            if ($user->stripe_payout_ready && $user->stripe_onboarding_status === 'complete') {
+                $autoSynced = true;
+                break;
+            }
+        }
+
+        $events = \App\Models\StripeWebhookEvent::query()
+            ->where('type', 'account.updated')
+            ->where('created_at', '>=', now()->subMinutes(2))
+            ->latest('id')
+            ->limit(5)
+            ->get(['id', 'event_id', 'status', 'payload_meta', 'created_at']);
+
+        // If webhook missed, restore truth from Stripe so we don't leave the user stuck.
+        if (! $autoSynced) {
+            /** @var \App\Services\Payments\StripePaymentProvider $payments */
+            $payments = app(\App\Contracts\PaymentProviderInterface::class);
+            if ($payments instanceof \App\Services\Payments\StripePaymentProvider) {
+                $payments->syncConnectedAccount($user->fresh());
+            }
+        }
+
+        return response()->json([
+            'ok' => true,
+            'account_id' => $accountId,
+            'probe_marker' => $marker,
+            'before_force' => $beforeForce,
+            'auto_synced_via_webhook' => $autoSynced,
+            'user_after_wait' => $user->fresh()->only(['stripe_onboarding_status', 'stripe_payout_ready']),
+            'recent_account_updated_webhooks' => $events,
+            'note' => $autoSynced
+                ? 'Connect destination + dual-secret verification working'
+                : 'No auto-sync within 25s — restored via Accounts API poll; check STRIPE_CONNECT_WEBHOOK_SECRET and Connected accounts destination',
+        ]);
+    }
+
     private function authorizeDeploy(string $secret): void
     {
         $expected = env('DEPLOY_SECRET');

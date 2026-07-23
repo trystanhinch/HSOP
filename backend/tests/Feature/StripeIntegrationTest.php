@@ -29,6 +29,7 @@ class StripeIntegrationTest extends TestCase
         $app['config']->set('payment.stripe.secret', 'sk_test_dummy_for_unit');
         $app['config']->set('payment.stripe.publishable', 'pk_test_dummy');
         $app['config']->set('payment.stripe.webhook_secret', 'whsec_test_secret');
+        $app['config']->set('payment.stripe.connect_webhook_secret', 'whsec_connect_test_secret');
 
         return $app;
     }
@@ -119,6 +120,148 @@ class StripeIntegrationTest extends TestCase
         );
 
         $this->assertSame(400, $res->getStatusCode());
+    }
+
+    public function test_webhook_accepts_platform_or_connect_signing_secret(): void
+    {
+        $payload = json_encode([
+            'id' => 'evt_dual_'.uniqid(),
+            'object' => 'event',
+            'type' => 'account.updated',
+            'data' => [
+                'object' => [
+                    'id' => 'acct_dual_test',
+                    'charges_enabled' => true,
+                    'payouts_enabled' => true,
+                    'details_submitted' => true,
+                    'requirements' => [
+                        'currently_due' => [],
+                        'past_due' => [],
+                        'eventually_due' => [],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        User::create([
+            'name' => 'Dual Secret PM',
+            'email' => 'dual-'.uniqid().'@test.local',
+            'password' => bcrypt('password'),
+            'role' => 'pm',
+            'status' => 'active',
+            'stripe_account_id' => 'acct_dual_test',
+            'stripe_onboarding_status' => 'pending',
+            'stripe_payout_ready' => false,
+        ]);
+
+        // Signed with Connect secret only — platform secret alone would reject.
+        $connectSig = $this->stripeTestSignature($payload, 'whsec_connect_test_secret');
+        $resConnect = $this->call(
+            'POST',
+            '/api/stripe/webhook',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_Stripe-Signature' => $connectSig,
+            ],
+            $payload
+        );
+        $this->assertSame(200, $resConnect->getStatusCode(), (string) $resConnect->getContent());
+        $this->assertTrue(User::where('stripe_account_id', 'acct_dual_test')->value('stripe_payout_ready'));
+
+        // Platform-signed account.updated for a second user
+        User::create([
+            'name' => 'Platform Secret PM',
+            'email' => 'plat-'.uniqid().'@test.local',
+            'password' => bcrypt('password'),
+            'role' => 'pm',
+            'status' => 'active',
+            'stripe_account_id' => 'acct_platform_sig',
+            'stripe_onboarding_status' => 'pending',
+            'stripe_payout_ready' => false,
+        ]);
+        $payload2 = json_encode([
+            'id' => 'evt_plat_'.uniqid(),
+            'object' => 'event',
+            'type' => 'account.updated',
+            'data' => [
+                'object' => [
+                    'id' => 'acct_platform_sig',
+                    'charges_enabled' => true,
+                    'payouts_enabled' => true,
+                    'details_submitted' => true,
+                    'requirements' => [
+                        'currently_due' => [],
+                        'past_due' => [],
+                        'eventually_due' => [],
+                    ],
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR);
+        $platformSig = $this->stripeTestSignature($payload2, 'whsec_test_secret');
+        $resPlatform = $this->call(
+            'POST',
+            '/api/stripe/webhook',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_Stripe-Signature' => $platformSig,
+            ],
+            $payload2
+        );
+        $this->assertSame(200, $resPlatform->getStatusCode(), (string) $resPlatform->getContent());
+        $this->assertTrue(User::where('stripe_account_id', 'acct_platform_sig')->value('stripe_payout_ready'));
+    }
+
+    public function test_platform_checkout_webhook_still_verifies_with_platform_secret(): void
+    {
+        $ctx = $this->makeInvoiceContext();
+        $invoice = $ctx['invoice'];
+        $payload = json_encode([
+            'id' => 'evt_pay_'.uniqid(),
+            'object' => 'event',
+            'type' => 'checkout.session.completed',
+            'data' => [
+                'object' => [
+                    'id' => 'cs_test_'.uniqid(),
+                    'payment_status' => 'paid',
+                    'status' => 'complete',
+                    'amount_total' => (int) round(((float) $invoice->amount) * 100),
+                    'payment_intent' => 'pi_test_'.uniqid(),
+                    'metadata' => ['invoice_id' => (string) $invoice->id],
+                    'client_reference_id' => (string) $invoice->id,
+                ],
+            ],
+        ], JSON_THROW_ON_ERROR);
+
+        $sig = $this->stripeTestSignature($payload, 'whsec_test_secret');
+        $res = $this->call(
+            'POST',
+            '/api/stripe/webhook',
+            [],
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_Stripe-Signature' => $sig,
+            ],
+            $payload
+        );
+
+        $this->assertSame(200, $res->getStatusCode(), (string) $res->getContent());
+        $this->assertSame('paid', $invoice->fresh()->status);
+    }
+
+    private function stripeTestSignature(string $payload, string $secret): string
+    {
+        $timestamp = time();
+        $signature = hash_hmac('sha256', $timestamp.'.'.$payload, $secret);
+
+        return "t={$timestamp},v1={$signature}";
     }
 
     public function test_checkout_completed_marks_paid_and_is_idempotent(): void

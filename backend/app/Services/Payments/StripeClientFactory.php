@@ -27,6 +27,28 @@ class StripeClientFactory
         return config('payment.stripe.webhook_secret') ?: null;
     }
 
+    public function connectWebhookSecret(): ?string
+    {
+        return config('payment.stripe.connect_webhook_secret') ?: null;
+    }
+
+    /**
+     * Platform + Connect webhook signing secrets (deduped, non-empty).
+     *
+     * @return list<string>
+     */
+    public function webhookSecrets(): array
+    {
+        $secrets = [];
+        foreach ([$this->webhookSecret(), $this->connectWebhookSecret()] as $secret) {
+            if (is_string($secret) && $secret !== '' && ! in_array($secret, $secrets, true)) {
+                $secrets[] = $secret;
+            }
+        }
+
+        return $secrets;
+    }
+
     /**
      * Resolve the payee user for a payout split (contractor or PM).
      */

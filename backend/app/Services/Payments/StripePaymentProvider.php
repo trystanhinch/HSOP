@@ -14,6 +14,7 @@ use App\Services\SmsService;
 use Illuminate\Support\Facades\Log;
 use Stripe\Event;
 use Stripe\Exception\ApiErrorException;
+use Stripe\Exception\SignatureVerificationException;
 use Throwable;
 
 class StripePaymentProvider implements PaymentProviderInterface
@@ -670,14 +671,37 @@ class StripePaymentProvider implements PaymentProviderInterface
 
     /**
      * Construct + verify a Stripe Event from raw webhook payload.
+     * Accepts either the platform or Connect Event Destination signing secret
+     * (both destinations share /api/stripe/webhook but use different whsec_ values).
      */
     public function constructEvent(string $payload, string $sigHeader): Event
     {
-        $secret = $this->stripeFactory->webhookSecret();
-        if (! $secret) {
+        $secrets = $this->stripeFactory->webhookSecrets();
+        if ($secrets === []) {
             throw new \RuntimeException('STRIPE_WEBHOOK_SECRET is not configured.');
         }
 
-        return \Stripe\Webhook::constructEvent($payload, $sigHeader, $secret);
+        $lastSignatureError = null;
+        foreach ($secrets as $secret) {
+            try {
+                $event = \Stripe\Webhook::constructEvent($payload, $sigHeader, $secret);
+                $source = 'unknown';
+                if ($secret === $this->stripeFactory->webhookSecret()) {
+                    $source = 'platform';
+                } elseif ($secret === $this->stripeFactory->connectWebhookSecret()) {
+                    $source = 'connect';
+                }
+                Log::info('Stripe webhook signature verified', [
+                    'secret_source' => $source,
+                    'event_type' => $event->type ?? null,
+                ]);
+
+                return $event;
+            } catch (SignatureVerificationException $e) {
+                $lastSignatureError = $e;
+            }
+        }
+
+        throw $lastSignatureError;
     }
 }

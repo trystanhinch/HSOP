@@ -19,7 +19,10 @@ return [
         // Prefer STRIPE_SECRET_KEY; STRIPE_SECRET kept for backwards compatibility
         'secret' => env('STRIPE_SECRET_KEY', env('STRIPE_SECRET')),
         'publishable' => env('STRIPE_PUBLISHABLE_KEY'),
+        // Platform Event Destination (Your account)
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        // Connected accounts Event Destination (same URL, different signing secret)
+        'connect_webhook_secret' => env('STRIPE_CONNECT_WEBHOOK_SECRET'),
         'currency' => env('STRIPE_CURRENCY', 'cad'),
     ],
 

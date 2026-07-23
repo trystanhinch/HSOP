@@ -22,4 +22,6 @@ Route::prefix('deploy')->group(function () {
     Route::get('/clean-test-data/{secret}', [DeployController::class, 'cleanTestData']);
     Route::get('/void-verification-invoice-5/{secret}', [DeployController::class, 'voidVerificationInvoice5']);
     Route::get('/sync-stripe-connect/{secret}', [DeployController::class, 'syncStripeConnect']);
+    Route::get('/stripe-webhook-config/{secret}', [DeployController::class, 'stripeWebhookConfig']);
+    Route::get('/probe-connect-webhook/{secret}', [DeployController::class, 'probeConnectWebhook']);
 });

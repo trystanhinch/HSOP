@@ -27,6 +27,8 @@ Route::get('/', function () use ($liveApi, $liveApp) {
             'repair' => $liveApi.'/deploy/repair/{secret}',
             'void_verification_invoice_5' => $liveApi.'/deploy/void-verification-invoice-5/{secret}',
             'sync_stripe_connect' => $liveApi.'/deploy/sync-stripe-connect/{secret}?account_id=acct_xxx',
+            'stripe_webhook_config' => $liveApi.'/deploy/stripe-webhook-config/{secret}',
+            'probe_connect_webhook' => $liveApi.'/deploy/probe-connect-webhook/{secret}?account_id=acct_xxx',
         ],
     ]);
 });
