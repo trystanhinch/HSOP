@@ -29,6 +29,19 @@ export function ChatWidget({ brand, hostHint }: Props) {
     disclaimer?: string;
     is_placeholder?: boolean;
   } | null>(null);
+  const [slots, setSlots] = useState<
+    Array<{
+      slot_start: string;
+      slot_end: string;
+      slot_start_local?: string;
+      resource_key: string;
+      timezone?: string;
+    }>
+  >([]);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [holdToken, setHoldToken] = useState<string | null>(null);
+  const [holdUntil, setHoldUntil] = useState<string | null>(null);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const [attachments, setAttachments] = useState<
     Array<{ url: string; file_name: string }>
   >([]);
@@ -211,12 +224,72 @@ export function ChatWidget({ brand, hostHint }: Props) {
     setAttachments(data.attachments || []);
   }
 
+  async function loadSlots(service?: string) {
+    setLoadingSlots(true);
+    try {
+      const svc =
+        service ||
+        (typeof collected.service_category === "string"
+          ? collected.service_category
+          : "");
+      const q = svc ? `?service=${encodeURIComponent(svc)}&days=14` : "?days=14";
+      const res = await fetch(`${apiBaseUrl()}/api/public/availability${q}`, {
+        headers: headers(),
+        credentials: "include",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setSlots((data.slots || []).slice(0, 12));
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingSlots(false);
+    }
+  }
+
+  useEffect(() => {
+    if (priceEstimate?.available && token) {
+      void loadSlots();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceEstimate?.available, token, collected.service_category]);
+
+  async function selectSlot(slot: {
+    slot_start: string;
+    slot_end: string;
+    resource_key: string;
+  }) {
+    if (!token) return;
+    setError(null);
+    const res = await fetch(`${apiBaseUrl()}/api/public/availability/hold`, {
+      method: "POST",
+      headers: { ...headers(), "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        session_token: token,
+        slot_start: slot.slot_start,
+        slot_end: slot.slot_end,
+        resource_key: slot.resource_key,
+        service: collected.service_category || undefined,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setError(data.message || "That slot is no longer available.");
+      void loadSlots();
+      return;
+    }
+    setSelectedSlot(slot.slot_start);
+    setHoldToken(data.hold_token);
+    setHoldUntil(data.held_until || null);
+  }
+
   async function submitLead() {
     if (!token) return;
     setError(null);
     const res = await fetch(`${apiBaseUrl()}/api/public/intake/submit`, {
       method: "POST",
-      headers: headers(),
+      headers: { ...headers(), "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ session_token: token }),
     });
@@ -273,6 +346,42 @@ export function ChatWidget({ brand, hostHint }: Props) {
           {priceEstimate.is_placeholder ? (
             <p className="muted">Rates are provisional placeholders pending review.</p>
           ) : null}
+        </div>
+      )}
+
+      {priceEstimate?.available && !submittedLeadId && (
+        <div className="slots">
+          <p className="slots-label">Pick a site-visit time (held briefly while you finish):</p>
+          {loadingSlots && <p className="muted">Loading times…</p>}
+          <div className="slot-grid">
+            {slots.map((s) => {
+              const label = s.slot_start_local
+                ? new Date(s.slot_start_local).toLocaleString(undefined, {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })
+                : new Date(s.slot_start).toLocaleString();
+              const active = selectedSlot === s.slot_start;
+              return (
+                <button
+                  key={s.slot_start + s.resource_key}
+                  type="button"
+                  className={`slot-btn${active ? " active" : ""}`}
+                  onClick={() => selectSlot(s)}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {holdToken && (
+            <p className="muted">
+              Slot held{holdUntil ? ` until ${new Date(holdUntil).toLocaleTimeString()}` : ""}.
+            </p>
+          )}
         </div>
       )}
 

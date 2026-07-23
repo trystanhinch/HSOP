@@ -14,7 +14,7 @@ return new class extends Migration
                 $table->string('session_token', 64)->unique();
                 $table->json('conversation_state')->nullable();
                 $table->unsignedBigInteger('converted_lead_id')->nullable()->index();
-                $table->timestamp('expires_at');
+                $table->dateTime('expires_at');
                 $table->timestamps();
             });
         }

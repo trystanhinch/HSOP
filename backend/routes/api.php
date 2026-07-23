@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AvailabilityAdminController;
 use App\Http\Controllers\Api\AccountingController;
 use App\Http\Controllers\Api\AdminPmMessageController;
 use App\Http\Controllers\Api\ActivityTimelineController;
@@ -256,6 +257,13 @@ Route::middleware('auth:sanctum')->group(function () {
     });
 
     Route::middleware('role:owner,pm')->group(function () {
+        Route::get('/availability/brands', [AvailabilityAdminController::class, 'brands']);
+        Route::get('/availability/windows', [AvailabilityAdminController::class, 'windows']);
+        Route::post('/availability/windows', [AvailabilityAdminController::class, 'storeWindow']);
+        Route::put('/availability/windows/{availabilityWindow}', [AvailabilityAdminController::class, 'updateWindow']);
+        Route::delete('/availability/windows/{availabilityWindow}', [AvailabilityAdminController::class, 'destroyWindow']);
+        Route::get('/availability/bookings', [AvailabilityAdminController::class, 'bookings']);
+
         Route::post('/leads/{lead}/ai/call-prep', [WorkflowAssistController::class, 'callPrep']);
         Route::post('/leads/{lead}/ai/draft-message', [WorkflowAssistController::class, 'draftMessage']);
         Route::post('/leads/{lead}/ai/quote-prep', [WorkflowAssistController::class, 'quotePrep']);

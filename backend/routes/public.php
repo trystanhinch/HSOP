@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\Public\PublicIntakeController;
+use App\Http\Controllers\Api\Public\PublicAvailabilityController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -14,6 +15,12 @@ Route::prefix('api/public')
     ->middleware(['throttle:public-intake', 'public.brand'])
     ->group(function () {
         Route::get('/brand', [PublicIntakeController::class, 'brand']);
+
+        Route::get('/availability', [PublicAvailabilityController::class, 'index']);
+        Route::post('/availability/hold', [PublicAvailabilityController::class, 'hold'])
+            ->middleware('throttle:public-intake-message');
+        Route::post('/availability/release-hold', [PublicAvailabilityController::class, 'releaseHold'])
+            ->middleware('throttle:public-intake-message');
 
         Route::post('/intake/start', [PublicIntakeController::class, 'start'])
             ->middleware('throttle:public-intake-start');

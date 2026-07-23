@@ -44,6 +44,7 @@ const allNavItems = [
   { label: 'Reports', icon: BarChart2, path: '/reports', roles: ['owner'] },
   { label: 'Company Sources', icon: Building2, path: '/company-sources', roles: ['owner'] },
   { label: 'Pricing Rules', icon: Calculator, path: '/pricing-rules', roles: ['owner'] },
+  { label: 'Availability', icon: Calendar, path: '/availability', roles: ['owner', 'pm'] },
   { label: 'DB Structure', icon: Database, path: '/settings?tab=database', roles: ['owner'] },
   { label: 'Settings', icon: Settings, path: '/settings', roles: ['owner'] },
 ];

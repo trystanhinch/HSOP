@@ -370,7 +370,9 @@ class PublicIntakeSessionService
             $session->save();
         }
 
-        return $this->pipeline->submit($session->fresh());
+        return $this->pipeline->submit($session->fresh(), [
+            'send_notifications' => true,
+        ]);
     }
 
     /**

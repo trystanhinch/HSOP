@@ -136,6 +136,39 @@ class Milestone4Seeder extends Seeder
             \App\Models\Brand::query()->where('domain', 'acuteradrywall.ca')->first()?->id,
             $acuteraSource->id
         );
+
+        $this->seedAcuteraAvailabilityWindows(
+            \App\Models\Brand::query()->where('domain', 'acuteradrywall.ca')->first()?->id
+        );
+    }
+
+    private function seedAcuteraAvailabilityWindows(?int $brandId): void
+    {
+        if (! $brandId || ! \Illuminate\Support\Facades\Schema::hasTable('availability_windows')) {
+            return;
+        }
+
+        // Mon–Fri 09:00–12:00 and 13:00–16:00 Pacific, 60-minute slots
+        foreach ([1, 2, 3, 4, 5] as $dow) {
+            foreach ([['09:00', '12:00'], ['13:00', '16:00']] as [$start, $end]) {
+                \App\Models\AvailabilityWindow::updateOrCreate(
+                    [
+                        'brand_id' => $brandId,
+                        'day_of_week' => $dow,
+                        'start_time' => $start,
+                        'end_time' => $end,
+                        'pm_id' => null,
+                        'contractor_id' => null,
+                        'service_category' => null,
+                    ],
+                    [
+                        'slot_duration_minutes' => 60,
+                        'timezone' => 'America/Vancouver',
+                        'status' => 'active',
+                    ]
+                );
+            }
+        }
     }
 
     /**

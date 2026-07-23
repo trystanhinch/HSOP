@@ -33,3 +33,7 @@ Schedule::command('payouts:process-scheduled')
 Schedule::command('intake:cleanup-sessions')
     ->hourly()
     ->withoutOverlapping();
+
+Schedule::command('booking:release-expired-holds')
+    ->everyMinute()
+    ->withoutOverlapping();

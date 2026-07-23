@@ -29,6 +29,7 @@ import AiCommandCenter from './pages/AiCommandCenter';
 import Reports from './pages/Reports';
 import CompanySources from './pages/CompanySources';
 import PricingRules from './pages/PricingRules';
+import Availability from './pages/Availability';
 import Settings from './pages/Settings';
 import Unauthorized from './pages/Unauthorized';
 import CustomerQuoteView from './pages/CustomerQuoteView';
@@ -76,6 +77,7 @@ export default function App() {
               <Route path="/reports" element={<RoleGuard roles={['owner']}><Reports /></RoleGuard>} />
               <Route path="/company-sources" element={<RoleGuard roles={['owner']}><CompanySources /></RoleGuard>} />
               <Route path="/pricing-rules" element={<RoleGuard roles={['owner']}><PricingRules /></RoleGuard>} />
+              <Route path="/availability" element={<RoleGuard roles={['owner', 'pm']}><Availability /></RoleGuard>} />
               <Route path="/settings" element={<RoleGuard roles={['owner']}><Settings /></RoleGuard>} />
               <Route path="/unauthorized" element={<Unauthorized />} />
             </Route>

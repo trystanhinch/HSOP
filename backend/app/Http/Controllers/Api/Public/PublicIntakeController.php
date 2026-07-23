@@ -231,6 +231,14 @@ class PublicIntakeController extends Controller
             'price_estimate_low' => $result->lead?->price_estimate_low,
             'price_estimate_high' => $result->lead?->price_estimate_high,
             'price_estimate' => $result->lead?->price_estimate_snapshot,
+            'booking' => $result->notifications['booking_id'] ?? null
+                ? [
+                    'id' => $result->notifications['booking_id'],
+                    'confirmed' => true,
+                    'site_visit_date' => $result->lead?->site_visit_date,
+                    'site_visit_time' => $result->lead?->site_visit_time,
+                ]
+                : null,
             'photos' => $result->lead?->photos?->map(fn ($p) => [
                 'id' => $p->id,
                 'file_url' => $p->file_url,

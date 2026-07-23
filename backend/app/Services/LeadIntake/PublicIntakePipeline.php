@@ -178,6 +178,21 @@ class PublicIntakePipeline
 
         $session->update(['converted_lead_id' => $lead->id]);
 
+        $booking = null;
+        $holdToken = $session->conversation_state['booking_hold_token'] ?? null;
+        if (is_string($holdToken) && $holdToken !== '') {
+            $hold = \App\Models\BookingHold::query()
+                ->where('hold_token', $holdToken)
+                ->where('brand_id', $brand->id)
+                ->where('status', 'held')
+                ->first();
+            if ($hold) {
+                $booking = app(\App\Services\Booking\BookingService::class)
+                    ->confirmHoldForLead($hold, $lead->fresh(), $sendNotifications);
+                $lead->refresh();
+            }
+        }
+
         return new LeadIntakeResult(
             parsed: $parsed,
             duplicate: false,
@@ -186,7 +201,9 @@ class PublicIntakePipeline
             classification: $classification,
             aiSummary: $aiSummary,
             companySourceId: $companySource?->id,
-            notifications: $sendNotifications ? ['skipped' => 'phase1_no_public_notifications'] : [],
+            notifications: $sendNotifications
+                ? ($booking ? ['booking_confirmed' => true, 'booking_id' => $booking->id] : ['lead_created' => true])
+                : [],
             aiActionLogs: [],
         );
     }
