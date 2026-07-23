@@ -20,6 +20,15 @@ export function ChatWidget({ brand, hostHint }: Props) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submittedLeadId, setSubmittedLeadId] = useState<number | null>(null);
+  const [priceEstimate, setPriceEstimate] = useState<{
+    available?: boolean;
+    low?: number;
+    high?: number;
+    currency?: string;
+    message?: string;
+    disclaimer?: string;
+    is_placeholder?: boolean;
+  } | null>(null);
   const [attachments, setAttachments] = useState<
     Array<{ url: string; file_name: string }>
   >([]);
@@ -66,6 +75,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
             setCollected(data.collected || {});
             setReady(Boolean(data.ready_to_submit));
             setAttachments(data.attachments || []);
+            setPriceEstimate(data.price_estimate || null);
             return;
           }
         }
@@ -161,6 +171,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
             }
             if (payload.collected) setCollected(payload.collected);
             setReady(Boolean(payload.ready_to_submit));
+            if (payload.price_estimate) setPriceEstimate(payload.price_estimate);
           }
           if (event === "error") {
             setError(payload.message || "Assistant error");
@@ -248,6 +259,20 @@ export function ChatWidget({ brand, hostHint }: Props) {
           {Object.entries(collected)
             .map(([k, v]) => `${k}=${String(v)}`)
             .join(" · ")}
+        </div>
+      )}
+
+      {priceEstimate?.available && (
+        <div className="estimate">
+          <strong>
+            Estimate: ${Number(priceEstimate.low).toLocaleString()} – $
+            {Number(priceEstimate.high).toLocaleString()}{" "}
+            {priceEstimate.currency || "CAD"}
+          </strong>
+          <p className="muted">{priceEstimate.disclaimer || priceEstimate.message}</p>
+          {priceEstimate.is_placeholder ? (
+            <p className="muted">Rates are provisional placeholders pending review.</p>
+          ) : null}
         </div>
       )}
 

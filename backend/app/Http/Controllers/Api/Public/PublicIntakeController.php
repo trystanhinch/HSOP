@@ -99,11 +99,40 @@ class PublicIntakeController extends Controller
                 'provider' => $result['provider'],
                 'usage' => $result['usage'] ?? null,
                 'needs_manual_review' => $result['needs_manual_review'] ?? false,
+                'price_estimate' => $result['price_estimate'] ?? null,
                 'expires_at' => $result['session']->expires_at?->toIso8601String(),
             ]), $result['session']->session_token, $brand);
         }
 
         return $this->sseMessage($session, $brand, $data['message']);
+    }
+
+    public function estimate(Request $request): JsonResponse
+    {
+        /** @var Brand $brand */
+        $brand = $request->attributes->get('brand');
+        $data = $request->validate([
+            'session_token' => 'nullable|string|max:64',
+        ]);
+        $token = $this->resolveToken($request, $data['session_token'] ?? null);
+        if (! $token) {
+            return response()->json(['message' => 'Missing intake session token'], 401);
+        }
+        $session = $this->sessions->findValidByToken($token, $brand);
+        if (! $session) {
+            return response()->json(['message' => 'Intake session expired or not found'], 404);
+        }
+
+        try {
+            $estimate = $this->sessions->estimate($session, $brand);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'session_id' => $session->id,
+            'price_estimate' => $estimate,
+        ]);
     }
 
     public function media(Request $request): JsonResponse
@@ -199,6 +228,9 @@ class PublicIntakeController extends Controller
             'company_source_id' => $result->companySourceId,
             'needs_manual_review' => $result->lead?->needs_manual_review,
             'parse_metadata' => $result->lead?->parse_metadata,
+            'price_estimate_low' => $result->lead?->price_estimate_low,
+            'price_estimate_high' => $result->lead?->price_estimate_high,
+            'price_estimate' => $result->lead?->price_estimate_snapshot,
             'photos' => $result->lead?->photos?->map(fn ($p) => [
                 'id' => $p->id,
                 'file_url' => $p->file_url,

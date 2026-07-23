@@ -112,7 +112,34 @@ class PublicIntakePipeline
             'needs_manual_review' => $needsReview,
             'assigned_pm_id' => $companySource?->default_pm_id,
             'status' => 'new',
+            'price_estimate_low' => null,
+            'price_estimate_high' => null,
+            'price_estimate_snapshot' => null,
         ]);
+
+        $estimate = is_array($session->conversation_state['price_estimate'] ?? null)
+            ? $session->conversation_state['price_estimate']
+            : null;
+        if (! is_array($estimate) || ! ($estimate['available'] ?? false)) {
+            $estimate = app(\App\Services\Pricing\PricingRangeEstimator::class)->estimate($brand, [
+                'service_category' => $serviceCategory,
+                'size_sqft' => $session->conversation_state['collected']['size_sqft'] ?? null,
+                'complexity' => $session->conversation_state['collected']['complexity'] ?? null,
+                'urgency' => $session->conversation_state['collected']['urgency'] ?? null,
+                'project_description' => $parsed->projectDescription,
+                'address' => $parsed->address,
+            ]);
+        }
+        if (is_array($estimate) && ($estimate['available'] ?? false)) {
+            app(\App\Services\Learning\EstimateOutcomeRecorder::class)->record($lead->fresh(), $estimate, [
+                'source_kind' => 'estimator',
+                'ai_provider' => data_get($session->conversation_state, 'last_usage.provider')
+                    ?? config('ai.conversational_provider'),
+                'ai_model' => data_get($session->conversation_state, 'last_usage.model')
+                    ?? config('ai.openai.model'),
+                'ai_model_version' => data_get($session->conversation_state, 'last_usage.model_version'),
+            ]);
+        }
 
         foreach ($attachments as $attachment) {
             $url = $attachment['url'] ?? null;

@@ -131,5 +131,85 @@ class Milestone4Seeder extends Seeder
                 'status' => 'active',
             ]
         );
+
+        $this->seedAcuteraPricingRules(
+            \App\Models\Brand::query()->where('domain', 'acuteradrywall.ca')->first()?->id,
+            $acuteraSource->id
+        );
+    }
+
+    /**
+     * PLACEHOLDER starter rates — no concrete numbers in repo/spec.
+     * Flagged is_placeholder=true for Trystan to review/correct.
+     */
+    private function seedAcuteraPricingRules(?int $brandId, ?int $companySourceId): void
+    {
+        if (! $brandId) {
+            return;
+        }
+
+        \App\Models\PricingRule::updateOrCreate(
+            [
+                'brand_id' => $brandId,
+                'service_category' => 'drywall_paint',
+                'status' => 'active',
+            ],
+            [
+                'company_source_id' => $companySourceId,
+                'rule_type' => 'per_sqft',
+                // PLACEHOLDER — not from an official Acutera rate card
+                'base_rate' => 6.50,
+                'size_tiers' => [
+                    'low_rate' => 5.00,
+                    'high_rate' => 9.00,
+                    'default_low_sqft' => 100,
+                    'default_high_sqft' => 400,
+                ],
+                'complexity_modifiers' => [
+                    'simple' => 0.85,
+                    'standard' => 1.0,
+                    'complex' => 1.35,
+                    'unknown' => 1.0,
+                    'urgency_high' => 1.12,
+                ],
+                'min_price' => 450,
+                'max_price' => 25000,
+                'currency' => 'CAD',
+                'is_placeholder' => true,
+                'notes' => 'PLACEHOLDER starter rates for drywall/paint ballpark estimates. Replace with Trystan-approved figures before public launch.',
+            ]
+        );
+
+        \App\Models\PricingRule::updateOrCreate(
+            [
+                'brand_id' => $brandId,
+                'service_category' => 'insulation',
+                'status' => 'active',
+            ],
+            [
+                'company_source_id' => $companySourceId,
+                'rule_type' => 'per_sqft',
+                // PLACEHOLDER
+                'base_rate' => 3.75,
+                'size_tiers' => [
+                    'low_rate' => 2.75,
+                    'high_rate' => 5.50,
+                    'default_low_sqft' => 200,
+                    'default_high_sqft' => 1200,
+                ],
+                'complexity_modifiers' => [
+                    'simple' => 0.9,
+                    'standard' => 1.0,
+                    'complex' => 1.3,
+                    'unknown' => 1.0,
+                    'urgency_high' => 1.1,
+                ],
+                'min_price' => 600,
+                'max_price' => 30000,
+                'currency' => 'CAD',
+                'is_placeholder' => true,
+                'notes' => 'PLACEHOLDER starter rates for insulation ballpark estimates. Replace with Trystan-approved figures before public launch.',
+            ]
+        );
     }
 }

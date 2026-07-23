@@ -26,6 +26,9 @@ Route::prefix('api/public')
         Route::post('/intake/media', [PublicIntakeController::class, 'media'])
             ->middleware('throttle:public-intake-media');
 
+        Route::post('/intake/estimate', [PublicIntakeController::class, 'estimate'])
+            ->middleware('throttle:public-intake-message');
+
         Route::post('/intake/submit', [PublicIntakeController::class, 'submit'])
             ->middleware('throttle:public-intake-submit');
     });

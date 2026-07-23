@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\GmailOAuthController;
 use App\Http\Controllers\Api\MessageTemplateController;
 use App\Http\Controllers\Api\WorkflowAssistController;
 use App\Http\Controllers\Api\CompanySourceController;
+use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\CustomerPortalController;
 use App\Http\Controllers\Api\AdminUserController;
 use App\Http\Controllers\Api\AdminController;
@@ -21,6 +22,7 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\JobUpdateController;
 use App\Http\Controllers\Api\LeadController;
+use App\Http\Controllers\Api\LearningSnapshotController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\NextActionController;
 use App\Http\Controllers\Api\PaymentController;
@@ -83,6 +85,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/leads', [LeadController::class, 'store'])->middleware('role:owner,pm');
     Route::get('/leads/{lead}', [LeadController::class, 'show']);
     Route::put('/leads/{lead}', [LeadController::class, 'update'])->middleware('role:owner,pm');
+    Route::post('/leads/{lead}/price-estimate-override', [LearningSnapshotController::class, 'overrideLeadEstimate'])
+        ->middleware('role:owner,pm');
+    Route::post('/leads/{lead}/price-estimate-recalculate', [LearningSnapshotController::class, 'recalculateLeadEstimate'])
+        ->middleware('role:owner,pm');
+    Route::get('/leads/{lead}/learning-snapshot', [LearningSnapshotController::class, 'forLead'])
+        ->middleware('role:owner,pm');
     Route::post('/leads/{lead}/resolve-review', [LeadController::class, 'resolveReview'])->middleware('role:owner');
     Route::delete('/leads/{lead}', [LeadController::class, 'destroy'])->middleware('role:owner,pm');
     Route::post('/leads/{lead}/convert-to-job', [LeadController::class, 'convertToJob'])->middleware('role:owner,pm');
@@ -104,6 +112,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/jobs', [JobController::class, 'index']);
     Route::post('/jobs', [JobController::class, 'store'])->middleware('role:owner,pm');
     Route::get('/jobs/{job}', [JobController::class, 'show']);
+    Route::get('/jobs/{job}/learning-snapshot', [LearningSnapshotController::class, 'forJob'])
+        ->middleware('role:owner,pm');
     Route::put('/jobs/{job}', [JobController::class, 'update'])->middleware('role:owner,pm');
     Route::delete('/jobs/{job}', [JobController::class, 'destroy'])->middleware('role:owner');
     Route::post('/jobs/{job}/assign-pm', [JobController::class, 'assignPm'])->middleware('role:owner');
@@ -218,6 +228,14 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/company-sources/{companySource}', [CompanySourceController::class, 'show']);
         Route::put('/company-sources/{companySource}', [CompanySourceController::class, 'update']);
         Route::delete('/company-sources/{companySource}', [CompanySourceController::class, 'destroy']);
+
+        Route::get('/pricing-rules/brands', [PricingRuleController::class, 'brands']);
+        Route::post('/pricing-rules/preview', [PricingRuleController::class, 'preview']);
+        Route::get('/pricing-rules', [PricingRuleController::class, 'index']);
+        Route::post('/pricing-rules', [PricingRuleController::class, 'store']);
+        Route::get('/pricing-rules/{pricingRule}', [PricingRuleController::class, 'show']);
+        Route::put('/pricing-rules/{pricingRule}', [PricingRuleController::class, 'update']);
+        Route::delete('/pricing-rules/{pricingRule}', [PricingRuleController::class, 'destroy']);
 
         Route::get('/ai/settings', [AiSettingsController::class, 'index']);
         Route::put('/ai/settings', [AiSettingsController::class, 'update']);

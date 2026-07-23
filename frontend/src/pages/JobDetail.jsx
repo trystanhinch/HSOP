@@ -65,6 +65,7 @@ export default function JobDetail() {
   const [customerRevision, setCustomerRevision] = useState('');
   const [showCustomerRevision, setShowCustomerRevision] = useState(false);
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [completeForm, setCompleteForm] = useState({ actual_labour_hours: '', materials_text: '' });
   const [completing, setCompleting] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -286,8 +287,24 @@ export default function JobDetail() {
   const markComplete = async () => {
     setCompleting(true);
     try {
-      await api.post(`/jobs/${id}/contractor-complete`);
+      const materials_used = completeForm.materials_text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          const [item, qty, unit] = line.split(',').map((s) => s.trim());
+          return {
+            item: item || line,
+            qty: qty ? Number(qty) : null,
+            unit: unit || null,
+          };
+        });
+      await api.post(`/jobs/${id}/contractor-complete`, {
+        actual_labour_hours: completeForm.actual_labour_hours === '' ? null : Number(completeForm.actual_labour_hours),
+        materials_used: materials_used.length ? materials_used : undefined,
+      });
       setShowCompleteConfirm(false);
+      setCompleteForm({ actual_labour_hours: '', materials_text: '' });
       await showSuccess('Job marked complete. Customer has been notified to review.');
       await loadJob(true);
     } catch (err) {
@@ -963,14 +980,43 @@ export default function JobDetail() {
 
       {showCompleteConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full">
             <div className="text-center mb-4">
               <div className="text-4xl mb-3">✅</div>
               <h3 className="font-semibold text-slate-800 text-lg">Mark Job Complete?</h3>
               <p className="text-sm text-slate-500 mt-2">
-                The customer will be notified and asked to review and accept the
-                completed work before payment is processed.
+                Optionally log actual labour hours and materials used for future
+                Learning Centre data (Milestone 6). Customer will still be asked
+                to review before payment.
               </p>
+            </div>
+            <div className="space-y-3 mb-4 text-left">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Actual labour hours
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.25"
+                  value={completeForm.actual_labour_hours}
+                  onChange={(e) => setCompleteForm((f) => ({ ...f, actual_labour_hours: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder="e.g. 6.5"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Materials used (one per line: item, qty, unit)
+                </label>
+                <textarea
+                  rows={3}
+                  value={completeForm.materials_text}
+                  onChange={(e) => setCompleteForm((f) => ({ ...f, materials_text: e.target.value }))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder={'Drywall sheet 1/2", 12, sheets\nJoint compound, 2, buckets'}
+                />
+              </div>
             </div>
             <div className="flex gap-3">
               <button

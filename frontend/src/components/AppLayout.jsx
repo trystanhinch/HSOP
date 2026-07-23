@@ -18,7 +18,7 @@ function getPageTitle(pathname, search) {
     '/customers': 'Customers', '/quotes': 'Quotes', '/schedule': 'Schedule',
     '/messages': 'Messages', '/invoices': 'Invoices', '/payouts': 'Payouts',
     '/accounting': 'Accounting', '/ai-command-center': 'AI Command Center',
-    '/reports': 'Reports', '/settings': 'Settings', '/unauthorized': 'Access Denied',
+    '/reports': 'Reports', '/company-sources': 'Company Sources', '/pricing-rules': 'Pricing Rules', '/settings': 'Settings', '/unauthorized': 'Access Denied',
   };
   return titles[pathname] || 'ServiceOP';
 }

@@ -7,6 +7,7 @@ use App\Models\Brand;
 use App\Models\IntakeSession;
 use App\Services\Brands\BrandPromptTemplate;
 use App\Services\LeadIntake\PublicIntakePipeline;
+use App\Services\Pricing\PricingRangeEstimator;
 use App\Services\UploadStorage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
@@ -22,6 +23,7 @@ class PublicIntakeSessionService
         private ConversationalAiProviderInterface $conversationalAi,
         private PublicIntakePipeline $pipeline,
         private UploadStorage $uploads,
+        private PricingRangeEstimator $pricingEstimator,
     ) {}
 
     public function start(Brand $brand): IntakeSession
@@ -74,6 +76,7 @@ class PublicIntakeSessionService
             'attachments' => is_array($state['attachments'] ?? null) ? $state['attachments'] : [],
             'ready_to_submit' => (bool) ($state['ready_to_submit'] ?? false),
             'last_provider' => $state['last_provider'] ?? null,
+            'price_estimate' => $state['price_estimate'] ?? null,
             'brand' => $brand->publicConfig(),
         ];
     }
@@ -104,6 +107,7 @@ class PublicIntakeSessionService
             'provider' => (string) ($final['provider'] ?? 'unknown'),
             'usage' => $final['usage'] ?? null,
             'needs_manual_review' => (bool) ($final['needs_manual_review'] ?? false),
+            'price_estimate' => $final['price_estimate'] ?? null,
         ];
     }
 
@@ -212,7 +216,27 @@ class PublicIntakeSessionService
             'ready_to_submit' => $ready,
             'needs_manual_review' => $needsReview,
             'last_usage' => $usage,
+            'price_estimate' => null,
+            'price_estimate_announced' => (bool) ($state['price_estimate_announced'] ?? false),
         ];
+
+        $estimate = $this->maybeEstimate($brand, $collected);
+        if ($estimate['available'] ?? false) {
+            $session->conversation_state = array_merge($session->conversation_state, [
+                'price_estimate' => $estimate,
+            ]);
+            // Append a brief estimate note once when first available (avoid spam)
+            $alreadyAnnounced = (bool) ($state['price_estimate_announced'] ?? false);
+            if (! $alreadyAnnounced && ! empty($estimate['message'])) {
+                $reply = trim($reply."\n\n".$estimate['message']);
+                $messages[count($messages) - 1]['content'] = $reply;
+                $session->conversation_state = array_merge($session->conversation_state, [
+                    'messages' => $messages,
+                    'price_estimate_announced' => true,
+                ]);
+            }
+        }
+
         $session->expires_at = now()->addHours((int) config('public.intake_session_ttl_hours', 48));
         $session->save();
 
@@ -226,8 +250,58 @@ class PublicIntakeSessionService
             'provider' => $provider,
             'usage' => $usage,
             'needs_manual_review' => $needsReview,
+            'price_estimate' => ($estimate['available'] ?? false) ? $estimate : ($session->conversation_state['price_estimate'] ?? null),
             'expires_at' => $session->expires_at?->toIso8601String(),
         ];
+    }
+
+    /**
+     * Explicit re-estimate from current collected fields.
+     *
+     * @return array<string, mixed>
+     */
+    public function estimate(IntakeSession $session, Brand $brand): array
+    {
+        if ((int) $session->brand_id !== (int) $brand->id) {
+            throw new \RuntimeException('Intake session does not belong to this brand.');
+        }
+
+        $collected = is_array($session->conversation_state['collected'] ?? null)
+            ? $session->conversation_state['collected']
+            : [];
+        $estimate = $this->maybeEstimate($brand, $collected);
+
+        $state = $session->conversation_state ?? [];
+        $session->conversation_state = array_merge($state, [
+            'price_estimate' => ($estimate['available'] ?? false) ? $estimate : null,
+        ]);
+        $session->save();
+
+        return $estimate;
+    }
+
+    /**
+     * @param  array<string, mixed>  $collected
+     * @return array<string, mixed>
+     */
+    private function maybeEstimate(Brand $brand, array $collected): array
+    {
+        if (empty($collected['service_category'])) {
+            return [
+                'available' => false,
+                'message' => null,
+                'calculation' => ['Skipped — no service_category yet'],
+            ];
+        }
+
+        return $this->pricingEstimator->estimate($brand, [
+            'service_category' => $collected['service_category'] ?? null,
+            'size_sqft' => $collected['size_sqft'] ?? null,
+            'complexity' => $collected['complexity'] ?? null,
+            'urgency' => $collected['urgency'] ?? null,
+            'project_description' => $collected['project_description'] ?? null,
+            'address' => $collected['address'] ?? null,
+        ]);
     }
 
     /**

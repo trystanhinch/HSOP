@@ -203,3 +203,15 @@ main {
 .collected {
   word-break: break-word;
 }
+
+.estimate {
+  border: 1px solid #99f6e4;
+  background: #f0fdfa;
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
+}
+
+.estimate strong {
+  display: block;
+  margin-bottom: 0.35rem;
+}

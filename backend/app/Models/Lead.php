@@ -44,6 +44,9 @@ class Lead extends Model
         'contractor_price',
         'contractor_price_submitted_at',
         'contractor_price_notes',
+        'price_estimate_low',
+        'price_estimate_high',
+        'price_estimate_snapshot',
     ];
 
     protected function casts(): array
@@ -52,7 +55,10 @@ class Lead extends Model
             'site_visit_date' => DateOnly::class,
             'contractor_price_submitted_at' => 'datetime',
             'parse_metadata' => 'array',
+            'price_estimate_snapshot' => 'array',
             'needs_manual_review' => 'boolean',
+            'price_estimate_low' => 'float',
+            'price_estimate_high' => 'float',
         ];
     }
 
@@ -89,6 +95,16 @@ class Lead extends Model
     public function photos(): HasMany
     {
         return $this->hasMany(LeadPhoto::class);
+    }
+
+    public function estimateOutcomes(): HasMany
+    {
+        return $this->hasMany(EstimateOutcome::class);
+    }
+
+    public function currentEstimateOutcome(): HasOne
+    {
+        return $this->hasOne(EstimateOutcome::class)->where('is_current', true);
     }
 
     public function job(): HasOne

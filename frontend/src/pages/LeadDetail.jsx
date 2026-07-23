@@ -58,6 +58,9 @@ export default function LeadDetail() {
   const [messageDraft, setMessageDraft] = useState('');
   const [quotePrep, setQuotePrep] = useState(null);
   const [aiBusy, setAiBusy] = useState(false);
+  const [overrideForm, setOverrideForm] = useState({ low: '', high: '', reason: '' });
+  const [savingOverride, setSavingOverride] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
 
   const saveNextAction = async (payload) => {
     setSavingNextAction(true);
@@ -125,6 +128,24 @@ export default function LeadDetail() {
       await showError(err.response?.data?.message || 'Quote prep failed.');
     } finally {
       setAiBusy(false);
+    }
+  };
+
+  const saveEstimateOverride = async () => {
+    setSavingOverride(true);
+    try {
+      const { data } = await api.post(`/leads/${id}/price-estimate-override`, {
+        price_estimate_low: Number(overrideForm.low),
+        price_estimate_high: Number(overrideForm.high),
+        reason: overrideForm.reason || null,
+      });
+      setLead(data.lead);
+      setShowOverride(false);
+      await showSuccess('Estimate override recorded for Learning Centre data.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to save estimate override.');
+    } finally {
+      setSavingOverride(false);
     }
   };
 
@@ -528,6 +549,89 @@ export default function LeadDetail() {
       {isAdminOrPm && !lead.address && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 text-sm text-amber-900">
           <strong>No address on file.</strong> Add the job site address below or via Edit — contractors need it before attending.
+        </div>
+      )}
+
+      {isAdminOrPm && lead.price_estimate_low != null && lead.price_estimate_high != null && (
+        <div className="bg-teal-50 border border-teal-200 rounded-xl p-4 mb-6">
+          <h3 className="font-semibold text-teal-900 mb-1">Public ballpark estimate shown to customer</h3>
+          <p className="text-2xl font-bold text-teal-800">
+            ${Number(lead.price_estimate_low).toLocaleString()} – ${Number(lead.price_estimate_high).toLocaleString()}
+            {' '}{lead.price_estimate_snapshot?.currency || 'CAD'}
+          </p>
+          <p className="text-sm text-teal-800 mt-1">
+            Estimate only — separate from contractor Quote / 80-10-10 pricing.
+          </p>
+          {lead.price_estimate_snapshot?.is_placeholder && (
+            <p className="text-xs text-amber-700 mt-1">Uses placeholder rates pending Trystan review.</p>
+          )}
+          {lead.price_estimate_snapshot?.manual_override && (
+            <p className="text-xs text-slate-600 mt-1">Manually overridden (logged for Learning Centre).</p>
+          )}
+          {lead.price_estimate_snapshot?.message && (
+            <p className="text-xs text-slate-600 mt-2">{lead.price_estimate_snapshot.message}</p>
+          )}
+          {!showOverride ? (
+            <button
+              type="button"
+              onClick={() => {
+                setOverrideForm({
+                  low: String(lead.price_estimate_low ?? ''),
+                  high: String(lead.price_estimate_high ?? ''),
+                  reason: '',
+                });
+                setShowOverride(true);
+              }}
+              className="mt-3 text-sm text-teal-800 underline"
+            >
+              Override estimate range
+            </button>
+          ) : (
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={overrideForm.low}
+                onChange={(e) => setOverrideForm((f) => ({ ...f, low: e.target.value }))}
+                className="border border-teal-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="Low"
+              />
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={overrideForm.high}
+                onChange={(e) => setOverrideForm((f) => ({ ...f, high: e.target.value }))}
+                className="border border-teal-300 rounded-lg px-3 py-2 text-sm"
+                placeholder="High"
+              />
+              <input
+                type="text"
+                value={overrideForm.reason}
+                onChange={(e) => setOverrideForm((f) => ({ ...f, reason: e.target.value }))}
+                className="border border-teal-300 rounded-lg px-3 py-2 text-sm sm:col-span-3"
+                placeholder="Reason (optional)"
+              />
+              <div className="sm:col-span-3 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOverride(false)}
+                  className="border border-slate-300 text-slate-600 rounded-lg px-3 py-2 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={savingOverride}
+                  onClick={saveEstimateOverride}
+                  className="bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-lg px-3 py-2 text-sm"
+                >
+                  {savingOverride ? 'Saving...' : 'Save override'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -45,6 +45,11 @@ class Brand extends Model
         return $this->hasMany(Lead::class);
     }
 
+    public function pricingRules(): HasMany
+    {
+        return $this->hasMany(PricingRule::class);
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';

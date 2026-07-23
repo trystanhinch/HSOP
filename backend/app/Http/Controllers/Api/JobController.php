@@ -541,9 +541,22 @@ class JobController extends Controller
             return response()->json(['message' => 'Job cannot be marked complete in its current status.'], 422);
         }
 
+        $data = $request->validate([
+            'actual_labour_hours' => 'nullable|numeric|min:0|max:9999',
+            'materials_used' => 'nullable|array',
+            'materials_used.*.item' => 'required_with:materials_used|string|max:120',
+            'materials_used.*.qty' => 'nullable|numeric|min:0',
+            'materials_used.*.unit' => 'nullable|string|max:40',
+            'materials_used.*.note' => 'nullable|string|max:255',
+        ]);
+
         $job->update([
             'status' => 'pending_customer_approval',
             'pending_customer_approval_at' => now(),
+            'actual_labour_hours' => $data['actual_labour_hours'] ?? $job->actual_labour_hours,
+            'materials_used' => array_key_exists('materials_used', $data)
+                ? $data['materials_used']
+                : $job->materials_used,
         ]);
 
         $this->timeline->record(

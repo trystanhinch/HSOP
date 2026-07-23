@@ -183,6 +183,10 @@ class MockConversationalAiProvider implements ConversationalAiProviderInterface
             $out['address'] = trim($m[1]);
         }
 
+        if (! isset($out['size_sqft']) && preg_match('/(\d+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sf)\b/i', $text, $m)) {
+            $out['size_sqft'] = (float) $m[1];
+        }
+
         return $out;
     }
 

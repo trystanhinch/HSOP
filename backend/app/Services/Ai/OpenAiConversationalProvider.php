@@ -263,7 +263,8 @@ class OpenAiConversationalProvider implements ConversationalAiProviderInterface
         $serviceLine = $labels !== [] ? implode('; ', $labels) : 'use brand service keys only';
 
         return "Use the update_intake_fields tool whenever the visitor provides or corrects "
-            ."contact_name, phone, email, address, project_description, service_category, or urgency. "
+            ."contact_name, phone, email, address, project_description, service_category, urgency, "
+            ."size_sqft (numeric square footage when known), or complexity (simple|standard|complex). "
             ."service_category must be one of: {$serviceLine}. "
             ."Do not invent contact details. Ask one clear question at a time. "
             ."Already collected JSON: ".json_encode($collected, JSON_UNESCAPED_SLASHES).".";
@@ -298,6 +299,14 @@ class OpenAiConversationalProvider implements ConversationalAiProviderInterface
                             'urgency' => [
                                 'type' => 'string',
                                 'enum' => ['normal', 'high'],
+                            ],
+                            'size_sqft' => [
+                                'type' => 'number',
+                                'description' => 'Approximate project area in square feet when known',
+                            ],
+                            'complexity' => [
+                                'type' => 'string',
+                                'enum' => ['simple', 'standard', 'complex'],
                             ],
                         ],
                         'additionalProperties' => false,
@@ -440,7 +449,7 @@ class OpenAiConversationalProvider implements ConversationalAiProviderInterface
     private function applyFieldUpdates(array $collected, array $args, array $allowedKeys, array $services): array
     {
         $out = $collected;
-        foreach (['contact_name', 'phone', 'email', 'address', 'project_description', 'urgency'] as $key) {
+        foreach (['contact_name', 'phone', 'email', 'address', 'project_description', 'urgency', 'complexity'] as $key) {
             if (! array_key_exists($key, $args)) {
                 continue;
             }
@@ -449,6 +458,13 @@ class OpenAiConversationalProvider implements ConversationalAiProviderInterface
                 continue;
             }
             $out[$key] = $val;
+        }
+
+        if (isset($args['size_sqft']) && is_numeric($args['size_sqft'])) {
+            $sqft = (float) $args['size_sqft'];
+            if ($sqft > 0) {
+                $out['size_sqft'] = $sqft;
+            }
         }
 
         if (! empty($args['service_category'])) {
