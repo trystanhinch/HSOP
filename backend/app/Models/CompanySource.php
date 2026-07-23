@@ -13,6 +13,7 @@ class CompanySource extends Model
         'service_categories',
         'google_review_url',
         'default_pm_id',
+        'default_contractor_ids',
         'sender_identity',
         'lead_parsing_rule',
         'marketing_cost_monthly',
@@ -23,6 +24,7 @@ class CompanySource extends Model
     {
         return [
             'service_categories' => 'array',
+            'default_contractor_ids' => 'array',
             'marketing_cost_monthly' => 'decimal:2',
         ];
     }

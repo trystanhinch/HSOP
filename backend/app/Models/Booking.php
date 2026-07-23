@@ -17,6 +17,9 @@ class Booking extends Model
         'resource_key',
         'pm_id',
         'contractor_id',
+        'auto_matched',
+        'match_rule',
+        'match_meta',
         'service_category',
         'slot_start',
         'slot_end',
@@ -31,6 +34,8 @@ class Booking extends Model
             'slot_start' => 'datetime',
             'slot_end' => 'datetime',
             'confirmed_at' => 'datetime',
+            'auto_matched' => 'boolean',
+            'match_meta' => 'array',
         ];
     }
 

@@ -269,6 +269,31 @@ class BookingService
 
                 $pmId = $hold->pm_id ?? $lead->assigned_pm_id;
                 $contractorId = $hold->contractor_id ?? $lead->site_visit_contractor_id;
+                $matchResult = null;
+                $autoMatched = false;
+                $matchRule = null;
+                $matchMeta = null;
+
+                // Phase 5: thin auto-match when booking has no contractor yet
+                if (! $contractorId) {
+                    $brand = Brand::find($hold->brand_id);
+                    $matchResult = app(ContractorBookingMatcher::class)->matchForLead($lead->fresh(), $brand);
+                    if ($matchResult['matched'] && $matchResult['contractor_user_id']) {
+                        $contractorId = (int) $matchResult['contractor_user_id'];
+                        $autoMatched = true;
+                        $matchRule = $matchResult['rule'];
+                        $matchMeta = array_merge($matchResult['meta'], [
+                            'reason' => $matchResult['reason'],
+                            'eligible_count' => $matchResult['eligible_count'],
+                        ]);
+                    } else {
+                        $matchRule = null;
+                        $matchMeta = array_merge($matchResult['meta'] ?? [], [
+                            'reason' => $matchResult['reason'] ?? 'No match',
+                            'next_action_id' => $matchResult['next_action_id'] ?? null,
+                        ]);
+                    }
+                }
 
                 $customerId = $lead->customer_id ?: $this->customerResolver->resolveForLead($lead->fresh());
                 $lead->refresh();
@@ -278,11 +303,19 @@ class BookingService
                     $lead->refresh();
                 }
 
+                $notesExtra = 'Booked via public intake.';
+                if ($autoMatched && is_array($matchMeta)) {
+                    $notesExtra .= ' Auto-matched contractor ('.$matchRule.'): '.($matchMeta['reason'] ?? '');
+                } elseif (! $contractorId && is_array($matchMeta)) {
+                    $notesExtra .= ' Contractor auto-match deferred: '.($matchMeta['reason'] ?? 'none eligible');
+                }
+
                 $lead->update([
                     'site_visit_date' => $localStart->toDateString(),
                     'site_visit_time' => $localStart->format('H:i'),
                     'site_visit_contractor_id' => $contractorId,
-                    'site_visit_notes' => trim(($lead->site_visit_notes ? $lead->site_visit_notes."\n" : '').'Booked via public intake.'),
+                    'assigned_contractor_id' => $contractorId ?? $lead->assigned_contractor_id,
+                    'site_visit_notes' => trim(($lead->site_visit_notes ? $lead->site_visit_notes."\n" : '').$notesExtra),
                     'status' => 'site_visit_scheduled',
                     'assigned_pm_id' => $pmId ?? $lead->assigned_pm_id,
                 ]);
@@ -295,7 +328,8 @@ class BookingService
                         'customer_id' => $customerId,
                         'visit_date' => $localStart->toDateString(),
                         'visit_time' => $localStart->format('H:i'),
-                        'notes' => 'Confirmed from public intake booking hold.',
+                        'notes' => 'Confirmed from public intake booking hold.'
+                            .($autoMatched ? ' '.$matchRule : ''),
                         'status' => 'scheduled',
                     ]
                 );
@@ -310,6 +344,9 @@ class BookingService
                     'resource_key' => $hold->resource_key,
                     'pm_id' => $pmId,
                     'contractor_id' => $contractorId,
+                    'auto_matched' => $autoMatched,
+                    'match_rule' => $matchRule,
+                    'match_meta' => $matchMeta,
                     'service_category' => $hold->service_category ?? $lead->service_category,
                     'slot_start' => $hold->slot_start,
                     'slot_end' => $hold->slot_end,

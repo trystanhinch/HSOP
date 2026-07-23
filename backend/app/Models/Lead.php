@@ -127,6 +127,11 @@ class Lead extends Model
         return $this->hasOne(SiteVisit::class);
     }
 
+    public function booking(): HasOne
+    {
+        return $this->hasOne(Booking::class)->latestOfMany();
+    }
+
     public function intakeSession(): BelongsTo
     {
         return $this->belongsTo(IntakeSession::class, 'conversation_id');

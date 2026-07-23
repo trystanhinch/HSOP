@@ -148,6 +148,8 @@ class LeadController extends Controller
             'job:id,status',
             'siteVisitContractor:id,name,email,phone',
             'siteVisit',
+            'booking',
+            'booking.contractor:id,name,email,phone',
         ])->findOrFail($id);
 
         if (in_array($user->role, ['owner', 'pm'], true)) {
@@ -254,6 +256,32 @@ class LeadController extends Controller
 
         $lead->update($data);
 
+        // Keep site-visit + booking in sync when PM manually reassigns (Phase 5 override)
+        if (array_key_exists('assigned_contractor_id', $data)) {
+            $contractorId = $data['assigned_contractor_id'] ? (int) $data['assigned_contractor_id'] : null;
+            $lead->update(['site_visit_contractor_id' => $contractorId]);
+            if ($lead->siteVisit) {
+                $lead->siteVisit->update(['contractor_id' => $contractorId]);
+            }
+            $booking = \App\Models\Booking::query()
+                ->where('lead_id', $lead->id)
+                ->where('status', 'confirmed')
+                ->latest('id')
+                ->first();
+            if ($booking) {
+                $meta = is_array($booking->match_meta) ? $booking->match_meta : [];
+                $meta['manual_override_at'] = now()->toIso8601String();
+                $meta['manual_override_by'] = $user->id;
+                $meta['previous_contractor_id'] = $booking->contractor_id;
+                $booking->update([
+                    'contractor_id' => $contractorId,
+                    'auto_matched' => false,
+                    'match_rule' => 'manual_pm_override',
+                    'match_meta' => $meta,
+                ]);
+            }
+        }
+
         AuditLog::create([
             'user_id' => $user->id,
             'user_role' => $user->role,
@@ -268,6 +296,8 @@ class LeadController extends Controller
             'assignedContractor:id,name,email,phone',
             'company:id,name',
             'companySource:id,company_name,sender_identity',
+            'booking',
+            'siteVisitContractor:id,name,email,phone',
         ]));
     }
 

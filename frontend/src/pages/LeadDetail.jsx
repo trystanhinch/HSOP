@@ -817,6 +817,13 @@ export default function LeadDetail() {
             site visit if the job can be quoted over the phone.
           </p>
 
+          {!lead.assigned_contractor && lead.booking?.match_meta?.reason && !lead.booking?.contractor_id && (
+            <div className="mb-3 text-sm bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2">
+              Booking confirmed without an auto-matched contractor. {lead.booking.match_meta.reason}
+              {lead.booking.match_meta.next_action_id ? ' A Next Action was created for PM follow-up.' : ''}
+            </div>
+          )}
+
           {lead.assigned_contractor && !showContractorSelect ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -830,6 +837,20 @@ export default function LeadDetail() {
                   <p className="text-xs text-slate-500">
                     {lead.assigned_contractor.phone || lead.assigned_contractor.email}
                   </p>
+                  {lead.booking?.auto_matched && (
+                    <p className="text-xs text-teal-700 mt-1">
+                      Auto-matched ({lead.booking.match_rule || 'rule'})
+                      {lead.booking.match_meta?.reason ? ` — ${lead.booking.match_meta.reason}` : ''}
+                    </p>
+                  )}
+                  {lead.booking && !lead.booking.auto_matched && lead.booking.match_rule === 'manual_pm_override' && (
+                    <p className="text-xs text-slate-500 mt-1">Manually reassigned by PM (overrides auto-match).</p>
+                  )}
+                  {lead.booking && !lead.booking.contractor_id && lead.booking.match_meta?.reason && (
+                    <p className="text-xs text-amber-700 mt-1">
+                      Auto-match pending: {lead.booking.match_meta.reason}
+                    </p>
+                  )}
                 </div>
               </div>
               <button

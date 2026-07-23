@@ -96,6 +96,31 @@ class Milestone4Seeder extends Seeder
             ]
         );
 
+        // Phase 5: seed contractor pool from approved contractors that list drywall/paint/insulation.
+        // Does not create users — only links existing Demo/local contractors when present.
+        if (\Illuminate\Support\Facades\Schema::hasColumn('company_sources', 'default_contractor_ids')) {
+            $pool = \App\Models\Contractor::query()
+                ->where('approval_status', 'approved')
+                ->whereHas('user', fn ($q) => $q->where('role', 'contractor')->where('status', 'active'))
+                ->get()
+                ->filter(function ($c) {
+                    $services = collect($c->services ?? [])->map(fn ($s) => strtolower((string) $s))->implode(' ');
+                    return $services === ''
+                        || str_contains($services, 'drywall')
+                        || str_contains($services, 'paint')
+                        || str_contains($services, 'insulation');
+                })
+                ->pluck('user_id')
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values()
+                ->all();
+
+            if ($pool !== []) {
+                $acuteraSource->update(['default_contractor_ids' => $pool]);
+            }
+        }
+
         \App\Models\Brand::updateOrCreate(
             ['domain' => 'acuteradrywall.ca'],
             [

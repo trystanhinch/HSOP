@@ -60,6 +60,8 @@ class CompanySourceController extends Controller
             'service_categories.*' => 'string|max:100',
             'google_review_url' => 'nullable|url|max:500',
             'default_pm_id' => 'nullable|exists:users,id',
+            'default_contractor_ids' => 'nullable|array',
+            'default_contractor_ids.*' => 'integer|exists:users,id',
             'sender_identity' => 'nullable|string|max:255',
             'lead_parsing_rule' => 'nullable|string',
             'marketing_cost_monthly' => 'nullable|numeric|min:0',
