@@ -13,12 +13,14 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
         then: function () {
             Route::group([], base_path('routes/deploy.php'));
+            Route::group([], base_path('routes/public.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
+            'public.brand' => \App\Http\Middleware\ResolvePublicBrand::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

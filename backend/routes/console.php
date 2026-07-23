@@ -29,3 +29,7 @@ Schedule::command('payouts:process-scheduled')
     ->hourly()
     ->withoutOverlapping()
     ->when(fn () => config('payment.provider') === 'stripe');
+
+Schedule::command('intake:cleanup-sessions')
+    ->hourly()
+    ->withoutOverlapping();

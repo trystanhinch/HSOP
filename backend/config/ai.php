@@ -15,6 +15,12 @@ return [
         'openai' => \App\Services\Ai\OpenAiProvider::class,
     ],
 
+    // Sibling conversational contract (public intake chat). Phase 1: mock only.
+    'conversational_provider' => env('AI_CONVERSATIONAL_PROVIDER', 'mock'),
+    'conversational_providers' => [
+        'mock' => \App\Services\Ai\MockConversationalAiProvider::class,
+    ],
+
     'openai' => [
         'api_key' => env('OPENAI_API_KEY'),
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),

@@ -16,6 +16,7 @@ class Lead extends Model
     protected $fillable = [
         'company_id',
         'company_source_id',
+        'brand_id',
         'customer_id',
         'contact_name',
         'phone',
@@ -23,6 +24,8 @@ class Lead extends Model
         'address',
         'service_category',
         'source',
+        'intake_channel',
+        'conversation_id',
         'company_listing',
         'notes',
         'raw_email_copy',
@@ -63,6 +66,11 @@ class Lead extends Model
         return $this->belongsTo(CompanySource::class);
     }
 
+    public function brand(): BelongsTo
+    {
+        return $this->belongsTo(Brand::class);
+    }
+
     public function customer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'customer_id');
@@ -101,5 +109,10 @@ class Lead extends Model
     public function siteVisit(): HasOne
     {
         return $this->hasOne(SiteVisit::class);
+    }
+
+    public function intakeSession(): BelongsTo
+    {
+        return $this->belongsTo(IntakeSession::class, 'conversation_id');
     }
 }

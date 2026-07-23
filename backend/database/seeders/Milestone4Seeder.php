@@ -76,5 +76,60 @@ class Milestone4Seeder extends Seeder
                 'status' => 'active',
             ]
         );
+
+        $this->seedPublicBrands($adminId);
+    }
+
+    private function seedPublicBrands(?int $adminId): void
+    {
+        // Dedicated ops listing for the public Acutera brand (reversible if Trystan
+        // later confirms Acutera should merge into Fraser Valley Drywall).
+        $acuteraSource = CompanySource::updateOrCreate(
+            ['company_name' => 'Acutera Drywall & Paint'],
+            [
+                'sender_identity' => 'Acutera Drywall & Paint',
+                'service_categories' => ['Drywall', 'Painting', 'Insulation'],
+                'default_pm_id' => $adminId, // same owner PM as FVD until a brand PM is assigned
+                'domain' => null,
+                'google_review_url' => null,
+                'status' => 'active',
+            ]
+        );
+
+        \App\Models\Brand::updateOrCreate(
+            ['domain' => 'acuteradrywall.ca'],
+            [
+                'slug' => 'acutera-drywall',
+                'company_name' => 'Acutera Drywall & Paint',
+                'company_source_id' => $acuteraSource->id,
+                'service_categories' => [
+                    [
+                        'key' => 'drywall_paint',
+                        'label' => 'Drywall & Paint',
+                        'keywords' => ['drywall', 'paint', 'mudding', 'taping', 'ceiling'],
+                    ],
+                    [
+                        'key' => 'insulation',
+                        'label' => 'Insulation',
+                        'keywords' => ['insulation', 'attic', 'batt', 'spray foam'],
+                    ],
+                ],
+                'branding' => [
+                    'tone' => 'friendly, professional, and concise',
+                    'primary_color' => null,
+                    'logo_url' => null,
+                ],
+                'contact_info' => [
+                    'email' => null,
+                    'phone' => null,
+                ],
+                'seo_defaults' => [
+                    'title_template' => '{{company_name}} | Home Services',
+                    'description' => null,
+                    'og_image' => null,
+                ],
+                'status' => 'active',
+            ]
+        );
     }
 }

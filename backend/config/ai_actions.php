@@ -13,6 +13,7 @@ return [
         'reviews',
         'escalations',
         'command_center',
+        'public_intake',
     ],
 
     'default_mode' => 'suggestion',
