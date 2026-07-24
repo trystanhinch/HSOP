@@ -30,7 +30,11 @@ export default function Settings() {
   const [roleFilter, setRoleFilter] = useState('all');
   const [saving, setSaving] = useState(false);
   const [aiSettings, setAiSettings] = useState(null);
-  const [aiForm, setAiForm] = useState({ ai_kill_switch: false, module_modes: {} });
+  const [aiForm, setAiForm] = useState({
+    ai_kill_switch: false,
+    ai_conversation_retention_days: 365,
+    module_modes: {},
+  });
   const [aiSaving, setAiSaving] = useState(false);
   const [gmailStatus, setGmailStatus] = useState(null);
   const [gmailBusy, setGmailBusy] = useState(false);
@@ -82,6 +86,7 @@ export default function Settings() {
         setAiSettings(data);
         setAiForm({
           ai_kill_switch: data.ai_kill_switch ?? false,
+          ai_conversation_retention_days: data.ai_conversation_retention_days ?? 365,
           module_modes: data.module_modes || {},
         });
       }).catch(() => setAiSettings(null));
@@ -281,7 +286,7 @@ export default function Settings() {
 
   const saveAiSettings = async (e) => {
     e.preventDefault();
-    const ok = await confirmAction({ title: 'Save AI settings?', text: 'Update AI kill switch and module modes?', confirmText: 'Yes, save' });
+    const ok = await confirmAction({ title: 'Save AI settings?', text: 'Update AI kill switch, retention, and module modes?', confirmText: 'Yes, save' });
     if (!ok) return;
     setAiSaving(true);
     try {
@@ -289,7 +294,11 @@ export default function Settings() {
       await showSuccess('AI settings saved.');
       api.get('/ai/settings').then(({ data }) => {
         setAiSettings(data);
-        setAiForm({ ai_kill_switch: data.ai_kill_switch ?? false, module_modes: data.module_modes || {} });
+        setAiForm({
+          ai_kill_switch: data.ai_kill_switch ?? false,
+          ai_conversation_retention_days: data.ai_conversation_retention_days ?? 365,
+          module_modes: data.module_modes || {},
+        });
       });
     } catch (err) {
       await showError(err.response?.data?.message || 'Failed to save AI settings.');
@@ -740,6 +749,25 @@ export default function Settings() {
                 onChange={(e) => setAiForm({ ...aiForm, ai_kill_switch: e.target.checked })}
                 className="rounded border-slate-300" />
               <span><strong>AI Kill Switch</strong> — when on, all AI operations are paused</span>
+            </label>
+            <label className="block text-sm space-y-1">
+              <span className="font-medium text-slate-700">AI conversation log retention (days)</span>
+              <input
+                type="number"
+                min={1}
+                max={3650}
+                value={aiForm.ai_conversation_retention_days ?? 365}
+                onChange={(e) => setAiForm({
+                  ...aiForm,
+                  ai_conversation_retention_days: Number(e.target.value) || 365,
+                })}
+                className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm w-40"
+              />
+              <p className="text-xs text-slate-500">
+                Full chat transcripts in <code>ai_conversation_logs</code> are purged after this many days
+                (default {aiSettings?.ai_conversation_retention_default ?? 365}). Owner-only; not exposed on the public API.
+                Cold-storage archive is not built yet — purge is the practical default.
+              </p>
             </label>
             <div className="space-y-3">
               <p className="text-sm font-medium text-slate-700">Per-module operating mode</p>

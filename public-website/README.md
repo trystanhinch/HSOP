@@ -12,13 +12,18 @@ copy is hardcoded in components.
 4. Laravel resolves `localhost` → `PUBLIC_LOCAL_DEFAULT_BRAND_DOMAIN`
    (default `acuteradrywall.ca`). Override with `BRAND_DOMAIN=…`.
 
-## Deploy later (outline only — not built in Phase 2)
+## Deploy (DigitalOcean App Platform) — Phase 6 plan
 
-New DigitalOcean App Platform **Node.js** component:
-- Root directory: `public-website`
-- Build: `npm ci && npm run build`
-- Run: `npm run start` (or `next start`)
-- Env: `API_URL` / `NEXT_PUBLIC_API_URL` → Laravel API URL
-- Domains: attach each brand domain (or wildcard) to this component;
-  Laravel `brands.domain` + CORS already drive tenancy
-- Do **not** merge into the existing Vite admin SPA component
+See also: `../docs/MILESTONE5_PHASE6_LAUNCH.md`.
+
+New **Node.js** App Platform component (separate from the Vite admin SPA):
+
+| | |
+|---|---|
+| Root | `public-website` |
+| Build | `npm ci && npm run build` |
+| Run | `npm run start` |
+| Env | `API_URL`, `NEXT_PUBLIC_API_URL` → Laravel API URL |
+| Domains | Attach each brand domain; Laravel `brands.domain` + CORS drive tenancy |
+
+Do **not** execute production cutover until Trystan confirms real pricing rates and DNS is ready.

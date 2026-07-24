@@ -47,7 +47,7 @@ class LearningSnapshotController extends Controller
         $data = $request->validate([
             'price_estimate_low' => 'required|numeric|min:0',
             'price_estimate_high' => 'required|numeric|gte:price_estimate_low',
-            'reason' => 'nullable|string|max:500',
+            'reason' => 'nullable|string|max:5000',
         ]);
 
         $before = [

@@ -28,6 +28,8 @@ class AiSettingsController extends Controller
 
         return response()->json([
             'ai_kill_switch' => Setting::getBool('ai_kill_switch', false),
+            'ai_conversation_retention_days' => \App\Services\Learning\AiConversationLogger::retentionDays(),
+            'ai_conversation_retention_default' => \App\Services\Learning\AiConversationLogger::DEFAULT_RETENTION_DAYS,
             'module_modes' => $modes,
             'available_modes' => config('ai_actions.modes', []),
             'modules' => $modules,
@@ -43,6 +45,7 @@ class AiSettingsController extends Controller
     {
         $data = $request->validate([
             'ai_kill_switch' => 'nullable|boolean',
+            'ai_conversation_retention_days' => 'nullable|integer|min:1|max:3650',
             'module_modes' => 'nullable|array',
             'module_modes.*' => 'in:suggestion,assisted,autopilot',
         ]);
@@ -50,6 +53,14 @@ class AiSettingsController extends Controller
         if (array_key_exists('ai_kill_switch', $data)) {
             $this->authorizer->assertOwnerOnly($request->user(), 'change_ai_kill_switch');
             Setting::setBool('ai_kill_switch', (bool) $data['ai_kill_switch']);
+        }
+
+        if (array_key_exists('ai_conversation_retention_days', $data) && $data['ai_conversation_retention_days'] !== null) {
+            $this->authorizer->assertOwnerOnly($request->user(), 'change_ai_kill_switch');
+            Setting::set(
+                \App\Services\Learning\AiConversationLogger::RETENTION_SETTING,
+                (string) (int) $data['ai_conversation_retention_days']
+            );
         }
 
         if (! empty($data['module_modes'])) {
@@ -62,6 +73,20 @@ class AiSettingsController extends Controller
         }
 
         return response()->json(['message' => 'AI settings updated']);
+    }
+
+    public function conversationLogs(Request $request): JsonResponse
+    {
+        $logs = \App\Models\AiConversationLog::query()
+            ->when($request->lead_id, fn ($q) => $q->where('lead_id', (int) $request->lead_id))
+            ->when($request->intake_session_id, fn ($q) => $q->where('intake_session_id', $request->intake_session_id))
+            ->when($request->date_from, fn ($q) => $q->whereDate('created_at', '>=', $request->date_from))
+            ->when($request->date_to, fn ($q) => $q->whereDate('created_at', '<=', $request->date_to))
+            ->orderBy('intake_session_id')
+            ->orderBy('turn_number')
+            ->paginate((int) ($request->per_page ?? 50));
+
+        return response()->json($logs);
     }
 
     public function actionLogs(Request $request): JsonResponse

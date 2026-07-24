@@ -36,7 +36,7 @@ return new class extends Migration
                 $table->string('override_kind', 60); // rule_edit | estimate_manual_adjust
                 $table->json('before_json')->nullable();
                 $table->json('after_json')->nullable();
-                $table->string('reason')->nullable();
+                $table->text('reason')->nullable();
                 $table->timestamps();
 
                 $table->index(['subject_type', 'subject_id']);

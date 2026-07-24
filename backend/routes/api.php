@@ -243,6 +243,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/ai/action-logs', [AiSettingsController::class, 'actionLogs']);
         Route::get('/ai/action-logs/filters', [AiSettingsController::class, 'actionLogFilters']);
         Route::post('/ai/action-logs/test', [AiSettingsController::class, 'storeTestLog']);
+        Route::get('/ai/conversation-logs', [AiSettingsController::class, 'conversationLogs']);
 
         Route::get('/oauth/gmail/status', [GmailOAuthController::class, 'status']);
         Route::get('/oauth/gmail/initiate', [GmailOAuthController::class, 'initiate']);

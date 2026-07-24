@@ -28,6 +28,7 @@ use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use App\Services\UploadStorage;
 use App\Services\ActivityTimelineService;
+use App\Services\Learning\ContractorPerformanceRecorder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,6 +48,7 @@ class JobController extends Controller
         protected EmailService $email,
         protected UploadStorage $uploads,
         protected ActivityTimelineService $timeline,
+        protected ContractorPerformanceRecorder $performance,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -383,6 +385,7 @@ class JobController extends Controller
         ]);
 
         $this->notifications->contractorAssigned($job->fresh(), $contractor);
+        $this->performance->onContractorAssigned($job->fresh());
 
         return response()->json(['message' => 'Contractor assigned']);
     }
@@ -413,6 +416,7 @@ class JobController extends Controller
         ]);
 
         $this->notifications->jobScheduled($job->fresh(), $wasScheduled);
+        $this->performance->onJobScheduled($job->fresh());
 
         return response()->json(['message' => 'Job scheduled', 'job' => $job->fresh()]);
     }
@@ -450,6 +454,7 @@ class JobController extends Controller
         ]);
 
         $this->notifications->priceSubmitted($job->fresh());
+        $this->performance->onContractorFirstAction($job->fresh(), 'submit_price');
 
         AuditLog::create([
             'user_id' => $user->id,
@@ -611,6 +616,8 @@ class JobController extends Controller
             'action_type' => 'contractor_marked_complete',
         ]);
 
+        $this->performance->onContractorComplete($job->fresh());
+
         return response()->json(['message' => 'Job marked complete, customer notified for review']);
     }
 
@@ -639,6 +646,7 @@ class JobController extends Controller
 
         $this->ensureInvoiceForJob($job);
         $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
+        $this->performance->onCompletionAccepted($job->fresh(['invoice', 'quote']));
 
         $paymentUrl = rtrim(config('app.frontend_url', 'http://localhost:5173'), '/').'/payment/'.$job->id;
 
@@ -689,6 +697,7 @@ class JobController extends Controller
         ]);
 
         $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
+        $this->performance->onRevisionRequested($job->fresh(), $revision);
         $this->timeline->record(
             $job,
             'revision_requested',

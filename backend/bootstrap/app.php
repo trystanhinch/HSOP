@@ -18,11 +18,16 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->trustProxies(at: '*');
+        // Before HandleCors so brand domains are in the allowlist for the same request
+        $middleware->prepend(\App\Http\Middleware\RefreshBrandCorsOrigins::class);
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
             'public.brand' => \App\Http\Middleware\ResolvePublicBrand::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Public + API routes must never HTML-redirect on validation errors
+        $exceptions->shouldRenderJsonWhen(function (\Illuminate\Http\Request $request, \Throwable $e) {
+            return $request->is('api/*') || $request->expectsJson();
+        });
     })->create();

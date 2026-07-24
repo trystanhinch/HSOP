@@ -9,6 +9,7 @@ use App\Models\JobUpdatePhoto;
 use App\Services\JobNotificationService;
 use App\Services\UploadStorage;
 use App\Services\ActivityTimelineService;
+use App\Services\Learning\ContractorPerformanceRecorder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -25,6 +26,7 @@ class JobUpdateController extends Controller
         protected JobNotificationService $notifications,
         protected UploadStorage $uploads,
         protected ActivityTimelineService $timeline,
+        protected ContractorPerformanceRecorder $performance,
     ) {}
 
     public function index(Request $request, string $jobId): JsonResponse
@@ -127,8 +129,15 @@ class JobUpdateController extends Controller
 
             if (in_array($job->status, ['scheduled', 'contractor_assigned', 'created', 'waiting_to_schedule'], true)) {
                 $job->update(['status' => 'in_progress']);
+                $this->performance->onJobStarted($job->fresh());
+                if ($user->role === 'contractor') {
+                    $this->performance->onContractorFirstAction($job->fresh(), 'progress_update');
+                }
             } elseif (in_array($job->status, ['in_progress', 'progress_updated', 'update_posted'], true)) {
                 $job->update(['status' => 'progress_updated']);
+                if ($user->role === 'contractor') {
+                    $this->performance->onContractorFirstAction($job->fresh(), 'progress_update');
+                }
             }
 
             $this->timeline->record(

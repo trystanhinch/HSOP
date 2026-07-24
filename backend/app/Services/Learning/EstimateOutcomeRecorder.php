@@ -105,6 +105,8 @@ class EstimateOutcomeRecorder
                 'supersedes_id' => $previous?->id,
                 'reason' => $meta['reason'] ?? null,
                 'embedding_vector' => null,
+                // Intentionally null: Trystan held off on weather API; column reserved for future env data.
+                'environmental_context' => null,
             ]);
 
             // Lead columns remain the "current pointer" for existing UI — history lives in estimate_outcomes

@@ -158,6 +158,9 @@ class ReviewRequestService
                 'required_human_approval' => ! $isFiveStar,
             ]);
 
+            app(\App\Services\Learning\ContractorPerformanceRecorder::class)
+                ->onCustomerRating($feedback->fresh());
+
             return $feedback->fresh();
         });
     }

@@ -53,7 +53,16 @@ class PublicIntakeController extends Controller
         }
 
         return $this->withIntakeCookie(
-            response()->json($this->sessions->resumePayload($session, $brand)),
+            response()->json(array_merge(
+                $this->sessions->resumePayload($session, $brand),
+                [
+                    'price_estimate' => $this->publicPriceEstimate(
+                        is_array($session->conversation_state['price_estimate'] ?? null)
+                            ? $session->conversation_state['price_estimate']
+                            : null
+                    ),
+                ]
+            )),
             $session->session_token,
             $brand
         );
@@ -97,9 +106,10 @@ class PublicIntakeController extends Controller
                 'ready_to_submit' => $result['ready_to_submit'],
                 'collected' => $result['collected'],
                 'provider' => $result['provider'],
-                'usage' => $result['usage'] ?? null,
                 'needs_manual_review' => $result['needs_manual_review'] ?? false,
-                'price_estimate' => $result['price_estimate'] ?? null,
+                'price_estimate' => $this->publicPriceEstimate(
+                    is_array($result['price_estimate'] ?? null) ? $result['price_estimate'] : null
+                ),
                 'expires_at' => $result['session']->expires_at?->toIso8601String(),
             ]), $result['session']->session_token, $brand);
         }
@@ -131,7 +141,7 @@ class PublicIntakeController extends Controller
 
         return response()->json([
             'session_id' => $session->id,
-            'price_estimate' => $estimate,
+            'price_estimate' => $this->publicPriceEstimate(is_array($estimate) ? $estimate : null),
         ]);
     }
 
@@ -227,16 +237,19 @@ class PublicIntakeController extends Controller
             'source' => $result->lead?->source,
             'company_source_id' => $result->companySourceId,
             'needs_manual_review' => $result->lead?->needs_manual_review,
-            'parse_metadata' => $result->lead?->parse_metadata,
+            // Never expose full parse_metadata (transcripts, AI usage, internal flags) on public API
             'price_estimate_low' => $result->lead?->price_estimate_low,
             'price_estimate_high' => $result->lead?->price_estimate_high,
-            'price_estimate' => $result->lead?->price_estimate_snapshot,
+            'price_estimate' => $this->publicPriceEstimate($result->lead?->price_estimate_snapshot),
             'booking' => $result->notifications['booking_id'] ?? null
                 ? [
                     'id' => $result->notifications['booking_id'],
                     'confirmed' => true,
                     'site_visit_date' => $result->lead?->site_visit_date,
                     'site_visit_time' => $result->lead?->site_visit_time,
+                    // Customer-facing: booking succeeded even if contractor match is pending PM
+                    'status' => 'confirmed',
+                    'message' => 'Your site visit request is confirmed. Our team will follow up shortly.',
                 ]
                 : null,
             'photos' => $result->lead?->photos?->map(fn ($p) => [
@@ -271,12 +284,26 @@ class PublicIntakeController extends Controller
             try {
                 foreach ($sessions->streamMessage($session, $brand, $message) as $payload) {
                     $event = (string) ($payload['event'] ?? 'message');
+                    if ($event === 'done') {
+                        unset($payload['usage'], $payload['tool_calls'], $payload['tool_results'], $payload['ai_model']);
+                        if (isset($payload['price_estimate']) && is_array($payload['price_estimate'])) {
+                            $payload['price_estimate'] = $this->publicPriceEstimate($payload['price_estimate']);
+                        }
+                    }
+                    if ($event === 'error') {
+                        $payload = [
+                            'event' => 'error',
+                            'message' => 'Something went wrong. Please try again or submit what you have.',
+                            'needs_manual_review' => true,
+                        ];
+                    }
                     $send($event, $payload);
                 }
             } catch (\Throwable $e) {
+                report($e);
                 $send('error', [
                     'event' => 'error',
-                    'message' => $e->getMessage(),
+                    'message' => 'Something went wrong. Please try again or submit what you have.',
                     'needs_manual_review' => true,
                 ]);
             }
@@ -332,5 +359,30 @@ class PublicIntakeController extends Controller
         $response->headers->set('X-Resolved-Brand', $brand->slug);
 
         return $response;
+    }
+
+    /**
+     * Customer-safe estimate fields only (no internal calculation/rule cost logs).
+     *
+     * @param  array<string, mixed>|null  $snapshot
+     * @return array<string, mixed>|null
+     */
+    private function publicPriceEstimate(?array $snapshot): ?array
+    {
+        if (! is_array($snapshot)) {
+            return null;
+        }
+
+        return array_filter([
+            'available' => $snapshot['available'] ?? null,
+            'low' => $snapshot['low'] ?? null,
+            'high' => $snapshot['high'] ?? null,
+            'currency' => $snapshot['currency'] ?? null,
+            'disclaimer' => $snapshot['disclaimer'] ?? null,
+            'message' => $snapshot['message'] ?? null,
+            'is_placeholder' => $snapshot['is_placeholder'] ?? null,
+            'widened' => $snapshot['widened'] ?? null,
+            'confidence' => $snapshot['confidence'] ?? null,
+        ], fn ($v) => $v !== null);
     }
 }

@@ -178,6 +178,9 @@ class PublicIntakePipeline
 
         $session->update(['converted_lead_id' => $lead->id]);
 
+        app(\App\Services\Learning\AiConversationLogger::class)
+            ->linkSessionToLead($session->fresh(), (int) $lead->id);
+
         $booking = null;
         $holdToken = $session->conversation_state['booking_hold_token'] ?? null;
         if (is_string($holdToken) && $holdToken !== '') {

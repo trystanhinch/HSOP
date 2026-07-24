@@ -7,7 +7,10 @@ use App\Models\CompanySource;
 use App\Models\EstimateOutcome;
 use App\Models\Invoice;
 use App\Models\Job;
+use App\Models\JobUpdate;
+use App\Models\JobUpdatePhoto;
 use App\Models\Lead;
+use App\Models\LeadPhoto;
 use App\Models\PricingOverrideLog;
 use App\Models\PricingRule;
 use App\Models\Quote;
@@ -178,6 +181,26 @@ class LearningDataFoundationTest extends TestCase
             'due_date' => now()->toDateString(),
         ]);
 
+        LeadPhoto::create([
+            'lead_id' => $lead->id,
+            'file_url' => 'https://example.test/before.jpg',
+            'uploaded_by' => $pm->id,
+        ]);
+
+        $update = JobUpdate::create([
+            'job_id' => $job->id,
+            'posted_by' => $contractor->id,
+            'poster_role' => 'contractor',
+            'update_text' => 'After photos',
+            'visibility' => 'customer_visible',
+        ]);
+        JobUpdatePhoto::create([
+            'job_update_id' => $update->id,
+            'file_name' => 'after.jpg',
+            'file_url' => 'https://example.test/after.jpg',
+            'file_size' => '12kb',
+        ]);
+
         RevisionRequest::create([
             'job_id' => $job->id,
             'requested_by' => $customer->id,
@@ -232,6 +255,13 @@ class LearningDataFoundationTest extends TestCase
         $this->assertCount(2, $snapshot['materials_used_actual']);
         $this->assertNotEmpty($snapshot['owner_overrides']);
         $this->assertSame('estimate_manual_adjust', $snapshot['owner_overrides'][0]['override_kind']);
+        $this->assertSame('PM adjusted after site photos', $snapshot['owner_overrides'][0]['reason']);
+
+        // Before/after photo timestamps (standard Laravel created_at)
+        $this->assertNotEmpty($snapshot['intake']['lead_photos']);
+        $this->assertNotNull($snapshot['intake']['lead_photos'][0]['created_at']);
+        $this->assertNotEmpty($snapshot['job_photos']);
+        $this->assertNotNull($snapshot['job_photos'][0]['created_at']);
 
         // Addendum: versioned outcomes + model/confidence/category/embedding reserved
         $this->assertNotEmpty($snapshot['estimate']['versions']);
@@ -416,6 +446,7 @@ class LearningDataFoundationTest extends TestCase
             PricingOverrideLog::where('subject_type', 'pricing_rule')
                 ->where('subject_id', $rule->id)
                 ->where('override_kind', 'rule_edit')
+                ->where('reason', 'Trystan rate review')
                 ->exists()
         );
     }

@@ -2,6 +2,8 @@
 
 namespace App\Services\Learning;
 
+use App\Models\AiConversationLog;
+use App\Models\ContractorPerformanceEvent;
 use App\Models\EstimateOutcome;
 use App\Models\Invoice;
 use App\Models\Job;
@@ -131,6 +133,9 @@ class JobEstimateSnapshotService
                         'job_update_id' => $update->id,
                         'file_url' => $photo->file_url,
                         'file_name' => $photo->file_name,
+                        // Capture timestamp for before/after Learning Centre sequencing
+                        'created_at' => optional($photo->created_at)?->toIso8601String(),
+                        'job_update_created_at' => optional($update->created_at)?->toIso8601String(),
                     ];
                 }
             }
@@ -156,6 +161,7 @@ class JobEstimateSnapshotService
                 'lead_photos' => ($lead?->photos ?? collect())->map(fn ($p) => [
                     'id' => $p->id,
                     'file_url' => $p->file_url,
+                    'created_at' => optional($p->created_at)?->toIso8601String(),
                 ])->values()->all(),
             ],
 
@@ -177,6 +183,8 @@ class JobEstimateSnapshotService
                 'estimator_engine' => $currentOutcome?->estimator_engine,
                 'estimated_at' => optional($currentOutcome?->estimated_at)?->toIso8601String(),
                 'embedding_vector' => $currentOutcome?->embedding_vector, // reserved; always null in M5
+                // Reserved for future weather/env data — intentionally unpopulated (no weather API yet).
+                'environmental_context' => $currentOutcome?->environmental_context,
                 'snapshot' => $estimate,
                 'materials_assumptions' => $currentOutcome?->materials_assumptions
                     ?? (is_array($estimate) ? ($estimate['materials_assumptions'] ?? null) : null),
@@ -274,6 +282,40 @@ class JobEstimateSnapshotService
                 'after' => $o->after_json,
                 'created_at' => optional($o->created_at)?->toIso8601String(),
             ])->values()->all(),
+
+            'ai_conversation_logs' => $lead
+                ? AiConversationLog::query()
+                    ->where('lead_id', $lead->id)
+                    ->orderBy('turn_number')
+                    ->get(['id', 'intake_session_id', 'turn_number', 'role', 'content', 'tool_calls', 'tool_results', 'ai_provider', 'ai_model', 'created_at'])
+                    ->map(fn ($row) => [
+                        'id' => $row->id,
+                        'intake_session_id' => $row->intake_session_id,
+                        'turn_number' => $row->turn_number,
+                        'role' => $row->role,
+                        'content' => $row->content,
+                        'tool_calls' => $row->tool_calls,
+                        'tool_results' => $row->tool_results,
+                        'ai_provider' => $row->ai_provider,
+                        'ai_model' => $row->ai_model,
+                        'created_at' => optional($row->created_at)?->toIso8601String(),
+                    ])->values()->all()
+                : [],
+
+            'contractor_performance_events' => ($job?->contractor_id || $lead?->id)
+                ? ContractorPerformanceEvent::query()
+                    ->when($job?->id, fn ($q) => $q->where('job_id', $job->id))
+                    ->when(! $job?->id && $lead?->id, fn ($q) => $q->where('lead_id', $lead->id))
+                    ->orderBy('occurred_at')
+                    ->get()
+                    ->map(fn ($e) => [
+                        'id' => $e->id,
+                        'contractor_id' => $e->contractor_id,
+                        'event_type' => $e->event_type,
+                        'event_data' => $e->event_data,
+                        'occurred_at' => optional($e->occurred_at)?->toIso8601String(),
+                    ])->values()->all()
+                : [],
 
             'job' => $job ? [
                 'id' => $job->id,

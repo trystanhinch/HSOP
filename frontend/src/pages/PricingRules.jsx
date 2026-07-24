@@ -17,6 +17,7 @@ const emptyForm = {
   status: 'active',
   is_placeholder: true,
   notes: '',
+  override_reason: '',
   low_rate: '',
   high_rate: '',
   default_low_sqft: '',
@@ -76,6 +77,7 @@ export default function PricingRules() {
       status: rule.status || 'active',
       is_placeholder: Boolean(rule.is_placeholder),
       notes: rule.notes || '',
+      override_reason: '',
       low_rate: tiers.low_rate ?? '',
       high_rate: tiers.high_rate ?? '',
       default_low_sqft: tiers.default_low_sqft ?? '',
@@ -100,6 +102,11 @@ export default function PricingRules() {
     status: form.status,
     is_placeholder: Boolean(form.is_placeholder),
     notes: form.notes || null,
+    ...(editing && form.override_reason.trim()
+      ? { override_reason: form.override_reason.trim() }
+      : editing
+        ? { override_reason: null }
+        : {}),
     size_tiers: {
       low_rate: form.low_rate === '' ? undefined : Number(form.low_rate),
       high_rate: form.high_rate === '' ? undefined : Number(form.high_rate),
@@ -342,6 +349,19 @@ export default function PricingRules() {
             <textarea className="mt-1 w-full border rounded-lg px-3 py-2" rows={3}
               value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
           </label>
+
+          {editing && (
+            <label className="block text-sm">
+              <span className="text-slate-600">Why are you changing this rule?</span>
+              <textarea
+                className="mt-1 w-full border rounded-lg px-3 py-2"
+                rows={2}
+                value={form.override_reason}
+                onChange={(e) => setForm({ ...form, override_reason: e.target.value })}
+                placeholder="Optional — logged for Learning Centre (e.g. Trystan rate update)"
+              />
+            </label>
+          )}
 
           <div className="rounded-lg border border-slate-200 p-3 space-y-2 bg-slate-50">
             <div className="text-sm font-medium text-slate-700 flex items-center gap-2">

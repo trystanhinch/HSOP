@@ -7,6 +7,7 @@ use App\Models\Brand;
 use App\Models\IntakeSession;
 use App\Services\Brands\BrandPromptTemplate;
 use App\Services\LeadIntake\PublicIntakePipeline;
+use App\Services\Learning\AiConversationLogger;
 use App\Services\Pricing\PricingRangeEstimator;
 use App\Services\UploadStorage;
 use Illuminate\Http\UploadedFile;
@@ -24,6 +25,7 @@ class PublicIntakeSessionService
         private PublicIntakePipeline $pipeline,
         private UploadStorage $uploads,
         private PricingRangeEstimator $pricingEstimator,
+        private AiConversationLogger $conversationLogger,
     ) {}
 
     public function start(Brand $brand): IntakeSession
@@ -145,6 +147,29 @@ class PublicIntakeSessionService
         $session->expires_at = now()->addHours((int) config('public.intake_session_ttl_hours', 48));
         $session->save();
 
+        $turnBase = count($messages);
+        $this->conversationLogger->queueTurn($session, [
+            'turn_number' => $turnBase,
+            'role' => 'user',
+            'content' => $content,
+        ]);
+
+        // Log system prompt once per session (first user turn) for full reconstructability
+        if ($turnBase === 1) {
+            $promptVarsEarly = $brand->promptVariables();
+            $systemEarly = BrandPromptTemplate::render(
+                (string) config('public.conversational_system_prompt'),
+                $promptVarsEarly
+            );
+            $this->conversationLogger->queueTurn($session, [
+                'turn_number' => 0,
+                'role' => 'system',
+                'content' => $systemEarly,
+                'ai_provider' => config('ai.conversational_provider'),
+                'ai_model' => config('ai.openai.model'),
+            ]);
+        }
+
         yield [
             'event' => 'session',
             'session_id' => $session->id,
@@ -163,6 +188,9 @@ class PublicIntakeSessionService
         $usage = null;
         $needsReview = false;
         $ready = false;
+        $toolCalls = null;
+        $toolResults = null;
+        $aiModel = null;
 
         foreach ($this->conversationalAi->streamRespond($messages, $collected, [
             'brand_id' => $brand->id,
@@ -193,6 +221,9 @@ class PublicIntakeSessionService
                 $provider = (string) ($event['provider'] ?? 'unknown');
                 $usage = $event['usage'] ?? null;
                 $needsReview = (bool) ($event['needs_manual_review'] ?? false);
+                $toolCalls = $event['tool_calls'] ?? null;
+                $toolResults = $event['tool_results'] ?? null;
+                $aiModel = $event['ai_model'] ?? data_get($usage, 'model') ?? config('ai.openai.model');
             }
             if ($type === 'error') {
                 $reply = (string) ($event['message'] ?? 'Something went wrong.');
@@ -239,6 +270,16 @@ class PublicIntakeSessionService
 
         $session->expires_at = now()->addHours((int) config('public.intake_session_ttl_hours', 48));
         $session->save();
+
+        $this->conversationLogger->queueTurn($session, [
+            'turn_number' => count($messages),
+            'role' => 'assistant',
+            'content' => $reply,
+            'tool_calls' => $toolCalls,
+            'tool_results' => $toolResults,
+            'ai_provider' => $provider,
+            'ai_model' => is_string($aiModel) ? $aiModel : null,
+        ]);
 
         yield [
             'event' => 'done',
@@ -410,6 +451,13 @@ class PublicIntakeSessionService
             $mime = strtolower($photo->getMimeType() ?: '');
             $allowedByExtension = in_array($extension, $allowedExtensions, true);
             $allowedByMime = in_array($mime, $allowedMimes, true);
+
+            // application/octet-stream alone is not enough — require a known image extension
+            if ($mime === 'application/octet-stream' && ! $allowedByExtension) {
+                throw ValidationException::withMessages([
+                    "photos.$index" => ['Only JPG, PNG, WEBP, and HEIC photos are supported.'],
+                ]);
+            }
 
             if (! $allowedByExtension && ! $allowedByMime) {
                 throw ValidationException::withMessages([

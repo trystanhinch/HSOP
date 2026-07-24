@@ -16,11 +16,12 @@ Route::prefix('api/public')
     ->group(function () {
         Route::get('/brand', [PublicIntakeController::class, 'brand']);
 
-        Route::get('/availability', [PublicAvailabilityController::class, 'index']);
+        Route::get('/availability', [PublicAvailabilityController::class, 'index'])
+            ->middleware('throttle:public-availability');
         Route::post('/availability/hold', [PublicAvailabilityController::class, 'hold'])
-            ->middleware('throttle:public-intake-message');
+            ->middleware('throttle:public-availability-hold');
         Route::post('/availability/release-hold', [PublicAvailabilityController::class, 'releaseHold'])
-            ->middleware('throttle:public-intake-message');
+            ->middleware('throttle:public-availability-hold');
 
         Route::post('/intake/start', [PublicIntakeController::class, 'start'])
             ->middleware('throttle:public-intake-start');

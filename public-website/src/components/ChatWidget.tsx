@@ -20,6 +20,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submittedLeadId, setSubmittedLeadId] = useState<number | null>(null);
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [priceEstimate, setPriceEstimate] = useState<{
     available?: boolean;
     low?: number;
@@ -299,6 +300,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
       return;
     }
     setSubmittedLeadId(data.lead_id);
+    setBookingConfirmed(Boolean(data.booking?.confirmed));
     window.localStorage.removeItem("serviceop_intake_token");
   }
 
@@ -353,6 +355,12 @@ export function ChatWidget({ brand, hostHint }: Props) {
         <div className="slots">
           <p className="slots-label">Pick a site-visit time (held briefly while you finish):</p>
           {loadingSlots && <p className="muted">Loading times…</p>}
+          {!loadingSlots && slots.length === 0 && (
+            <p className="muted">
+              No online times are open right now — you can still submit your request and{" "}
+              {brand.company_name} will contact you to schedule.
+            </p>
+          )}
           <div className="slot-grid">
             {slots.map((s) => {
               const label = s.slot_start_local
@@ -395,8 +403,9 @@ export function ChatWidget({ brand, hostHint }: Props) {
 
       {submittedLeadId ? (
         <p className="success">
-          Request received{typeof submittedLeadId === "number" ? ` (#${submittedLeadId})` : ""}.{" "}
-          {brand.company_name} will follow up soon.
+          {bookingConfirmed
+            ? `Request received${typeof submittedLeadId === "number" ? ` (#${submittedLeadId})` : ""}. Your preferred visit time is confirmed — ${brand.company_name} will follow up shortly.`
+            : `Request received${typeof submittedLeadId === "number" ? ` (#${submittedLeadId})` : ""}. ${brand.company_name} will follow up soon.`}
         </p>
       ) : (
         <>

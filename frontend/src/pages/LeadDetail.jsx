@@ -566,7 +566,12 @@ export default function LeadDetail() {
             <p className="text-xs text-amber-700 mt-1">Uses placeholder rates pending Trystan review.</p>
           )}
           {lead.price_estimate_snapshot?.manual_override && (
-            <p className="text-xs text-slate-600 mt-1">Manually overridden (logged for Learning Centre).</p>
+            <p className="text-xs text-slate-600 mt-1">
+              Manually overridden (logged for Learning Centre)
+              {lead.price_estimate_snapshot?.manual_override_reason
+                ? `: ${lead.price_estimate_snapshot.manual_override_reason}`
+                : '.'}
+            </p>
           )}
           {lead.price_estimate_snapshot?.message && (
             <p className="text-xs text-slate-600 mt-2">{lead.price_estimate_snapshot.message}</p>
@@ -606,13 +611,16 @@ export default function LeadDetail() {
                 className="border border-teal-300 rounded-lg px-3 py-2 text-sm"
                 placeholder="High"
               />
-              <input
-                type="text"
-                value={overrideForm.reason}
-                onChange={(e) => setOverrideForm((f) => ({ ...f, reason: e.target.value }))}
-                className="border border-teal-300 rounded-lg px-3 py-2 text-sm sm:col-span-3"
-                placeholder="Reason (optional)"
-              />
+              <label className="sm:col-span-3 block text-sm text-teal-900">
+                <span className="mb-1 block">Why are you overriding this estimate?</span>
+                <textarea
+                  value={overrideForm.reason}
+                  onChange={(e) => setOverrideForm((f) => ({ ...f, reason: e.target.value }))}
+                  className="w-full border border-teal-300 rounded-lg px-3 py-2 text-sm"
+                  rows={2}
+                  placeholder="Optional — logged for Learning Centre"
+                />
+              </label>
               <div className="sm:col-span-3 flex gap-2">
                 <button
                   type="button"

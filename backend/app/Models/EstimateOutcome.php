@@ -39,6 +39,8 @@ class EstimateOutcome extends Model
         'supersedes_id',
         'reason',
         'embedding_vector',
+        // Reserved for future weather/env data — intentionally left null (no weather API yet).
+        'environmental_context',
     ];
 
     protected function casts(): array
@@ -56,6 +58,7 @@ class EstimateOutcome extends Model
             'labour_assumptions' => 'array',
             'reasoning_snapshot' => 'array',
             'embedding_vector' => 'array',
+            'environmental_context' => 'array',
             'estimated_at' => 'datetime',
         ];
     }

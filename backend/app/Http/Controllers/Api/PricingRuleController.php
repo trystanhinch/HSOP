@@ -35,6 +35,7 @@ class PricingRuleController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
+        unset($data['override_reason']);
         $this->ensureSingleActive($data);
 
         $rule = PricingRule::create($data);
@@ -50,6 +51,9 @@ class PricingRuleController extends Controller
     public function update(Request $request, PricingRule $pricingRule): JsonResponse
     {
         $data = $this->validated($request, true);
+        $overrideReason = $data['override_reason'] ?? null;
+        unset($data['override_reason']);
+
         $merged = array_merge($pricingRule->only([
             'brand_id', 'service_category', 'status',
         ]), $data);
@@ -73,7 +77,7 @@ class PricingRuleController extends Controller
             'override_kind' => 'rule_edit',
             'before_json' => $before,
             'after_json' => $pricingRule->fresh()->only(array_keys($before)),
-            'reason' => $request->input('override_reason'),
+            'reason' => $overrideReason,
         ]);
 
         return response()->json($pricingRule->fresh()->load(['brand:id,domain,company_name', 'companySource:id,company_name']));
@@ -133,6 +137,7 @@ class PricingRuleController extends Controller
             'status' => ['nullable', Rule::in(['active', 'draft', 'archived'])],
             'is_placeholder' => 'nullable|boolean',
             'notes' => 'nullable|string|max:5000',
+            'override_reason' => 'nullable|string|max:5000',
         ]);
     }
 

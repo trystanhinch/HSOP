@@ -97,11 +97,23 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(20)->by('media:'.$token);
         });
+
+        RateLimiter::for('public-availability', function (Request $request) {
+            return Limit::perMinute(60)->by('avail:'.$request->ip());
+        });
+
+        RateLimiter::for('public-availability-hold', function (Request $request) {
+            $token = $request->input('session_token')
+                ?: $request->cookie(config('public.intake_cookie', 'serviceop_intake_token'))
+                ?: $request->ip();
+
+            return Limit::perMinute(30)->by('hold:'.$token);
+        });
     }
 
     /**
      * CORS allowlist = admin SPA origins + active brand domains + local preview extras.
-     * Adding a brand domain is a DB row — no code change.
+     * Also refreshed per-request (cached) via RefreshBrandCorsOrigins middleware.
      */
     private function mergeBrandCorsOrigins(): void
     {

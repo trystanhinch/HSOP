@@ -250,6 +250,9 @@ class CustomerPortalController extends Controller
             'revision_description' => $request->description,
         ]);
 
+        app(\App\Services\Learning\ContractorPerformanceRecorder::class)
+            ->onRevisionRequested($job->fresh(), $revision);
+
         $contractorPortalUrl = SmsMessageTemplates::contractorDashboardUrl();
         $job->loadMissing('contractor');
         $this->sms->send(

@@ -37,3 +37,7 @@ Schedule::command('intake:cleanup-sessions')
 Schedule::command('booking:release-expired-holds')
     ->everyMinute()
     ->withoutOverlapping();
+
+Schedule::command('learning:purge-ai-conversation-logs')
+    ->dailyAt('03:20')
+    ->withoutOverlapping();
