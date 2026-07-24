@@ -209,23 +209,25 @@ class PublicIntakePhase1Test extends TestCase
     {
         $ethos = CompanySource::where('company_name', 'Insulation Ethos')->firstOrFail();
 
-        $other = Brand::create([
-            'domain' => 'example-roofing.test',
-            'slug' => 'example-roofing',
-            'company_name' => 'Example Roofing Co',
-            'company_source_id' => $ethos->id,
-            'service_categories' => [
-                [
-                    'key' => 'roofing',
-                    'label' => 'Roofing',
-                    'keywords' => ['roof', 'shingle', 'gutter'],
+        $other = Brand::updateOrCreate(
+            ['domain' => 'example-roofing.test'],
+            [
+                'slug' => 'example-roofing',
+                'company_name' => 'Example Roofing Co',
+                'company_source_id' => $ethos->id,
+                'service_categories' => [
+                    [
+                        'key' => 'roofing',
+                        'label' => 'Roofing',
+                        'keywords' => ['roof', 'shingle', 'gutter'],
+                    ],
                 ],
-            ],
-            'branding' => ['tone' => 'direct and practical'],
-            'contact_info' => [],
-            'seo_defaults' => [],
-            'status' => 'active',
-        ]);
+                'branding' => ['tone' => 'direct and practical'],
+                'contact_info' => [],
+                'seo_defaults' => [],
+                'status' => 'active',
+            ]
+        );
 
         $headers = $this->brandHeaders('example-roofing.test');
 

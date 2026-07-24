@@ -141,12 +141,34 @@ class Milestone4Seeder extends Seeder
                 ],
                 'branding' => [
                     'tone' => 'friendly, professional, and concise',
-                    'primary_color' => null,
+                    'primary_color' => '#2C4A3E',
                     'logo_url' => null,
+                    'short_name' => 'Acutera',
+                    'hero_headline' => 'Get the ceiling fixed right.',
+                    'hero_lede' => 'Tell us what went wrong — popcorn texture, water stains, open walls — and we will walk you through a clear next step.',
+                    'cta_label' => 'Start a quote',
+                    'services_intro' => 'What we fix',
+                    'service_area' => 'Metro Vancouver',
+                    'licensed' => true,
+                    'insured' => true,
+                    'theme' => [
+                        'color_bg' => '#E8EAE4',
+                        'color_surface' => '#F7F8F5',
+                        'color_ink' => '#1A211C',
+                        'color_muted' => '#5A635C',
+                        'color_accent' => '#2C4A3E',
+                        'color_mud' => '#B8956C',
+                        'color_line' => '#CFD4CC',
+                        'font_display' => 'Fraunces',
+                        'font_body' => 'Outfit',
+                    ],
                 ],
                 'contact_info' => [
                     'email' => null,
                     'phone' => null,
+                    'service_area' => 'Metro Vancouver',
+                    'licensed' => true,
+                    'insured' => true,
                 ],
                 'seo_defaults' => [
                     'title_template' => '{{company_name}} | Home Services',
@@ -165,6 +187,159 @@ class Milestone4Seeder extends Seeder
         $this->seedAcuteraAvailabilityWindows(
             \App\Models\Brand::query()->where('domain', 'acuteradrywall.ca')->first()?->id
         );
+
+        $this->seedRoofingTestBrand($adminId);
+    }
+
+    /**
+     * TEST-BRAND-ONLY fixture — NOT a real client.
+     *
+     * `example-roofing.test` exists purely to prove multi-tenant theming and
+     * per-brand isolation (pricing/availability/matching) with a second brand
+     * that looks nothing like Acutera. The `.test` TLD, "Example Roofing"
+     * naming, and fake contact details make this unmistakably synthetic so it
+     * can never be confused with Acutera or any production brand. Baking it in
+     * here means test/demo runs no longer need ad-hoc local seed data.
+     */
+    private function seedRoofingTestBrand(?int $adminId): void
+    {
+        $roofingSource = CompanySource::updateOrCreate(
+            ['company_name' => 'Example Roofing Design'],
+            [
+                'sender_identity' => 'Example Roofing Design',
+                'service_categories' => ['Roofing'],
+                'default_pm_id' => $adminId,
+                'domain' => null,
+                'google_review_url' => null,
+                'status' => 'active',
+            ]
+        );
+
+        \App\Models\Brand::updateOrCreate(
+            ['domain' => 'example-roofing.test'],
+            [
+                'slug' => 'example-roofing',
+                'company_name' => 'Example Roofing Co',
+                'company_source_id' => $roofingSource->id,
+                'service_categories' => [
+                    [
+                        'key' => 'roofing',
+                        'label' => 'Roofing',
+                        'keywords' => ['roof', 'shingle'],
+                    ],
+                ],
+                'branding' => [
+                    'short_name' => 'Example Roofing',
+                    'hero_headline' => 'Stop the leak before winter.',
+                    'hero_lede' => 'Tell us what is happening on the roof — we will give you a clear next step.',
+                    'cta_label' => 'Get a roofing quote',
+                    'licensed' => true,
+                    'insured' => true,
+                    // Deliberately distinct slate/steel palette + serif/sans pairing
+                    // so a second brand is visually unmistakable vs Acutera's plaster/green.
+                    'theme' => [
+                        'color_bg' => '#E6E9EE',
+                        'color_surface' => '#F4F6F8',
+                        'color_ink' => '#1B2430',
+                        'color_muted' => '#5B6675',
+                        'color_accent' => '#2E4057',
+                        'color_mud' => '#8B7355',
+                        'color_line' => '#C5CCD6',
+                        'font_display' => 'Libre Baskerville',
+                        'font_body' => 'Source Sans 3',
+                    ],
+                ],
+                'contact_info' => [
+                    'service_area' => 'Metro Vancouver',
+                    'licensed' => true,
+                    'insured' => true,
+                ],
+                'seo_defaults' => [
+                    'title_template' => '{{company_name}} | Roofing',
+                ],
+                'status' => 'active',
+            ]
+        );
+
+        $roofingBrandId = \App\Models\Brand::query()
+            ->where('domain', 'example-roofing.test')
+            ->value('id');
+
+        $this->seedRoofingTestPricingRules($roofingBrandId, $roofingSource->id);
+        $this->seedRoofingTestAvailabilityWindows($roofingBrandId);
+    }
+
+    /**
+     * TEST-BRAND-ONLY placeholder roofing rates for `example-roofing.test`.
+     * Intentionally fictional — never treat as a real rate card.
+     */
+    private function seedRoofingTestPricingRules(?int $brandId, ?int $companySourceId): void
+    {
+        if (! $brandId || ! \Illuminate\Support\Facades\Schema::hasTable('pricing_rules')) {
+            return;
+        }
+
+        \App\Models\PricingRule::updateOrCreate(
+            [
+                'brand_id' => $brandId,
+                'service_category' => 'roofing',
+                'status' => 'active',
+            ],
+            [
+                'company_source_id' => $companySourceId,
+                'rule_type' => 'per_sqft',
+                'base_rate' => 12.00,
+                'size_tiers' => [
+                    'low_rate' => 10.00,
+                    'high_rate' => 16.00,
+                    'default_low_sqft' => 500,
+                    'default_high_sqft' => 2000,
+                ],
+                'complexity_modifiers' => [
+                    'simple' => 0.9,
+                    'standard' => 1.0,
+                    'complex' => 1.4,
+                    'unknown' => 1.0,
+                    'urgency_high' => 1.15,
+                ],
+                'min_price' => 1500,
+                'max_price' => 80000,
+                'currency' => 'CAD',
+                'is_placeholder' => true,
+                'notes' => 'TEST-BRAND-ONLY fictional roofing rates for example-roofing.test. Not a real rate card.',
+            ]
+        );
+    }
+
+    /**
+     * TEST-BRAND-ONLY recurring availability for `example-roofing.test`,
+     * so demo/test runs always have open roofing slots without ad-hoc seeding.
+     */
+    private function seedRoofingTestAvailabilityWindows(?int $brandId): void
+    {
+        if (! $brandId || ! \Illuminate\Support\Facades\Schema::hasTable('availability_windows')) {
+            return;
+        }
+
+        // Mon–Fri 10:00–14:00 Pacific, 60-minute roofing slots.
+        foreach ([1, 2, 3, 4, 5] as $dow) {
+            \App\Models\AvailabilityWindow::updateOrCreate(
+                [
+                    'brand_id' => $brandId,
+                    'day_of_week' => $dow,
+                    'start_time' => '10:00',
+                    'end_time' => '14:00',
+                    'pm_id' => null,
+                    'contractor_id' => null,
+                    'service_category' => 'roofing',
+                ],
+                [
+                    'slot_duration_minutes' => 60,
+                    'timezone' => 'America/Vancouver',
+                    'status' => 'active',
+                ]
+            );
+        }
     }
 
     private function seedAcuteraAvailabilityWindows(?int $brandId): void

@@ -13,6 +13,7 @@ type Props = {
 
 export function ChatWidget({ brand, hostHint }: Props) {
   const [token, setToken] = useState<string | null>(null);
+  const [sessionReady, setSessionReady] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -46,12 +47,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
   const [attachments, setAttachments] = useState<
     Array<{ url: string; file_name: string }>
   >([]);
-  const [mounted, setMounted] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const headers = useCallback(() => {
     const h = brandHeaders(hostHint || brand.domain) as Record<string, string>;
@@ -60,17 +56,19 @@ export function ChatWidget({ brand, hostHint }: Props) {
   }, [brand.domain, hostHint, token]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    bottomRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
   }, [messages, streaming]);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      setSessionReady(false);
+      setError(null);
       try {
-        const existing =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem("serviceop_intake_token")
-            : null;
+        const existing = window.localStorage.getItem("serviceop_intake_token");
         if (existing) {
           const resume = await fetch(
             `${apiBaseUrl()}/api/public/intake/session?session_token=${encodeURIComponent(existing)}`,
@@ -92,6 +90,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
             setPriceEstimate(data.price_estimate || null);
             return;
           }
+          window.localStorage.removeItem("serviceop_intake_token");
         }
 
         const start = await fetch(`${apiBaseUrl()}/api/public/intake/start`, {
@@ -99,13 +98,23 @@ export function ChatWidget({ brand, hostHint }: Props) {
           headers: brandHeaders(hostHint || brand.domain),
           credentials: "include",
         });
-        if (!start.ok) throw new Error("Could not start chat session");
+        if (!start.ok) {
+          const body = await start.json().catch(() => ({}));
+          throw new Error(
+            (body as { message?: string }).message ||
+              `Could not start chat session (${start.status})`
+          );
+        }
         const data = await start.json();
         if (cancelled) return;
         setToken(data.session_token);
         window.localStorage.setItem("serviceop_intake_token", data.session_token);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Startup failed");
+        if (!cancelled) {
+          setError(e instanceof Error ? e.message : "Startup failed");
+        }
+      } finally {
+        if (!cancelled) setSessionReady(true);
       }
     })();
     return () => {
@@ -304,43 +313,52 @@ export function ChatWidget({ brand, hostHint }: Props) {
     window.localStorage.removeItem("serviceop_intake_token");
   }
 
-  if (!mounted) {
+  if (submittedLeadId) {
     return (
       <div className="chat">
-        <p className="muted">Loading chat…</p>
+        <p className="success" style={{ padding: "1.5rem" }}>
+          {bookingConfirmed
+            ? `Request received${typeof submittedLeadId === "number" ? ` (#${submittedLeadId})` : ""}. Your preferred visit time is confirmed — ${brand.company_name} will follow up shortly.`
+            : `Request received${typeof submittedLeadId === "number" ? ` (#${submittedLeadId})` : ""}. ${brand.company_name} will follow up soon.`}
+        </p>
       </div>
     );
   }
 
   return (
     <div className="chat">
-      <div className="chat-log">
-        {messages.length === 0 && (
-          <p className="muted">
-            Chat with {brand.company_name} to start your project request.
+      <div className="chat-log" role="log" aria-live="polite">
+        {!sessionReady && !error ? (
+          <p className="chat-empty">Starting chat…</p>
+        ) : messages.length === 0 ? (
+          <p className="chat-empty">
+            Start with what you see on site — a stained ceiling, open drywall, cold
+            room, anything. {brand.company_name} will ask only what is needed.
           </p>
+        ) : (
+          messages.map((m, i) => (
+            <div key={i} className={`bubble ${m.role}`}>
+              {m.content || (streaming && i === messages.length - 1 ? "…" : "")}
+            </div>
+          ))
         )}
-        {messages.map((m, i) => (
-          <div key={i} className={`bubble ${m.role}`}>
-            {m.content || (streaming && i === messages.length - 1 ? "…" : "")}
-          </div>
-        ))}
         <div ref={bottomRef} />
       </div>
 
       {Object.keys(collected).length > 0 && (
-        <div className="collected muted">
-          Captured:{" "}
+        <div className="collected" style={{ padding: "0 1.5rem" }}>
+          Noted:{" "}
           {Object.entries(collected)
-            .map(([k, v]) => `${k}=${String(v)}`)
+            .map(([k, v]) => `${k.replace(/_/g, " ")} ${String(v)}`)
             .join(" · ")}
         </div>
       )}
 
       {priceEstimate?.available && (
-        <div className="estimate">
+        <div className="estimate" aria-live="polite">
+          <p className="estimate__label">Your finish range</p>
           <strong>
-            Estimate: ${Number(priceEstimate.low).toLocaleString()} – $
+            ${Number(priceEstimate.low).toLocaleString()} – $
             {Number(priceEstimate.high).toLocaleString()}{" "}
             {priceEstimate.currency || "CAD"}
           </strong>
@@ -351,7 +369,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
         </div>
       )}
 
-      {priceEstimate?.available && !submittedLeadId && (
+      {priceEstimate?.available && (
         <div className="slots">
           <p className="slots-label">Pick a site-visit time (held briefly while you finish):</p>
           {loadingSlots && <p className="muted">Loading times…</p>}
@@ -363,15 +381,16 @@ export function ChatWidget({ brand, hostHint }: Props) {
           )}
           <div className="slot-grid">
             {slots.map((s) => {
-              const label = s.slot_start_local
-                ? new Date(s.slot_start_local).toLocaleString(undefined, {
-                    weekday: "short",
-                    month: "short",
-                    day: "numeric",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })
-                : new Date(s.slot_start).toLocaleString();
+              const label = new Date(
+                s.slot_start_local || s.slot_start
+              ).toLocaleString(undefined, {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+                timeZone: s.timezone || "America/Vancouver",
+              });
               const active = selectedSlot === s.slot_start;
               return (
                 <button
@@ -379,6 +398,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
                   type="button"
                   className={`slot-btn${active ? " active" : ""}`}
                   onClick={() => selectSlot(s)}
+                  aria-pressed={active}
                 >
                   {label}
                 </button>
@@ -394,55 +414,52 @@ export function ChatWidget({ brand, hostHint }: Props) {
       )}
 
       {attachments.length > 0 && (
-        <div className="muted">
+        <div className="muted" style={{ padding: "0 1.5rem" }}>
           Photos: {attachments.map((a) => a.file_name).join(", ")}
         </div>
       )}
 
-      {error && <p className="error">{error}</p>}
-
-      {submittedLeadId ? (
-        <p className="success">
-          {bookingConfirmed
-            ? `Request received${typeof submittedLeadId === "number" ? ` (#${submittedLeadId})` : ""}. Your preferred visit time is confirmed — ${brand.company_name} will follow up shortly.`
-            : `Request received${typeof submittedLeadId === "number" ? ` (#${submittedLeadId})` : ""}. ${brand.company_name} will follow up soon.`}
+      {error && (
+        <p className="error" style={{ padding: "0 1.5rem" }} role="alert">
+          {error}
         </p>
-      ) : (
-        <>
-          <div className="chat-compose">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-              placeholder="Type a message…"
-              disabled={streaming || !token}
-            />
-            <button type="button" onClick={sendMessage} disabled={streaming || !token}>
-              Send
-            </button>
-          </div>
-          <div className="chat-actions">
-            <label className="file-btn">
-              Add photos
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                hidden
-                onChange={(e) => uploadPhotos(e.target.files)}
-              />
-            </label>
-            <button
-              type="button"
-              className="primary"
-              onClick={submitLead}
-              disabled={!token || (!ready && Object.keys(collected).length === 0)}
-            >
-              Submit request
-            </button>
-          </div>
-        </>
       )}
+
+      <div className="chat-dock">
+        <div className="chat-compose">
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+            placeholder="Describe the problem…"
+            disabled={streaming || !token}
+            aria-label="Message"
+          />
+          <button type="button" onClick={sendMessage} disabled={streaming || !token}>
+            Send
+          </button>
+        </div>
+        <div className="chat-actions">
+          <label className="file-btn">
+            Add photos
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => uploadPhotos(e.target.files)}
+            />
+          </label>
+          <button
+            type="button"
+            className="primary"
+            onClick={submitLead}
+            disabled={!token || (!ready && Object.keys(collected).length === 0)}
+          >
+            Submit request
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -14,11 +14,34 @@ export type BrandConfig = {
     tone?: string;
     primary_color?: string | null;
     logo_url?: string | null;
+    short_name?: string;
+    hero_headline?: string;
+    hero_lede?: string;
+    cta_label?: string;
+    services_intro?: string;
+    service_area?: string;
+    licensed?: boolean;
+    insured?: boolean;
+    theme?: {
+      color_bg?: string;
+      color_surface?: string;
+      color_ink?: string;
+      color_muted?: string;
+      color_accent?: string;
+      color_mud?: string;
+      color_line?: string;
+      font_display?: string;
+      font_body?: string;
+      [key: string]: unknown;
+    };
     [key: string]: unknown;
   };
   contact_info: {
     email?: string | null;
     phone?: string | null;
+    service_area?: string;
+    licensed?: boolean;
+    insured?: boolean;
     [key: string]: unknown;
   };
   seo_defaults: {

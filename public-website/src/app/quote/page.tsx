@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
     title: pageTitle(b, "Get a quote"),
     description: pageDescription(
       b,
-      `Chat with ${b.company_name} to start your project request.`
+      `Describe your project to ${b.company_name}, get a ballpark range, and book a site visit.`
     ),
   };
 }
@@ -25,13 +25,15 @@ export default async function QuotePage() {
   const b = await brand();
 
   return (
-    <main>
-      <h1>Get a quote</h1>
-      <p className="lede">
-        Message {b.company_name} below. You can add photos and submit when
-        you&apos;re ready.
-      </p>
+    <div className="quote-stage">
+      <div className="quote-stage__intro">
+        <h1>Talk through the fix</h1>
+        <p className="lede">
+          Describe what you see — photos help. {b.company_name} will collect what
+          we need, show a ballpark range, and let you hold a visit time.
+        </p>
+      </div>
       <ChatWidget brand={b} hostHint={host || b.domain} />
-    </main>
+    </div>
   );
 }

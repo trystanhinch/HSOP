@@ -12,7 +12,17 @@ copy is hardcoded in components.
 4. Laravel resolves `localhost` → `PUBLIC_LOCAL_DEFAULT_BRAND_DOMAIN`
    (default `acuteradrywall.ca`). Override with `BRAND_DOMAIN=…`.
 
-## Deploy (DigitalOcean App Platform) — Phase 6 plan
+## Design system (brand tokens)
+
+Visual theme comes from `brands.branding.theme` (see `src/lib/theme.ts`).
+`BrandTheme` injects CSS custom properties; components use `var(--color-*)`
+and `var(--font-*)` only — never hardcoded hex/fonts.
+
+Acutera defaults = plaster / mud / workshop green + Fraunces/Outfit.
+`example-roofing.test` uses a slate roof palette + Libre Baskerville /
+Source Sans 3 for the multi-tenant visual check.
+
+Design plan: `../docs/MILESTONE5_PUBLIC_SITE_DESIGN.md`.
 
 See also: `../docs/MILESTONE5_PHASE6_LAUNCH.md`.
 

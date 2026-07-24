@@ -160,46 +160,52 @@ class PricingRangePhase3Test extends TestCase
     public function test_second_brand_different_rules_different_ranges(): void
     {
         $ethos = CompanySource::where('company_name', 'Insulation Ethos')->firstOrFail();
-        $roofBrand = Brand::create([
-            'domain' => 'example-roofing.test',
-            'slug' => 'example-roofing-phase3',
-            'company_name' => 'Example Roofing Co',
-            'company_source_id' => $ethos->id,
-            'service_categories' => [
-                ['key' => 'roofing', 'label' => 'Roofing', 'keywords' => ['roof', 'shingle']],
-            ],
-            'branding' => [],
-            'contact_info' => [],
-            'seo_defaults' => [],
-            'status' => 'active',
-        ]);
+        $roofBrand = Brand::updateOrCreate(
+            ['domain' => 'example-roofing.test'],
+            [
+                'slug' => 'example-roofing-phase3',
+                'company_name' => 'Example Roofing Co',
+                'company_source_id' => $ethos->id,
+                'service_categories' => [
+                    ['key' => 'roofing', 'label' => 'Roofing', 'keywords' => ['roof', 'shingle']],
+                ],
+                'branding' => [],
+                'contact_info' => [],
+                'seo_defaults' => [],
+                'status' => 'active',
+            ]
+        );
 
-        PricingRule::create([
-            'brand_id' => $roofBrand->id,
-            'company_source_id' => $ethos->id,
-            'service_category' => 'roofing',
-            'rule_type' => 'per_sqft',
-            'base_rate' => 12,
-            'size_tiers' => [
-                'low_rate' => 10,
-                'high_rate' => 16,
-                'default_low_sqft' => 500,
-                'default_high_sqft' => 2000,
+        PricingRule::updateOrCreate(
+            [
+                'brand_id' => $roofBrand->id,
+                'service_category' => 'roofing',
             ],
-            'complexity_modifiers' => [
-                'simple' => 0.9,
-                'standard' => 1.0,
-                'complex' => 1.4,
-                'unknown' => 1.0,
-                'urgency_high' => 1.15,
-            ],
-            'min_price' => 1500,
-            'max_price' => 80000,
-            'currency' => 'CAD',
-            'status' => 'active',
-            'is_placeholder' => true,
-            'notes' => 'Test roofing rules',
-        ]);
+            [
+                'company_source_id' => $ethos->id,
+                'rule_type' => 'per_sqft',
+                'base_rate' => 12,
+                'size_tiers' => [
+                    'low_rate' => 10,
+                    'high_rate' => 16,
+                    'default_low_sqft' => 500,
+                    'default_high_sqft' => 2000,
+                ],
+                'complexity_modifiers' => [
+                    'simple' => 0.9,
+                    'standard' => 1.0,
+                    'complex' => 1.4,
+                    'unknown' => 1.0,
+                    'urgency_high' => 1.15,
+                ],
+                'min_price' => 1500,
+                'max_price' => 80000,
+                'currency' => 'CAD',
+                'status' => 'active',
+                'is_placeholder' => true,
+                'notes' => 'Test roofing rules',
+            ]
+        );
 
         $acutera = Brand::where('domain', 'acuteradrywall.ca')->firstOrFail();
         $a = app(PricingRangeEstimator::class)->estimate($acutera, [

@@ -155,19 +155,21 @@ class PublicIntakePhase2Test extends TestCase
     public function test_second_brand_streaming_and_pages_data(): void
     {
         $ethos = CompanySource::where('company_name', 'Insulation Ethos')->firstOrFail();
-        Brand::create([
-            'domain' => 'example-roofing.test',
-            'slug' => 'example-roofing',
-            'company_name' => 'Example Roofing Co',
-            'company_source_id' => $ethos->id,
-            'service_categories' => [
-                ['key' => 'roofing', 'label' => 'Roofing', 'keywords' => ['roof', 'shingle']],
-            ],
-            'branding' => ['tone' => 'direct'],
-            'contact_info' => [],
-            'seo_defaults' => ['title_template' => '{{company_name}} | Quote'],
-            'status' => 'active',
-        ]);
+        Brand::updateOrCreate(
+            ['domain' => 'example-roofing.test'],
+            [
+                'slug' => 'example-roofing',
+                'company_name' => 'Example Roofing Co',
+                'company_source_id' => $ethos->id,
+                'service_categories' => [
+                    ['key' => 'roofing', 'label' => 'Roofing', 'keywords' => ['roof', 'shingle']],
+                ],
+                'branding' => ['tone' => 'direct'],
+                'contact_info' => [],
+                'seo_defaults' => ['title_template' => '{{company_name}} | Quote'],
+                'status' => 'active',
+            ]
+        );
 
         $headers = $this->brandHeaders('example-roofing.test');
 

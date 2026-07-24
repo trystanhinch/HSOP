@@ -248,15 +248,17 @@ class AvailabilityBookingPhase4Test extends TestCase
 
     public function test_second_brand_availability_is_independent(): void
     {
-        $roof = Brand::create([
-            'domain' => 'example-roofing.test',
-            'slug' => 'example-roofing-phase4',
-            'company_name' => 'Example Roofing',
-            'status' => 'active',
-            'service_categories' => [
-                ['key' => 'roofing', 'label' => 'Roofing', 'keywords' => ['roof']],
-            ],
-        ]);
+        $roof = Brand::updateOrCreate(
+            ['domain' => 'example-roofing.test'],
+            [
+                'slug' => 'example-roofing-phase4',
+                'company_name' => 'Example Roofing',
+                'status' => 'active',
+                'service_categories' => [
+                    ['key' => 'roofing', 'label' => 'Roofing', 'keywords' => ['roof']],
+                ],
+            ]
+        );
 
         // Tomorrow morning roofing-only window
         $tomorrow = now('America/Vancouver')->addDay()->startOfDay();

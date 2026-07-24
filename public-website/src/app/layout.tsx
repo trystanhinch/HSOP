@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
+import { BrandTheme } from "@/components/BrandTheme";
+import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import {
   fetchBrand,
@@ -43,19 +45,23 @@ export default async function RootLayout({
     error = e instanceof Error ? e.message : "Brand unavailable";
   }
 
-  const accent = brand?.branding?.primary_color || "#0f766e";
-
   return (
     <html lang="en">
-      <body style={{ ["--accent" as string]: accent }}>
+      <body>
+        {brand ? <BrandTheme brand={brand} /> : null}
         {brand ? <SiteHeader brand={brand} /> : null}
         {error ? (
-          <main>
-            <h1>Site unavailable</h1>
-            <p className="lede">{error}. Check API_URL / brand domain mapping.</p>
+          <main className="section">
+            <h1 style={{ fontFamily: "var(--font-display)" }}>Site unavailable</h1>
+            <p className="lede">
+              {error}. Check API_URL / brand domain mapping.
+            </p>
           </main>
         ) : (
-          children
+          <>
+            <main className="page">{children}</main>
+            {brand ? <SiteFooter brand={brand} /> : null}
+          </>
         )}
       </body>
     </html>
