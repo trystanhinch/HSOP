@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { BrandConfig } from "@/lib/brand";
 import { apiBaseUrl, brandHeaders } from "@/lib/brand";
@@ -8,19 +8,32 @@ import { useTalkIntakeEnabled } from "@/lib/talkEnabled";
 import { useTalkInput } from "@/hooks/useTalkInput";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
+type InputMode = "type" | "talk" | "upload";
 
 type Props = {
   brand: BrandConfig;
   hostHint?: string;
+  /** Start listening as soon as the session is ready (homepage Talk). */
+  autoStartTalk?: boolean;
+  /** Compact chrome when embedded under the homepage headline. */
+  embedded?: boolean;
 };
 
-export function ChatWidget({ brand, hostHint }: Props) {
+function ChatWidgetInner({
+  brand,
+  hostHint,
+  autoStartTalk = false,
+  embedded = false,
+}: Props) {
   const searchParams = useSearchParams();
   const talkEnabled = useTalkIntakeEnabled();
   const [token, setToken] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [inputMode, setInputMode] = useState<InputMode>(
+    autoStartTalk && talkEnabled ? "talk" : "type"
+  );
   const [streaming, setStreaming] = useState(false);
   const [collected, setCollected] = useState<Record<string, unknown>>({});
   const [ready, setReady] = useState(false);
@@ -53,8 +66,11 @@ export function ChatWidget({ brand, hostHint }: Props) {
     Array<{ url: string; file_name: string }>
   >([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const autoTalkArmed = useRef(false);
   const inputBeforeListenRef = useRef("");
+  const greetingSeeded = useRef(false);
+  const restartTalkAfterAi = useRef(false);
 
   const headers = useCallback(() => {
     const h = brandHeaders(hostHint || brand.domain) as Record<string, string>;
@@ -67,7 +83,7 @@ export function ChatWidget({ brand, hostHint }: Props) {
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     bottomRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
-  }, [messages, streaming]);
+  }, [messages, streaming, input]);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +147,22 @@ export function ChatWidget({ brand, hostHint }: Props) {
       cancelled = true;
     };
   }, [brand.domain, hostHint]);
+
+  // Seed a visible assistant opener so the thread is never a blank void.
+  useEffect(() => {
+    if (!sessionReady || !token || greetingSeeded.current) return;
+    if (messages.length > 0) {
+      greetingSeeded.current = true;
+      return;
+    }
+    greetingSeeded.current = true;
+    setMessages([
+      {
+        role: "assistant",
+        content: `Hi — tell me what you see on site (stain, hole, cold room…). ${brand.company_name} will ask only what’s needed. You can type, talk, or add a photo anytime.`,
+      },
+    ]);
+  }, [sessionReady, token, messages.length, brand.company_name]);
 
   const sendMessage = useCallback(
     async (overrideText?: string) => {
@@ -227,6 +259,8 @@ export function ChatWidget({ brand, hostHint }: Props) {
   const talk = useTalkInput({
     hostHint: hostHint || brand.domain,
     enabled: talkEnabled,
+    autoSendOnSilence: true,
+    silenceCommitMs: 1400,
     onCaption: (text) => {
       const prefix = inputBeforeListenRef.current.trim();
       setInput(prefix ? `${prefix} ${text}`.trim() : text);
@@ -235,19 +269,32 @@ export function ChatWidget({ brand, hostHint }: Props) {
       const prefix = inputBeforeListenRef.current.trim();
       const full = prefix ? `${prefix} ${text}`.trim() : text;
       inputBeforeListenRef.current = "";
+      restartTalkAfterAi.current = inputMode === "talk";
       await sendMessage(full);
     },
   });
 
+  // After AI finishes, if still in Talk mode, resume listening for the next turn.
+  useEffect(() => {
+    if (!talkEnabled || streaming || !restartTalkAfterAi.current) return;
+    if (inputMode !== "talk" || talk.listening) return;
+    restartTalkAfterAi.current = false;
+    inputBeforeListenRef.current = "";
+    void talk.start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streaming, inputMode, talkEnabled]);
+
   useEffect(() => {
     if (!talkEnabled || !sessionReady || !token || autoTalkArmed.current) return;
-    if (searchParams.get("talk") === "1") {
-      autoTalkArmed.current = true;
-      inputBeforeListenRef.current = input;
-      void talk.start();
-    }
+    const wantTalk =
+      autoStartTalk || searchParams.get("talk") === "1";
+    if (!wantTalk) return;
+    autoTalkArmed.current = true;
+    setInputMode("talk");
+    inputBeforeListenRef.current = "";
+    void talk.start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [talkEnabled, sessionReady, token, searchParams]);
+  }, [talkEnabled, sessionReady, token, autoStartTalk, searchParams]);
 
   async function uploadPhotos(files: FileList | null) {
     if (!files?.length || !token) return;
@@ -273,6 +320,13 @@ export function ChatWidget({ brand, hostHint }: Props) {
     }
     const data = await res.json();
     setAttachments(data.attachments || []);
+    setMessages((m) => [
+      ...m,
+      {
+        role: "assistant",
+        content: `Got ${files.length} photo${files.length === 1 ? "" : "s"}. You can keep describing the job by typing or talking.`,
+      },
+    ]);
   }
 
   async function loadSlots(service?: string) {
@@ -338,6 +392,9 @@ export function ChatWidget({ brand, hostHint }: Props) {
   async function submitLead() {
     if (!token) return;
     setError(null);
+    if (talk.listening) {
+      await talk.stop({ commit: false, keepCaption: true });
+    }
     const res = await fetch(`${apiBaseUrl()}/api/public/intake/submit`, {
       method: "POST",
       headers: { ...headers(), "Content-Type": "application/json" },
@@ -354,20 +411,35 @@ export function ChatWidget({ brand, hostHint }: Props) {
     window.localStorage.removeItem("serviceop_intake_token");
   }
 
-  async function onTalkToggle() {
+  async function setMode(mode: InputMode) {
+    setError(null);
+    talk.setError(null);
+    if (mode !== "talk" && talk.listening) {
+      await talk.stop({ commit: false, keepCaption: true });
+    }
+    setInputMode(mode);
+    restartTalkAfterAi.current = false;
+    if (mode === "talk" && talkEnabled) {
+      inputBeforeListenRef.current = input;
+      await talk.start();
+    }
+    if (mode === "upload") {
+      fileInputRef.current?.click();
+    }
+  }
+
+  /** One action while listening: stop mic + send the turn. */
+  async function sendTalkTurn() {
     if (talk.listening) {
       await talk.stop({ commit: true });
       return;
     }
-    inputBeforeListenRef.current = input;
-    setError(null);
-    talk.setError(null);
-    await talk.start();
+    await sendMessage();
   }
 
   if (submittedLeadId) {
     return (
-      <div className="chat">
+      <div className={`chat${embedded ? " chat--embedded" : ""}`}>
         <p className="success" style={{ padding: "1.5rem" }}>
           {bookingConfirmed
             ? `Request received${typeof submittedLeadId === "number" ? ` (#${submittedLeadId})` : ""}. Your preferred visit time is confirmed — ${brand.company_name} will follow up shortly.`
@@ -378,17 +450,14 @@ export function ChatWidget({ brand, hostHint }: Props) {
   }
 
   const combinedError = error || talk.error;
+  // Submit is end-of-flow only — never compete with Talk/Send mid-turn.
+  const showSubmit = ready;
 
   return (
-    <div className="chat">
+    <div className={`chat${embedded ? " chat--embedded" : ""}`}>
       <div className="chat-log" role="log" aria-live="polite">
         {!sessionReady && !error ? (
           <p className="chat-empty">Starting chat…</p>
-        ) : messages.length === 0 ? (
-          <p className="chat-empty">
-            Start with what you see on site — a stained ceiling, open drywall, cold
-            room, anything. {brand.company_name} will ask only what is needed.
-          </p>
         ) : (
           messages.map((m, i) => (
             <div key={i} className={`bubble ${m.role}`}>
@@ -419,11 +488,6 @@ export function ChatWidget({ brand, hostHint }: Props) {
           <p className="muted">
             {priceEstimate.disclaimer || priceEstimate.message}
           </p>
-          {priceEstimate.is_placeholder ? (
-            <p className="muted">
-              Rates are provisional placeholders pending review.
-            </p>
-          ) : null}
         </div>
       )}
 
@@ -435,8 +499,8 @@ export function ChatWidget({ brand, hostHint }: Props) {
           {loadingSlots && <p className="muted">Loading times…</p>}
           {!loadingSlots && slots.length === 0 && (
             <p className="muted">
-              No online times are open right now — you can still submit your
-              request and {brand.company_name} will contact you to schedule.
+              No online times are open right now — you can still submit and{" "}
+              {brand.company_name} will contact you to schedule.
             </p>
           )}
           <div className="slot-grid">
@@ -489,85 +553,130 @@ export function ChatWidget({ brand, hostHint }: Props) {
         </p>
       )}
 
-      {talkEnabled && talk.listening ? (
-        <p className="chat-talk-status" aria-live="polite">
-          {talk.status === "connecting"
-            ? "Connecting microphone…"
-            : talk.status === "fallback"
-              ? "Listening (fallback) — tap Stop when finished."
-              : "Listening — text appears as you speak. Tap Stop to send."}
-        </p>
-      ) : null}
-
       <div className="chat-dock">
+        {talkEnabled ? (
+          <div className="chat-modes" role="tablist" aria-label="How to reply">
+            {(
+              [
+                ["type", "Type"],
+                ["talk", "Talk"],
+                ["upload", "Upload Photos"],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                className={`chat-mode${inputMode === id ? " is-active" : ""}${
+                  id === "talk" && talk.listening ? " is-listening" : ""
+                }`}
+                aria-selected={inputMode === id}
+                onClick={() => void setMode(id)}
+                disabled={streaming || !token}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            void uploadPhotos(e.target.files);
+            setInputMode("type");
+            e.target.value = "";
+          }}
+        />
+
         <div className="chat-compose">
           <input
             value={input}
             onChange={(e) => {
               if (talk.listening) {
+                restartTalkAfterAi.current = false;
                 void talk.stop({ commit: false, keepCaption: true });
+                setInputMode("type");
               }
               setInput(e.target.value);
             }}
-            onKeyDown={(e) => e.key === "Enter" && void sendMessage()}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void sendTalkTurn();
+            }}
             placeholder={
               talk.listening
-                ? "Listening… (or start typing to switch)"
-                : "Describe the problem…"
+                ? "Listening… words appear here as you speak"
+                : inputMode === "talk"
+                  ? "Tap Talk to speak — or type anytime"
+                  : "Describe the problem…"
             }
             disabled={streaming || !token}
             aria-label="Message"
+            className={talk.listening ? "is-listening" : undefined}
           />
-          {talkEnabled ? (
+          <button
+            type="button"
+            className={talk.listening ? "talk-send is-listening" : undefined}
+            onClick={() => void sendTalkTurn()}
+            disabled={
+              streaming ||
+              !token ||
+              talk.status === "connecting" ||
+              talk.status === "stopping" ||
+              (!talk.listening && !input.trim())
+            }
+          >
+            {talk.status === "connecting"
+              ? "…"
+              : talk.listening
+                ? "Send"
+                : "Send"}
+          </button>
+        </div>
+
+        {talk.listening ? (
+          <p className="chat-talk-status" aria-live="polite">
+            Listening in this chat — pause briefly or tap Send to continue.
+          </p>
+        ) : null}
+
+        {showSubmit ? (
+          <div className="chat-actions">
+            {!talkEnabled ? (
+              <label className="file-btn">
+                Add photos
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                  onChange={(e) => uploadPhotos(e.target.files)}
+                />
+              </label>
+            ) : null}
             <button
               type="button"
-              className={`talk-btn${talk.listening ? " is-listening" : ""}`}
-              onClick={() => void onTalkToggle()}
-              disabled={streaming || !token || talk.status === "stopping"}
-              aria-pressed={talk.listening}
+              className="primary"
+              onClick={() => void submitLead()}
+              disabled={!token || !ready}
             >
-              {talk.status === "connecting"
-                ? "…"
-                : talk.listening
-                  ? "Stop"
-                  : "Talk"}
+              Submit request
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void sendMessage()}
-            disabled={streaming || !token || talk.listening}
-          >
-            Send
-          </button>
-        </div>
-        <div className="chat-actions">
-          <label className="file-btn">
-            Add photos
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              hidden
-              onChange={(e) => uploadPhotos(e.target.files)}
-            />
-          </label>
-          <button
-            type="button"
-            className="primary"
-            onClick={submitLead}
-            disabled={!token || (!ready && Object.keys(collected).length === 0)}
-          >
-            Submit request
-          </button>
-        </div>
-        {talkEnabled ? (
-          <p className="chat-talk-hint muted">
-            Talk is push-to-talk dictation into this chat. Replies stay on-screen
-            text only — not a live voice call.
-          </p>
+          </div>
         ) : null}
       </div>
     </div>
+  );
+}
+
+export function ChatWidget(props: Props) {
+  return (
+    <Suspense fallback={<p className="muted">Loading chat…</p>}>
+      <ChatWidgetInner {...props} />
+    </Suspense>
   );
 }

@@ -1,22 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  StreamingTalkSession,
-  whisperFallbackTranscribe,
-} from "@/lib/streamingTalk";
+import { StreamingTalkSession } from "@/lib/streamingTalk";
 
 type TalkStatus = "idle" | "connecting" | "listening" | "stopping" | "fallback";
 
 type Options = {
   hostHint: string;
   enabled: boolean;
-  /** Live caption text while listening (and finalized text on stop before clear). */
   onCaption: (text: string) => void;
-  /** Called when a Talk turn is ready to send into chat (explicit stop). */
   onCommitTurn?: (text: string) => void | Promise<void>;
-  /** When true, stop only fills caption / input — caller sends manually (homepage Go). */
   deferCommit?: boolean;
+  /** After a completed speech segment + quiet gap, auto stop+send. */
+  autoSendOnSilence?: boolean;
+  silenceCommitMs?: number;
 };
 
 export function useTalkInput({
@@ -25,6 +22,8 @@ export function useTalkInput({
   onCaption,
   onCommitTurn,
   deferCommit = false,
+  autoSendOnSilence = false,
+  silenceCommitMs = 1400,
 }: Options) {
   const [status, setStatus] = useState<TalkStatus>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +32,21 @@ export function useTalkInput({
   const fallbackChunksRef = useRef<Blob[]>([]);
   const fallbackStreamRef = useRef<MediaStream | null>(null);
   const usingFallbackRef = useRef(false);
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const statusRef = useRef(status);
+  const onCommitRef = useRef(onCommitTurn);
+  const onCaptionRef = useRef(onCaption);
+
+  statusRef.current = status;
+  onCommitRef.current = onCommitTurn;
+  onCaptionRef.current = onCaption;
+
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
 
   const cleanupFallbackRecorder = useCallback(() => {
     try {
@@ -50,6 +64,7 @@ export function useTalkInput({
   }, []);
 
   const stopAll = useCallback(async () => {
+    clearSilenceTimer();
     const live = sessionRef.current;
     sessionRef.current = null;
     if (live) {
@@ -61,7 +76,7 @@ export function useTalkInput({
     }
     cleanupFallbackRecorder();
     setStatus("idle");
-  }, [cleanupFallbackRecorder]);
+  }, [cleanupFallbackRecorder, clearSilenceTimer]);
 
   useEffect(() => {
     return () => {
@@ -69,23 +84,22 @@ export function useTalkInput({
     };
   }, [stopAll]);
 
-  // Pause cleanly when tab backgrounds (Safari iOS often suspends mic).
   useEffect(() => {
     if (!enabled) return;
     const onVisibility = () => {
-      if (document.visibilityState === "hidden" && status === "listening") {
+      if (document.visibilityState === "hidden" && statusRef.current === "listening") {
         setError("Microphone paused when the tab was backgrounded. Tap Talk to continue, or type.");
         void stopAll();
       }
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, [enabled, status, stopAll]);
+  }, [enabled, stopAll]);
 
   const startFallbackRecording = useCallback(async () => {
     usingFallbackRef.current = true;
     setStatus("fallback");
-    setError("Live transcription unavailable — using short voice-note fallback. Tap Stop when done.");
+    // Quiet fallback — no scary "voice note" copy; customer still taps Send.
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     fallbackStreamRef.current = stream;
     const mime = MediaRecorder.isTypeSupported("audio/webm")
@@ -100,47 +114,12 @@ export function useTalkInput({
     recorder.start();
   }, []);
 
-  const start = useCallback(async () => {
-    if (!enabled || status === "connecting" || status === "listening" || status === "fallback") {
-      return;
-    }
-    setError(null);
-    setStatus("connecting");
-    try {
-      const session = new StreamingTalkSession({
-        onPartial: (text) => onCaption(text),
-        onStatus: (s) => {
-          if (s === "listening") setStatus("listening");
-          if (s === "connecting") setStatus("connecting");
-          if (s === "idle") setStatus("idle");
-        },
-        onError: (msg) => setError(msg),
-      });
-      sessionRef.current = session;
-      await session.start(hostHint);
-      setStatus("listening");
-    } catch (e) {
-      sessionRef.current?.cleanup();
-      sessionRef.current = null;
-      const msg = e instanceof Error ? e.message : "Could not start Talk.";
-      try {
-        await startFallbackRecording();
-      } catch (fallbackErr) {
-        setStatus("idle");
-        setError(
-          fallbackErr instanceof Error
-            ? fallbackErr.message
-            : msg + " Please type instead."
-        );
-      }
-    }
-  }, [enabled, hostHint, onCaption, startFallbackRecording, status]);
-
   const stop = useCallback(
     async (opts?: { commit?: boolean; keepCaption?: boolean }) => {
       const shouldCommit = opts?.commit !== false;
       const keepCaption = opts?.keepCaption === true;
-      if (status === "idle" || status === "stopping") return;
+      clearSilenceTimer();
+      if (statusRef.current === "idle" || statusRef.current === "stopping") return;
       setStatus("stopping");
 
       try {
@@ -186,13 +165,15 @@ export function useTalkInput({
           if (!res.ok) {
             throw new Error(
               (data as { message?: string }).message ||
-                "Transcription failed. Please type instead."
+                "Couldn’t catch that — try typing instead."
             );
           }
           const text = String((data as { text?: string }).text || "").trim();
           if (!text) throw new Error("No speech detected. Please type instead.");
-          onCaption(text);
-          if (shouldCommit && !deferCommit && onCommitTurn) await onCommitTurn(text);
+          onCaptionRef.current(text);
+          if (shouldCommit && !deferCommit && onCommitRef.current) {
+            await onCommitRef.current(text);
+          }
           setStatus("idle");
           return;
         }
@@ -212,8 +193,10 @@ export function useTalkInput({
           setStatus("idle");
           return;
         }
-        onCaption(text);
-        if (shouldCommit && !deferCommit && onCommitTurn) await onCommitTurn(text);
+        onCaptionRef.current(text);
+        if (shouldCommit && !deferCommit && onCommitRef.current) {
+          await onCommitRef.current(text);
+        }
         setStatus("idle");
       } catch (e) {
         cleanupFallbackRecorder();
@@ -223,35 +206,96 @@ export function useTalkInput({
         setError(e instanceof Error ? e.message : "Talk failed. Please type instead.");
       }
     },
-    [
-      cleanupFallbackRecorder,
-      deferCommit,
-      hostHint,
-      onCaption,
-      onCommitTurn,
-      status,
-    ]
+    [cleanupFallbackRecorder, clearSilenceTimer, deferCommit, hostHint]
   );
 
+  const scheduleSilenceCommit = useCallback(() => {
+    if (!autoSendOnSilence || deferCommit) return;
+    clearSilenceTimer();
+    silenceTimerRef.current = setTimeout(() => {
+      if (
+        statusRef.current === "listening" ||
+        statusRef.current === "fallback"
+      ) {
+        void stop({ commit: true });
+      }
+    }, silenceCommitMs);
+  }, [autoSendOnSilence, clearSilenceTimer, deferCommit, silenceCommitMs, stop]);
+
+  const start = useCallback(async () => {
+    if (
+      !enabled ||
+      statusRef.current === "connecting" ||
+      statusRef.current === "listening" ||
+      statusRef.current === "fallback"
+    ) {
+      return;
+    }
+    setError(null);
+    clearSilenceTimer();
+    setStatus("connecting");
+    try {
+      const session = new StreamingTalkSession({
+        onPartial: (text) => {
+          clearSilenceTimer();
+          onCaptionRef.current(text);
+        },
+        onSegment: () => {
+          // VAD completed an utterance — after a quiet gap, auto-send.
+          scheduleSilenceCommit();
+        },
+        onStatus: (s) => {
+          if (s === "listening") setStatus("listening");
+          if (s === "connecting") setStatus("connecting");
+          if (s === "idle") setStatus("idle");
+        },
+        onError: (msg) => setError(msg),
+      });
+      sessionRef.current = session;
+      await session.start(hostHint);
+      setStatus("listening");
+    } catch {
+      sessionRef.current?.cleanup();
+      sessionRef.current = null;
+      try {
+        await startFallbackRecording();
+      } catch (fallbackErr) {
+        setStatus("idle");
+        setError(
+          fallbackErr instanceof Error
+            ? fallbackErr.message
+            : "Microphone unavailable. Please type instead."
+        );
+      }
+    }
+  }, [
+    clearSilenceTimer,
+    enabled,
+    hostHint,
+    scheduleSilenceCommit,
+    startFallbackRecording,
+  ]);
+
   const toggle = useCallback(async () => {
-    if (status === "listening" || status === "fallback" || status === "connecting") {
+    if (
+      statusRef.current === "listening" ||
+      statusRef.current === "fallback" ||
+      statusRef.current === "connecting"
+    ) {
       await stop({ commit: true });
     } else {
       await start();
     }
-  }, [start, status, stop]);
+  }, [start, stop]);
 
   return {
     status,
     error,
     setError,
-    listening: status === "listening" || status === "fallback" || status === "connecting",
+    listening:
+      status === "listening" || status === "fallback" || status === "connecting",
     start,
     stop,
     toggle,
   };
-}
-
-export async function runWhisperOneShot(hostHint: string): Promise<string> {
-  return whisperFallbackTranscribe(hostHint);
 }
