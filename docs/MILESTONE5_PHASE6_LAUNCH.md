@@ -54,7 +54,7 @@ Do **not** merge into the existing Vite admin SPA component. Do **not** execute 
 |---|---|
 | Type | Web Service / Node.js |
 | Source | same repo, root directory `public-website` |
-| Build command | `npm ci && npm run build` |
+| Build command | `npm ci && npm run build` (if `npm ci` lock sync fails on DO, use `npm install && npm run build`) |
 | Run command | `npm run start` (`next start`) |
 | HTTP port | `3000` (or DO default) |
 | Health check | `/` or `/quote` |
