@@ -799,3 +799,193 @@ main.page {
     margin-right: var(--space-4);
   }
 }
+
+/* Homepage intake composer (M5 redesign) */
+.intake-hero {
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface);
+}
+
+.intake-hero__inner {
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: clamp(1.75rem, 5vw, 3.5rem) var(--space-5) var(--space-7);
+}
+
+.intake-hero__headline {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 6vw, 3.6rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.08;
+  margin: 0 0 var(--space-3);
+  max-width: 16ch;
+}
+
+.intake-hero__lede {
+  color: var(--color-muted);
+  font-size: var(--text-lg);
+  max-width: 36rem;
+  margin: 0 0 var(--space-5);
+}
+
+.intake-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.intake-mode {
+  border: 1px solid var(--color-line);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.95rem;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.intake-mode.is-active {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-surface);
+}
+
+.intake-compose textarea,
+.manual-quote input,
+.manual-quote textarea,
+.manual-quote select {
+  width: 100%;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font: inherit;
+  padding: 0.85rem 0.95rem;
+}
+
+.intake-compose textarea {
+  min-height: 6rem;
+  resize: vertical;
+}
+
+.intake-talk,
+.intake-upload {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.intake-talk__stop {
+  background: var(--color-danger);
+}
+
+.intake-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: center;
+  margin: var(--space-4) 0 var(--space-6);
+}
+
+.intake-go {
+  min-width: 7rem;
+}
+
+.intake-manual {
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.intake-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-4);
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-5);
+}
+
+.intake-steps li {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.intake-steps__num {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--color-mud);
+  min-width: 1.25rem;
+}
+
+.intake-steps strong {
+  display: block;
+  font-family: var(--font-display);
+  margin-bottom: 0.25rem;
+}
+
+.intake-steps p {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+}
+
+.intake-reassurance {
+  margin: var(--space-5) 0 0;
+  color: var(--color-muted);
+  font-size: var(--text-sm);
+  max-width: 40rem;
+}
+
+.header-call {
+  color: var(--color-accent);
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.header-call:hover {
+  text-decoration: underline;
+}
+
+.manual-quote {
+  display: grid;
+  gap: var(--space-4);
+  max-width: 32rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius);
+  padding: var(--space-5);
+}
+
+.manual-quote label {
+  display: grid;
+  gap: 0.35rem;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.manual-quote__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.success-box {
+  gap: var(--space-4);
+}
+
+@media (max-width: 700px) {
+  .intake-steps {
+    grid-template-columns: 1fr;
+  }
+}

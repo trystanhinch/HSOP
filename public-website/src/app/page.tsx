@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
-import { FinishRevealHero } from "@/components/FinishRevealHero";
+import { HomepageIntake } from "@/components/HomepageIntake";
 import { fetchBrand, pageDescription, pageSeo, pageTitle } from "@/lib/brand";
 
 async function brand() {
@@ -23,6 +23,8 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function HomePage() {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") || h.get("host");
   const b = await brand();
   const licensed = Boolean(b.branding?.licensed ?? b.contact_info?.licensed ?? true);
   const insured = Boolean(b.branding?.insured ?? b.contact_info?.insured ?? true);
@@ -35,31 +37,10 @@ export default async function HomePage() {
     (typeof b.branding?.services_intro === "string" && b.branding.services_intro) ||
     `What ${b.company_name} fixes`;
   const homeContent = b.content?.home || {};
-  const fallbackSteps = [
-    {
-      eyebrow: "1 — Describe",
-      title: "Tell us what you see",
-      description: "Ceiling stains, open walls, cold rooms — a short chat is enough to start.",
-    },
-    {
-      eyebrow: "2 — Range",
-      title: "Get a ballpark",
-      description: "We show an estimate range from your details before anyone comes out.",
-    },
-    {
-      eyebrow: "3 — Book",
-      title: "Pick a visit time",
-      description: "Hold a site-visit slot while you finish, or submit and we'll call you.",
-    },
-  ];
-  const steps =
-    Array.isArray(homeContent.steps) && homeContent.steps.length === 3
-      ? homeContent.steps
-      : fallbackSteps;
 
   return (
     <>
-      <FinishRevealHero brand={b} />
+      <HomepageIntake brand={b} hostHint={host || b.domain} />
 
       <section className="section" aria-labelledby="services-heading">
         <h2 id="services-heading" className="section-title">
@@ -75,16 +56,6 @@ export default async function HomePage() {
             </li>
           ))}
         </ul>
-
-        <div className="sequence" aria-label="How a quote works">
-          {steps.map((step, index) => (
-            <article key={index}>
-              <p className="num">{step.eyebrow || fallbackSteps[index].eyebrow}</p>
-              <h3>{step.title || fallbackSteps[index].title}</h3>
-              <p>{step.description || fallbackSteps[index].description}</p>
-            </article>
-          ))}
-        </div>
 
         <div className="trust-row">
           {licensed ? (
@@ -108,7 +79,7 @@ export default async function HomePage() {
             </span>
           )}
           <Link href="/quote" className="btn" style={{ marginLeft: "auto" }}>
-            {homeContent.bottom_cta_label || "Talk through your project"}
+            {homeContent.bottom_cta_label || "Continue in chat"}
           </Link>
         </div>
       </section>
