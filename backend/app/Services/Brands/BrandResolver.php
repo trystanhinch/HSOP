@@ -9,14 +9,17 @@ class BrandResolver
 {
     public function resolveFromRequest(Request $request): ?Brand
     {
-        // Explicit override (local/testing only): honor exactly — do not fall through to localhost default.
-        if (! app()->environment('production')) {
-            $override = $request->header('X-Brand-Domain') ?: $request->query('brand_domain');
-            if (is_string($override) && $override !== '') {
-                return Brand::query()
-                    ->where('status', 'active')
-                    ->where('domain', $this->normalizeHost($override))
-                    ->first();
+        // Prefer explicit brand domain when present (Next.js SSR forwards the
+        // visitor Host as X-Brand-Domain). Public brand data is not secret —
+        // spoofing only selects which public brand config/intake lane to use.
+        $override = $request->header('X-Brand-Domain') ?: $request->query('brand_domain');
+        if (is_string($override) && $override !== '') {
+            $brand = Brand::query()
+                ->where('status', 'active')
+                ->where('domain', $this->normalizeHost($override))
+                ->first();
+            if ($brand) {
+                return $brand;
             }
         }
 
