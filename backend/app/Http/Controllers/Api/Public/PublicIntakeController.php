@@ -7,6 +7,7 @@ use App\Models\Brand;
 use App\Services\PublicIntake\PublicIntakeSessionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -166,8 +167,25 @@ class PublicIntakeController extends Controller
             return response()->json(['message' => 'Intake session expired or not found'], 404);
         }
 
+        // Normalize photos from photos / photos[] / photos.0 shapes (iOS Safari FormData).
+        $files = $request->file('photos', []);
+        if (! is_array($files) || $files === []) {
+            $files = array_values(array_filter([
+                $request->file('photos.0'),
+                $request->file('photos.1'),
+                $request->file('photos.2'),
+                $request->file('photos.3'),
+                $request->file('photos.4'),
+                $request->file('photos.5'),
+                $request->file('photos.6'),
+                $request->file('photos.7'),
+            ]));
+        }
+
         try {
-            $attachments = $this->sessions->attachMedia($session, $brand, $request->file('photos', []));
+            $attachments = $this->sessions->attachMedia($session, $brand, is_array($files) ? $files : []);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }

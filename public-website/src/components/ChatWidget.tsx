@@ -3,8 +3,11 @@
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import type { BrandConfig } from "@/lib/brand";
-import { apiBaseUrl, brandHeaders } from "@/lib/brand";
-import { useTalkIntakeEnabled } from "@/lib/talkEnabled";
+import { apiBaseUrl, brandHeaders, brandUploadHeaders } from "@/lib/brand";
+import {
+  clearIntakeSessionToken,
+  useTalkIntakeEnabled,
+} from "@/lib/talkEnabled";
 import { useTalkInput } from "@/hooks/useTalkInput";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
@@ -75,6 +78,8 @@ function ChatWidgetInner({
   const [attachments, setAttachments] = useState<
     Array<{ url: string; file_name: string }>
   >([]);
+  const [uploading, setUploading] = useState(false);
+  const [sessionEpoch, setSessionEpoch] = useState(0);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -98,10 +103,18 @@ function ChatWidgetInner({
     wantsPrice &&
     priceRevealed &&
     Boolean(priceEstimate?.available) &&
-    !priceEstimate?.is_placeholder &&
+    priceEstimate?.is_placeholder !== true &&
     typeof priceEstimate?.low === "number" &&
     typeof priceEstimate?.high === "number";
   const showSubmit = ready && scopeConfirmed;
+
+  function sanitizePriceEstimate(pe: PriceEstimate | null | undefined): PriceEstimate | null {
+    if (!pe) return null;
+    if (pe.is_placeholder === true || pe.available !== true) {
+      return { available: false, is_placeholder: Boolean(pe.is_placeholder) };
+    }
+    return pe;
+  }
 
   useEffect(() => {
     const reduce =
@@ -115,7 +128,22 @@ function ChatWidgetInner({
     (async () => {
       setSessionReady(false);
       setError(null);
+      setPriceEstimate(null);
+      setPriceRevealed(false);
+      setAttachments([]);
+      setCollected({});
+      setReady(false);
+      setSlots([]);
+      setSelectedSlot(null);
+      setHoldToken(null);
+      setHoldUntil(null);
+      greetingSeeded.current = false;
+      priceFetchArmed.current = false;
+      slotsFetchArmed.current = false;
+
       try {
+        // ?enableTalk=1 clears prior tokens on page load (see talkEnabled.ts).
+        // Resume only if a token exists for this visit (e.g. homepage ensureSession).
         const existing = window.localStorage.getItem("serviceop_intake_token");
         if (existing) {
           const resume = await fetch(
@@ -129,27 +157,45 @@ function ChatWidgetInner({
             const data = await resume.json();
             if (cancelled) return;
             setToken(data.session_token);
-            setMessages(
-              (data.messages || []).map((m: { role: string; content: string }) => ({
-                role: m.role === "assistant" ? "assistant" : "user",
+            const pe = sanitizePriceEstimate(data.price_estimate || null);
+            const rawMessages = (data.messages || []).map(
+              (m: { role: string; content: string }) => ({
+                role: (m.role === "assistant" ? "assistant" : "user") as
+                  | "assistant"
+                  | "user",
                 content: m.content,
-              }))
+              })
+            );
+            // Drop legacy auto-appended estimate lines so placeholder $ ranges never linger.
+            const hideLegacyPrice =
+              !pe?.available || pe.is_placeholder === true;
+            setMessages(
+              hideLegacyPrice
+                ? rawMessages.filter(
+                    (m: ChatMessage) =>
+                      !(
+                        m.role === "assistant" &&
+                        /ballpark|finish range|\$\s*\d/i.test(m.content)
+                      )
+                  )
+                : rawMessages
             );
             setCollected(data.collected || {});
             setReady(Boolean(data.ready_to_submit));
             setAttachments(data.attachments || []);
-            const pe = data.price_estimate || null;
             setPriceEstimate(pe);
             if (
               flagTrue(data.collected?.wants_price) &&
               pe?.available &&
-              !pe?.is_placeholder
+              pe.is_placeholder !== true
             ) {
               setPriceRevealed(true);
+            } else {
+              setPriceRevealed(false);
             }
             return;
           }
-          window.localStorage.removeItem("serviceop_intake_token");
+          clearIntakeSessionToken();
         }
 
         const start = await fetch(`${apiBaseUrl()}/api/public/intake/start`, {
@@ -167,6 +213,7 @@ function ChatWidgetInner({
         const data = await start.json();
         if (cancelled) return;
         setToken(data.session_token);
+        setMessages([]);
         window.localStorage.setItem("serviceop_intake_token", data.session_token);
       } catch (e) {
         if (!cancelled) {
@@ -179,7 +226,7 @@ function ChatWidgetInner({
     return () => {
       cancelled = true;
     };
-  }, [brand.domain, hostHint]);
+  }, [brand.domain, hostHint, sessionEpoch]);
 
   useEffect(() => {
     if (!sessionReady || !token || greetingSeeded.current) return;
@@ -272,7 +319,13 @@ function ChatWidgetInner({
               }
               if (payload.collected) setCollected(payload.collected);
               setReady(Boolean(payload.ready_to_submit));
-              if (payload.price_estimate) setPriceEstimate(payload.price_estimate);
+              if (payload.price_estimate) {
+                const pe = sanitizePriceEstimate(payload.price_estimate);
+                setPriceEstimate(pe);
+                if (!(pe?.available && pe.is_placeholder !== true)) {
+                  setPriceRevealed(false);
+                }
+              }
             }
             if (event === "error") {
               setError(payload.message || "Assistant error");
@@ -340,10 +393,12 @@ function ChatWidgetInner({
         });
         if (!res.ok) return;
         const data = await res.json();
-        const pe = (data.price_estimate || null) as PriceEstimate | null;
+        const pe = sanitizePriceEstimate(data.price_estimate || null);
         setPriceEstimate(pe);
-        if (pe?.available && !pe.is_placeholder) {
+        if (pe?.available && pe.is_placeholder !== true) {
           setPriceRevealed(true);
+        } else {
+          setPriceRevealed(false);
         }
       } catch {
         /* ignore — AI copy handles follow-up */
@@ -382,37 +437,96 @@ function ChatWidgetInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, wantsScheduling, collected.service_category]);
 
-  async function uploadPhotos(files: FileList | null) {
-    if (!files?.length || !token) return;
-    const fd = new FormData();
-    fd.append("session_token", token);
-    for (const f of Array.from(files)) {
-      fd.append("photos[]", f);
-    }
+  async function uploadPhotos(fileList: FileList | File[] | null) {
+    const files = fileList ? Array.from(fileList) : [];
+    if (!files.length || !token || uploading) return;
 
-    const h = brandHeaders(hostHint || brand.domain) as Record<string, string>;
-    delete h["Content-Type"];
-    if (token) h["X-Intake-Token"] = token;
+    setUploading(true);
+    setError(null);
+    try {
+      const fd = new FormData();
+      fd.append("session_token", token);
+      for (const f of files) {
+        fd.append("photos[]", f);
+      }
 
-    const res = await fetch(`${apiBaseUrl()}/api/public/intake/media`, {
-      method: "POST",
-      headers: h,
-      credentials: "include",
-      body: fd,
-    });
-    if (!res.ok) {
-      setError("Photo upload failed");
-      return;
+      const res = await fetch(`${apiBaseUrl()}/api/public/intake/media`, {
+        method: "POST",
+        headers: brandUploadHeaders(hostHint || brand.domain, token),
+        credentials: "include",
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg =
+          (data as { message?: string }).message ||
+          (data as { errors?: { photos?: string[] } }).errors?.photos?.[0] ||
+          "Photo upload failed. Please try again.";
+        setError(msg);
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content: `I couldn't attach that photo (${msg}). Try another photo, or keep describing the job.`,
+          },
+        ]);
+        return;
+      }
+
+      const next = (data.attachments || []) as Array<{
+        url: string;
+        file_name: string;
+      }>;
+      const added = Math.max(0, next.length - attachments.length);
+      const count = added > 0 ? added : Number(data.count) || files.length;
+      if (count < 1 || next.length < 1) {
+        setError("Upload did not attach any photos. Please try again.");
+        setMessages((m) => [
+          ...m,
+          {
+            role: "assistant",
+            content:
+              "I didn't receive those photos — please try uploading again.",
+          },
+        ]);
+        return;
+      }
+
+      setAttachments(next);
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content: `Got ${count} photo${count === 1 ? "" : "s"}. Anything else about the job?`,
+        },
+      ]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Photo upload failed";
+      setError(msg);
+      setMessages((m) => [
+        ...m,
+        {
+          role: "assistant",
+          content:
+            "Photo upload failed — please check your connection and try again.",
+        },
+      ]);
+    } finally {
+      setUploading(false);
     }
-    const data = await res.json();
-    setAttachments(data.attachments || []);
-    setMessages((m) => [
-      ...m,
-      {
-        role: "assistant",
-        content: `Got ${files.length} photo${files.length === 1 ? "" : "s"}. Anything else about the job?`,
-      },
-    ]);
+  }
+
+  async function startOver() {
+    if (talk.listening) {
+      await talk.stop({ commit: false, keepCaption: true });
+    }
+    restartTalkAfterAi.current = false;
+    setTalkMode(false);
+    clearIntakeSessionToken();
+    setSubmittedLeadId(null);
+    setBookingConfirmed(false);
+    setInput("");
+    setSessionEpoch((n) => n + 1);
   }
 
   async function selectSlot(slot: Slot) {
@@ -460,7 +574,7 @@ function ChatWidgetInner({
     }
     setSubmittedLeadId(data.lead_id);
     setBookingConfirmed(Boolean(data.booking?.confirmed));
-    window.localStorage.removeItem("serviceop_intake_token");
+    clearIntakeSessionToken();
   }
 
   async function toggleTalk() {
@@ -597,8 +711,14 @@ function ChatWidgetInner({
       </div>
 
       {attachments.length > 0 && (
-        <div className="muted" style={{ padding: "0 1.5rem" }}>
-          Photos: {attachments.map((a) => a.file_name).join(", ")}
+        <div className="chat-attachments" aria-label="Uploaded photos">
+          {attachments.map((a, i) => (
+            <figure key={`${a.url}-${i}`} className="chat-attachment">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={a.url} alt={a.file_name || `Photo ${i + 1}`} />
+              <figcaption>{a.file_name}</figcaption>
+            </figure>
+          ))}
         </div>
       )}
 
@@ -626,21 +746,22 @@ function ChatWidgetInner({
             type="button"
             className="chat-action"
             onClick={() => fileInputRef.current?.click()}
-            disabled={streaming || !token}
+            disabled={streaming || !token || uploading}
           >
-            Upload Photos
+            {uploading ? "Uploading…" : "Upload Photos"}
           </button>
         </div>
 
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,image/heic,image/heif,.heic,.heif"
           multiple
           hidden
           onChange={(e) => {
-            void uploadPhotos(e.target.files);
+            const list = e.target.files ? Array.from(e.target.files) : [];
             e.target.value = "";
+            if (list.length) void uploadPhotos(list);
           }}
         />
 
@@ -694,7 +815,7 @@ function ChatWidgetInner({
             type="button"
             className="chat-handoff"
             onClick={() => void requestHumanHandoff()}
-            disabled={streaming || !token}
+            disabled={streaming || !token || uploading}
           >
             Speak with someone
           </button>
@@ -703,12 +824,20 @@ function ChatWidgetInner({
               Call {supportPhone}
             </a>
           ) : null}
+          <button
+            type="button"
+            className="chat-handoff"
+            onClick={() => void startOver()}
+            disabled={uploading}
+          >
+            Start over
+          </button>
           {showSubmit ? (
             <button
               type="button"
               className="primary chat-submit"
               onClick={() => void submitLead()}
-              disabled={!token}
+              disabled={!token || uploading}
             >
               Submit request
             </button>

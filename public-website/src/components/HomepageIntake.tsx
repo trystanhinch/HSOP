@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { BrandConfig } from "@/lib/brand";
-import { apiBaseUrl, brandHeaders } from "@/lib/brand";
+import { apiBaseUrl, brandHeaders, brandUploadHeaders } from "@/lib/brand";
 import { useTalkIntakeEnabled } from "@/lib/talkEnabled";
 import { ChatWidget } from "@/components/ChatWidget";
 
@@ -170,12 +170,9 @@ export function HomepageIntake({ brand, hostHint }: Props) {
         const fd = new FormData();
         fd.append("session_token", token);
         files.forEach((f) => fd.append("photos[]", f));
-        const h = brandHeaders(hostHint || brand.domain) as Record<string, string>;
-        delete h["Content-Type"];
-        h["X-Intake-Token"] = token;
         const res = await fetch(`${apiBaseUrl()}/api/public/intake/media`, {
           method: "POST",
-          headers: h,
+          headers: brandUploadHeaders(hostHint || brand.domain, token),
           credentials: "include",
           body: fd,
         });
