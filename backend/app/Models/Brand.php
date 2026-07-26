@@ -17,6 +17,7 @@ class Brand extends Model
         'branding',
         'contact_info',
         'seo_defaults',
+        'content',
         'status',
     ];
 
@@ -27,6 +28,7 @@ class Brand extends Model
             'branding' => 'array',
             'contact_info' => 'array',
             'seo_defaults' => 'array',
+            'content' => 'array',
         ];
     }
 
@@ -55,6 +57,11 @@ class Brand extends Model
         return $this->hasMany(PricingRule::class);
     }
 
+    public function pageSeoOverrides(): HasMany
+    {
+        return $this->hasMany(BrandPageSeoOverride::class);
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';
@@ -63,7 +70,7 @@ class Brand extends Model
     /**
      * Normalized service catalog for intake / prompts.
      *
-     * @return list<array{key: string, label: string, keywords: list<string>}>
+     * @return list<array{key: string, label: string, keywords: list<string>, lede: string|null, points: list<string>}>
      */
     public function serviceCatalog(): array
     {
@@ -82,6 +89,8 @@ class Brand extends Model
                     'key' => $key,
                     'label' => $label,
                     'keywords' => array_values(array_filter(array_map('strtolower', preg_split('/[\s\/,&]+/', $label) ?: []))),
+                    'lede' => null,
+                    'points' => [],
                 ];
 
                 continue;
@@ -105,6 +114,13 @@ class Brand extends Model
             if (! is_array($keywords) || $keywords === []) {
                 $keywords = preg_split('/[\s\/,&]+/', $label !== '' ? $label : $key) ?: [];
             }
+            $lede = isset($item['lede']) && is_string($item['lede'])
+                ? trim($item['lede'])
+                : null;
+            $points = $item['points'] ?? [];
+            if (! is_array($points)) {
+                $points = [];
+            }
 
             $out[] = [
                 'key' => $key,
@@ -113,6 +129,11 @@ class Brand extends Model
                     static fn ($k) => strtolower(trim((string) $k)),
                     $keywords
                 )))),
+                'lede' => $lede !== '' ? $lede : null,
+                'points' => array_values(array_filter(array_map(
+                    static fn ($point) => trim((string) $point),
+                    $points
+                ))),
             ];
         }
 
@@ -147,6 +168,17 @@ class Brand extends Model
      */
     public function publicConfig(): array
     {
+        $pageSeo = $this->pageSeoOverrides()
+            ->get(['page_key', 'title', 'description', 'og_image'])
+            ->mapWithKeys(fn (BrandPageSeoOverride $override) => [
+                $override->page_key => [
+                    'title' => $override->title,
+                    'description' => $override->description,
+                    'og_image' => $override->og_image,
+                ],
+            ])
+            ->all();
+
         return [
             'id' => $this->id,
             'slug' => $this->slug,
@@ -156,6 +188,8 @@ class Brand extends Model
             'branding' => $this->branding ?? [],
             'contact_info' => $this->contact_info ?? [],
             'seo_defaults' => $this->seo_defaults ?? [],
+            'content' => $this->content ?? [],
+            'page_seo' => $pageSeo,
         ];
     }
 }

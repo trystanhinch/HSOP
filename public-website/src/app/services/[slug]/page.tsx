@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { fetchBrand, pageDescription, pageTitle } from "@/lib/brand";
+import { fetchBrand, pageDescription, pageSeo, pageTitle } from "@/lib/brand";
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -11,36 +11,23 @@ async function brand() {
   return fetchBrand(h.get("x-forwarded-host") || h.get("host"));
 }
 
-const SERVICE_COPY: Record<string, { lede: string; points: string[] }> = {
-  drywall_paint: {
-    lede: "Holes, seams, water damage, popcorn texture — we cut, mud, sand, and paint so the repair disappears into the wall.",
-    points: [
-      "Patch and full-panel drywall repairs",
-      "Ceiling texture removal and smooth finish",
-      "Interior paint that matches the surrounding wall",
-    ],
-  },
-  insulation: {
-    lede: "Cold rooms and drafts usually mean missing or settled insulation. We open up what we need to, install properly, and close the wall back clean.",
-    points: [
-      "Attic and wall insulation upgrades",
-      "Batt and blown-in options where they fit",
-      "Finished so you are not left looking at open cavities",
-    ],
-  },
-};
-
-function serviceCopy(key: string, label: string, company: string) {
-  return (
-    SERVICE_COPY[key] || {
-      lede: `${company} handles ${label.toLowerCase()} for homeowners who want the job finished properly — not patched and forgotten.`,
-      points: [
-        `Clear scope for ${label.toLowerCase()}`,
-        "Ballpark range before a site visit",
-        "Book a time online when you are ready",
-      ],
-    }
-  );
+function serviceCopy(
+  service: { label: string; lede?: string | null; points?: string[] },
+  company: string
+) {
+  return {
+    lede:
+      service.lede ||
+      `${company} handles ${service.label.toLowerCase()} for homeowners who want the job finished properly — not patched and forgotten.`,
+    points:
+      service.points && service.points.length > 0
+        ? service.points
+        : [
+            `Clear scope for ${service.label.toLowerCase()}`,
+            "Ballpark range before a site visit",
+            "Book a time online when you are ready",
+          ],
+  };
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -48,13 +35,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const b = await brand();
   const service = b.service_categories.find((s) => s.key === slug);
   if (!service) return { title: b.company_name };
-  return {
-    title: pageTitle(b, service.label),
-    description: pageDescription(
-      b,
-      `${service.label} from ${b.company_name}. Get a range online and book a site visit.`
-    ),
-  };
+  const fallbackDescription = pageDescription(
+    b,
+    `${service.label} from ${b.company_name}. Get a range online and book a site visit.`
+  );
+  return pageSeo(
+    b,
+    `service:${service.key}`,
+    pageTitle(b, service.label),
+    fallbackDescription
+  );
 }
 
 export default async function ServicePage({ params }: Props) {
@@ -63,12 +53,14 @@ export default async function ServicePage({ params }: Props) {
   const service = b.service_categories.find((s) => s.key === slug);
   if (!service) notFound();
 
-  const copy = serviceCopy(service.key, service.label, b.company_name);
+  const copy = serviceCopy(service, b.company_name);
+  const homeLabel = b.content?.service?.home_label || "Home";
+  const requestPrefix = b.content?.service?.request_prefix || "Request";
 
   return (
     <section className="service-hero">
       <p className="crumbs">
-        <Link href="/">Home</Link>
+        <Link href="/">{homeLabel}</Link>
         {" / "}
         {service.label}
       </p>
@@ -89,7 +81,7 @@ export default async function ServicePage({ params }: Props) {
         ))}
       </ul>
       <Link className="btn" href="/quote">
-        Request {service.label}
+        {requestPrefix} {service.label}
       </Link>
     </section>
   );

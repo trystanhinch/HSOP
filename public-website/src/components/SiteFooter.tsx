@@ -7,6 +7,7 @@ export function SiteFooter({ brand }: { brand: BrandConfig }) {
     (typeof brand.contact_info?.email === "string" && brand.contact_info.email) || null;
   const licensed = Boolean(brand.branding?.licensed ?? brand.contact_info?.licensed);
   const insured = Boolean(brand.branding?.insured ?? brand.contact_info?.insured);
+  const fallbackLabel = brand.content?.footer?.fallback_label || "Local finishing crew";
 
   return (
     <footer className="site-footer">
@@ -17,7 +18,7 @@ export function SiteFooter({ brand }: { brand: BrandConfig }) {
           </strong>
           <p className="muted" style={{ margin: "0.35rem 0 0" }}>
             {[licensed && "Licensed", insured && "Insured"].filter(Boolean).join(" · ") ||
-              "Local finishing crew"}
+              fallbackLabel}
           </p>
         </div>
         <div>

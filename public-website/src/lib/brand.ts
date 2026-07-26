@@ -2,6 +2,14 @@ export type BrandService = {
   key: string;
   label: string;
   keywords: string[];
+  lede?: string | null;
+  points?: string[];
+};
+
+export type BrandPageSeo = {
+  title?: string | null;
+  description?: string | null;
+  og_image?: string | null;
 };
 
 export type BrandConfig = {
@@ -50,6 +58,37 @@ export type BrandConfig = {
     og_image?: string | null;
     [key: string]: unknown;
   };
+  content: {
+    header?: {
+      quote_cta_label?: string;
+    };
+    home?: {
+      details_label?: string;
+      steps?: Array<{
+        eyebrow?: string;
+        title?: string;
+        description?: string;
+      }>;
+      licensed_label?: string;
+      insured_label?: string;
+      serving_prefix?: string;
+      trust_fallback?: string;
+      bottom_cta_label?: string;
+    };
+    service?: {
+      home_label?: string;
+      request_prefix?: string;
+    };
+    quote?: {
+      heading?: string;
+      lede?: string;
+    };
+    footer?: {
+      fallback_label?: string;
+    };
+    [key: string]: unknown;
+  };
+  page_seo: Record<string, BrandPageSeo>;
 };
 
 export function apiBaseUrl(): string {
@@ -125,4 +164,34 @@ export function pageDescription(brand: BrandConfig, fallback?: string): string {
     fallback ||
     `${brand.company_name} — request a quote online.`
   );
+}
+
+export function renderBrandTemplate(value: string, brand: BrandConfig): string {
+  return value
+    .replace(/\{\{\s*company_name\s*\}\}/g, brand.company_name)
+    .replace(/\{\{\s*domain\s*\}\}/g, brand.domain);
+}
+
+export function pageSeo(
+  brand: BrandConfig,
+  pageKey: string,
+  fallbackTitle: string,
+  fallbackDescription: string
+) {
+  const override = brand.page_seo?.[pageKey];
+  const title = override?.title
+    ? renderBrandTemplate(override.title, brand)
+    : fallbackTitle;
+  const description = override?.description
+    ? renderBrandTemplate(override.description, brand)
+    : fallbackDescription;
+  const ogImage = override?.og_image || brand.seo_defaults?.og_image;
+
+  return {
+    title,
+    description,
+    ...(ogImage
+      ? { openGraph: { images: [ogImage] } }
+      : {}),
+  };
 }

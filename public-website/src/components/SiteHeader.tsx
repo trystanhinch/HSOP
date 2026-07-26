@@ -5,6 +5,7 @@ export function SiteHeader({ brand }: { brand: BrandConfig }) {
   const shortName =
     (typeof brand.branding?.short_name === "string" && brand.branding.short_name) ||
     brand.company_name.split(/[&|]/)[0].trim();
+  const quoteLabel = brand.content?.header?.quote_cta_label || "Get a quote";
 
   return (
     <header className="site-header">
@@ -18,7 +19,7 @@ export function SiteHeader({ brand }: { brand: BrandConfig }) {
           </Link>
         ))}
         <Link href="/quote" className="cta">
-          Get a quote
+          {quoteLabel}
         </Link>
       </nav>
     </header>

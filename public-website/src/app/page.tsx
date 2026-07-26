@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import type { Metadata } from "next";
 import { FinishRevealHero } from "@/components/FinishRevealHero";
-import { fetchBrand, pageDescription, pageTitle } from "@/lib/brand";
+import { fetchBrand, pageDescription, pageSeo, pageTitle } from "@/lib/brand";
 
 async function brand() {
   const h = await headers();
@@ -11,13 +11,15 @@ async function brand() {
 
 export async function generateMetadata(): Promise<Metadata> {
   const b = await brand();
-  return {
-    title: pageTitle(b),
-    description: pageDescription(
+  return pageSeo(
+    b,
+    "home",
+    pageTitle(b),
+    pageDescription(
       b,
       `${b.company_name} fixes drywall, paint, and insulation problems for homeowners. Get a clear range online.`
-    ),
-  };
+    )
+  );
 }
 
 export default async function HomePage() {
@@ -32,6 +34,28 @@ export default async function HomePage() {
   const servicesIntro =
     (typeof b.branding?.services_intro === "string" && b.branding.services_intro) ||
     `What ${b.company_name} fixes`;
+  const homeContent = b.content?.home || {};
+  const fallbackSteps = [
+    {
+      eyebrow: "1 — Describe",
+      title: "Tell us what you see",
+      description: "Ceiling stains, open walls, cold rooms — a short chat is enough to start.",
+    },
+    {
+      eyebrow: "2 — Range",
+      title: "Get a ballpark",
+      description: "We show an estimate range from your details before anyone comes out.",
+    },
+    {
+      eyebrow: "3 — Book",
+      title: "Pick a visit time",
+      description: "Hold a site-visit slot while you finish, or submit and we'll call you.",
+    },
+  ];
+  const steps =
+    Array.isArray(homeContent.steps) && homeContent.steps.length === 3
+      ? homeContent.steps
+      : fallbackSteps;
 
   return (
     <>
@@ -46,52 +70,45 @@ export default async function HomePage() {
             <li key={s.key}>
               <Link href={`/services/${s.key}`}>
                 <span>{s.label}</span>
-                <span className="hint">Details →</span>
+                <span className="hint">{homeContent.details_label || "Details →"}</span>
               </Link>
             </li>
           ))}
         </ul>
 
         <div className="sequence" aria-label="How a quote works">
-          <article>
-            <p className="num">1 — Describe</p>
-            <h3>Tell us what you see</h3>
-            <p>Ceiling stains, open walls, cold rooms — a short chat is enough to start.</p>
-          </article>
-          <article>
-            <p className="num">2 — Range</p>
-            <h3>Get a ballpark</h3>
-            <p>We show an estimate range from your details before anyone comes out.</p>
-          </article>
-          <article>
-            <p className="num">3 — Book</p>
-            <h3>Pick a visit time</h3>
-            <p>Hold a site-visit slot while you finish, or submit and we&apos;ll call you.</p>
-          </article>
+          {steps.map((step, index) => (
+            <article key={index}>
+              <p className="num">{step.eyebrow || fallbackSteps[index].eyebrow}</p>
+              <h3>{step.title || fallbackSteps[index].title}</h3>
+              <p>{step.description || fallbackSteps[index].description}</p>
+            </article>
+          ))}
         </div>
 
         <div className="trust-row">
           {licensed ? (
             <span>
-              <strong>Licensed</strong> crew
+              <strong>{homeContent.licensed_label || "Licensed crew"}</strong>
             </span>
           ) : null}
           {insured ? (
             <span>
-              <strong>Insured</strong> work
+              <strong>{homeContent.insured_label || "Insured work"}</strong>
             </span>
           ) : null}
           {area ? (
             <span>
-              Serving <strong>{area}</strong>
+              {homeContent.serving_prefix || "Serving"} <strong>{area}</strong>
             </span>
           ) : (
             <span>
-              Built for homeowners who want the mess <strong>finished clean</strong>
+              {homeContent.trust_fallback ||
+                "Built for homeowners who want the mess finished clean"}
             </span>
           )}
           <Link href="/quote" className="btn" style={{ marginLeft: "auto" }}>
-            Talk through your project
+            {homeContent.bottom_cta_label || "Talk through your project"}
           </Link>
         </div>
       </section>

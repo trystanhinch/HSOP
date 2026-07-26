@@ -163,11 +163,23 @@ class Milestone4Seeder extends Seeder
                         'key' => 'drywall_paint',
                         'label' => 'Drywall & Paint',
                         'keywords' => ['drywall', 'paint', 'mudding', 'taping', 'ceiling'],
+                        'lede' => 'Holes, seams, water damage, popcorn texture — we cut, mud, sand, and paint so the repair disappears into the wall.',
+                        'points' => [
+                            'Patch and full-panel drywall repairs',
+                            'Ceiling texture removal and smooth finish',
+                            'Interior paint that matches the surrounding wall',
+                        ],
                     ],
                     [
                         'key' => 'insulation',
                         'label' => 'Insulation',
                         'keywords' => ['insulation', 'attic', 'batt', 'spray foam'],
+                        'lede' => 'Cold rooms and drafts usually mean missing or settled insulation. We open up what we need to, install properly, and close the wall back clean.',
+                        'points' => [
+                            'Attic and wall insulation upgrades',
+                            'Batt and blown-in options where they fit',
+                            'Finished so you are not left looking at open cavities',
+                        ],
                     ],
                 ],
                 'branding' => [
@@ -205,6 +217,49 @@ class Milestone4Seeder extends Seeder
                     'title_template' => '{{company_name}} | Home Services',
                     'description' => null,
                     'og_image' => null,
+                ],
+                // Existing rendered copy moved out of Next.js. Hero fields remain
+                // in branding above to avoid duplicating established editable data.
+                'content' => [
+                    'header' => [
+                        'quote_cta_label' => 'Get a quote',
+                    ],
+                    'home' => [
+                        'details_label' => 'Details →',
+                        'steps' => [
+                            [
+                                'eyebrow' => '1 — Describe',
+                                'title' => 'Tell us what you see',
+                                'description' => 'Ceiling stains, open walls, cold rooms — a short chat is enough to start.',
+                            ],
+                            [
+                                'eyebrow' => '2 — Range',
+                                'title' => 'Get a ballpark',
+                                'description' => 'We show an estimate range from your details before anyone comes out.',
+                            ],
+                            [
+                                'eyebrow' => '3 — Book',
+                                'title' => 'Pick a visit time',
+                                'description' => 'Hold a site-visit slot while you finish, or submit and we will call you.',
+                            ],
+                        ],
+                        'licensed_label' => 'Licensed crew',
+                        'insured_label' => 'Insured work',
+                        'serving_prefix' => 'Serving',
+                        'trust_fallback' => 'Built for homeowners who want the mess finished clean',
+                        'bottom_cta_label' => 'Talk through your project',
+                    ],
+                    'service' => [
+                        'home_label' => 'Home',
+                        'request_prefix' => 'Request',
+                    ],
+                    'quote' => [
+                        'heading' => 'Talk through the fix',
+                        'lede' => 'Describe what you see — photos help. {{company_name}} will collect what we need, show a ballpark range, and let you hold a visit time.',
+                    ],
+                    'footer' => [
+                        'fallback_label' => 'Local finishing crew',
+                    ],
                 ],
                 'status' => 'active',
             ]
@@ -257,6 +312,12 @@ class Milestone4Seeder extends Seeder
                         'key' => 'roofing',
                         'label' => 'Roofing',
                         'keywords' => ['roof', 'shingle'],
+                        'lede' => 'Leaks, missing shingles, and storm damage need a clear plan before the next rain.',
+                        'points' => [
+                            'Leak and storm-damage assessment',
+                            'Shingle repair and replacement options',
+                            'Clear scope before work begins',
+                        ],
                     ],
                 ],
                 'branding' => [
@@ -287,6 +348,28 @@ class Milestone4Seeder extends Seeder
                 ],
                 'seo_defaults' => [
                     'title_template' => '{{company_name}} | Roofing',
+                ],
+                'content' => [
+                    'header' => ['quote_cta_label' => 'Get a roofing quote'],
+                    'home' => [
+                        'details_label' => 'Details →',
+                        'steps' => [
+                            ['eyebrow' => '1 — Describe', 'title' => 'Tell us what happened', 'description' => 'Share what you can see from the ground and when it started.'],
+                            ['eyebrow' => '2 — Range', 'title' => 'Get a ballpark', 'description' => 'We show a range from the roof details you provide.'],
+                            ['eyebrow' => '3 — Book', 'title' => 'Pick an inspection time', 'description' => 'Hold an available time while you finish your request.'],
+                        ],
+                        'licensed_label' => 'Licensed crew',
+                        'insured_label' => 'Insured work',
+                        'serving_prefix' => 'Serving',
+                        'trust_fallback' => 'Built for homeowners who need a clear roofing plan',
+                        'bottom_cta_label' => 'Talk through your roof',
+                    ],
+                    'service' => ['home_label' => 'Home', 'request_prefix' => 'Request'],
+                    'quote' => [
+                        'heading' => 'Talk through the roof',
+                        'lede' => 'Describe what you see — photos help. {{company_name}} will collect the details, show a ballpark range, and let you hold an inspection time.',
+                    ],
+                    'footer' => ['fallback_label' => 'Local roofing crew'],
                 ],
                 'status' => 'active',
             ]

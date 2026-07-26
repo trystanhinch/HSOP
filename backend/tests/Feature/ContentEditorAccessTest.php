@@ -53,9 +53,125 @@ class ContentEditorAccessTest extends TestCase
                 'branding',
                 'contact_info',
                 'seo_defaults',
+                'content',
                 'service_categories',
+                'seo_pages',
                 'editable_fields',
             ]);
+    }
+
+    public function test_service_descriptions_are_editable_and_public(): void
+    {
+        $editor = $this->contentEditor();
+        $brand = Brand::findOrFail($editor->brand_id);
+        $services = $brand->serviceCatalog();
+        $services[0]['lede'] = 'Agency-authored service introduction.';
+        $services[0]['points'] = ['First agency point', 'Second agency point'];
+
+        $this->actingAs($editor, 'sanctum')
+            ->putJson('/api/brand-content', ['service_categories' => $services])
+            ->assertOk()
+            ->assertJsonPath('service_categories.0.lede', 'Agency-authored service introduction.')
+            ->assertJsonPath('service_categories.0.points.1', 'Second agency point');
+
+        $this->getJson('/api/public/brand')
+            ->assertOk()
+            ->assertJsonPath('brand.service_categories.0.lede', 'Agency-authored service introduction.')
+            ->assertJsonPath('brand.service_categories.0.points.0', 'First agency point');
+    }
+
+    public function test_existing_page_copy_and_fixed_three_steps_are_editable_and_public(): void
+    {
+        $editor = $this->contentEditor();
+        $content = [
+            'header' => ['quote_cta_label' => 'Agency quote button'],
+            'home' => [
+                'details_label' => 'Agency details',
+                'steps' => [
+                    ['eyebrow' => 'Step A', 'title' => 'Agency first', 'description' => 'First description'],
+                    ['eyebrow' => 'Step B', 'title' => 'Agency second', 'description' => 'Second description'],
+                    ['eyebrow' => 'Step C', 'title' => 'Agency third', 'description' => 'Third description'],
+                ],
+                'licensed_label' => 'Agency licensed',
+                'insured_label' => 'Agency insured',
+                'serving_prefix' => 'Available in',
+                'trust_fallback' => 'Agency trust copy',
+                'bottom_cta_label' => 'Agency lower CTA',
+            ],
+            'service' => ['home_label' => 'Agency home', 'request_prefix' => 'Book'],
+            'quote' => [
+                'heading' => 'Agency quote heading',
+                'lede' => 'Talk to {{company_name}} about the work.',
+            ],
+            'footer' => ['fallback_label' => 'Agency local crew'],
+        ];
+
+        $this->actingAs($editor, 'sanctum')
+            ->putJson('/api/brand-content', ['content' => $content])
+            ->assertOk()
+            ->assertJsonPath('content.home.steps.1.title', 'Agency second')
+            ->assertJsonPath('content.quote.heading', 'Agency quote heading');
+
+        $this->getJson('/api/public/brand')
+            ->assertOk()
+            ->assertJsonPath('brand.content.header.quote_cta_label', 'Agency quote button')
+            ->assertJsonPath('brand.content.home.steps.2.description', 'Third description');
+
+        $this->actingAs($editor, 'sanctum')
+            ->putJson('/api/brand-content', [
+                'content' => [
+                    'home' => [
+                        'steps' => [
+                            ['eyebrow' => '1', 'title' => 'One', 'description' => 'One'],
+                            ['eyebrow' => '2', 'title' => 'Two', 'description' => 'Two'],
+                        ],
+                    ],
+                ],
+            ])
+            ->assertUnprocessable();
+    }
+
+    public function test_per_page_seo_overrides_are_editable_public_and_key_limited(): void
+    {
+        $editor = $this->contentEditor();
+        $this->actingAs($editor, 'sanctum');
+
+        $this->putJson('/api/brand-content', [
+            'seo_pages' => [
+                [
+                    'page_key' => 'home',
+                    'title' => 'Agency home title',
+                    'description' => 'Agency home description',
+                    'og_image' => 'https://example.test/home.jpg',
+                ],
+                [
+                    'page_key' => 'service:drywall_paint',
+                    'title' => 'Agency drywall title',
+                    'description' => 'Agency drywall description',
+                    'og_image' => null,
+                ],
+            ],
+        ])
+            ->assertOk()
+            ->assertJsonFragment([
+                'page_key' => 'home',
+                'title' => 'Agency home title',
+                'description' => 'Agency home description',
+            ]);
+
+        $this->getJson('/api/public/brand')
+            ->assertOk()
+            ->assertJsonPath('brand.page_seo.home.title', 'Agency home title')
+            ->assertJsonPath('brand.page_seo.service:drywall_paint.description', 'Agency drywall description');
+
+        $this->actingAs($editor, 'sanctum')
+            ->putJson('/api/brand-content', [
+                'seo_pages' => [[
+                    'page_key' => 'service:roofing',
+                    'title' => 'Cross-brand attempt',
+                ]],
+            ])
+            ->assertUnprocessable();
     }
 
     public function test_content_editor_can_update_branding_and_service_labels_only(): void
