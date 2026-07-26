@@ -171,6 +171,33 @@ export function brandHeaders(host?: string | null): HeadersInit {
     Accept: "application/json",
     "Content-Type": "application/json",
   };
+  applyBrandDomainHeader(headers, host);
+  return headers;
+}
+
+/**
+ * Multipart upload headers. Never set Content-Type — the browser must add the
+ * multipart boundary. application/json + FormData makes Laravel drop files
+ * ("The photos field is required"), which breaks iPhone Safari uploads.
+ */
+export function brandUploadHeaders(
+  host?: string | null,
+  intakeToken?: string | null
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+  };
+  applyBrandDomainHeader(headers, host);
+  if (intakeToken) {
+    headers["X-Intake-Token"] = intakeToken;
+  }
+  return headers;
+}
+
+function applyBrandDomainHeader(
+  headers: Record<string, string>,
+  host?: string | null
+): void {
   const envOverride = (
     process.env.BRAND_DOMAIN ||
     process.env.NEXT_PUBLIC_BRAND_DOMAIN ||
@@ -199,7 +226,6 @@ export function brandHeaders(host?: string | null): HeadersInit {
   if (domain && !isLoopback) {
     headers["X-Brand-Domain"] = domain;
   }
-  return headers;
 }
 
 export async function fetchBrand(host?: string | null): Promise<BrandConfig> {
