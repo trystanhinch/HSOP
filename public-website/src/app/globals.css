@@ -593,6 +593,18 @@ main.page {
   max-width: 38rem;
 }
 
+.quote-stage__intro--compact {
+  margin-bottom: var(--space-3);
+}
+
+.quote-stage__intro--compact h1 {
+  font-size: clamp(1.5rem, 4vw, 2rem);
+}
+
+.quote-stage__intro--compact .lede {
+  margin-bottom: 0;
+}
+
 /* ——— Chat (token-driven, not generic bubbles) ——— */
 .chat {
   background: var(--color-surface);
@@ -604,6 +616,12 @@ main.page {
   overflow: hidden;
 }
 
+.chat--embedded {
+  border-radius: calc(var(--radius) + 4px);
+  min-height: min(58vh, 560px);
+  margin-top: var(--space-4);
+}
+
 .chat-log {
   padding: var(--space-5);
   overflow-y: auto;
@@ -611,6 +629,48 @@ main.page {
   flex-direction: column;
   gap: var(--space-4);
   max-height: 420px;
+}
+
+.chat--embedded .chat-log {
+  min-height: 220px;
+  max-height: min(52vh, 420px);
+}
+
+.chat-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.55rem;
+}
+
+.chat-mode {
+  border: 1px solid var(--color-line);
+  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-bg));
+  color: var(--color-ink);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.chat-mode.is-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-surface);
+}
+
+.chat-mode.is-listening {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+
+.chat-compose input.is-listening {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+}
+
+.chat-compose button.talk-send.is-listening {
+  background: var(--color-accent);
 }
 
 .chat-empty {
@@ -699,8 +759,7 @@ main.page {
 }
 
 .chat-talk-status {
-  margin: 0;
-  padding: 0 var(--space-5) var(--space-2);
+  margin: 0.35rem 0 0;
   font-size: var(--text-sm);
   color: var(--color-muted);
 }
@@ -708,6 +767,10 @@ main.page {
 .chat-talk-hint {
   margin: 0.35rem 0 0;
   font-size: 0.82rem;
+}
+
+.intake-hero--chat .intake-hero__lede {
+  margin-bottom: var(--space-2);
 }
 
 .chat-actions {

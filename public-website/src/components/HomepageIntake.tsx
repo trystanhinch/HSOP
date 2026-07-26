@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { BrandConfig } from "@/lib/brand";
 import { apiBaseUrl, brandHeaders } from "@/lib/brand";
 import { useTalkIntakeEnabled } from "@/lib/talkEnabled";
+import { ChatWidget } from "@/components/ChatWidget";
 
 type Mode = "type" | "talk" | "upload";
 
@@ -107,6 +108,9 @@ export function HomepageIntake({ brand, hostHint }: Props) {
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** When true, the Project Assistant chat replaces the start form — same page. */
+  const [chatOpen, setChatOpen] = useState(false);
+  const [autoStartTalk, setAutoStartTalk] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function ensureSession(): Promise<string> {
@@ -138,20 +142,15 @@ export function HomepageIntake({ brand, hostHint }: Props) {
     return data.session_token as string;
   }
 
-  async function startTalkInChat() {
+  async function openChat(opts?: { talk?: boolean }) {
     setError(null);
     setBusy(true);
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setError("Microphone is not available. Please type instead.");
-        setMode("type");
-        return;
-      }
       await ensureSession();
-      router.push("/quote?talk=1");
+      setAutoStartTalk(Boolean(opts?.talk && talkEnabled));
+      setChatOpen(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not open chat.");
-      setMode("type");
     } finally {
       setBusy(false);
     }
@@ -161,10 +160,11 @@ export function HomepageIntake({ brand, hostHint }: Props) {
     setError(null);
     setBusy(true);
     try {
-      if (mode === "talk") {
-        await startTalkInChat();
+      if (mode === "talk" && talkEnabled) {
+        await openChat({ talk: true });
         return;
       }
+
       const token = await ensureSession();
       if (mode === "upload" && files.length > 0) {
         const fd = new FormData();
@@ -180,9 +180,7 @@ export function HomepageIntake({ brand, hostHint }: Props) {
           body: fd,
         });
         if (!res.ok) {
-          throw new Error(
-            "Photo upload failed. Please try again from the quote page."
-          );
+          throw new Error("Photo upload failed. Please try again.");
         }
       }
       if (mode === "type" && text.trim()) {
@@ -203,6 +201,14 @@ export function HomepageIntake({ brand, hostHint }: Props) {
           throw new Error("Could not send your message. Continuing to chat…");
         }
       }
+
+      // With Talk enabled, stay on this page and expand the same assistant.
+      if (talkEnabled) {
+        setAutoStartTalk(false);
+        setChatOpen(true);
+        return;
+      }
+
       const params = new URLSearchParams();
       if (mode === "upload") params.set("mode", "upload");
       router.push(params.toString() ? `/quote?${params}` : "/quote");
@@ -211,6 +217,26 @@ export function HomepageIntake({ brand, hostHint }: Props) {
     } finally {
       setBusy(false);
     }
+  }
+
+  if (chatOpen) {
+    return (
+      <section className="intake-hero intake-hero--chat" aria-label="Project assistant">
+        <div className="intake-hero__inner">
+          <h1 className="intake-hero__headline">{c.headline}</h1>
+          <p className="intake-hero__lede">
+            Same conversation — type, talk, or add photos anytime.
+          </p>
+          <ChatWidget
+            brand={brand}
+            hostHint={hostHint}
+            embedded
+            autoStartTalk={autoStartTalk}
+          />
+          <p className="intake-reassurance">{c.reassurance}</p>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -236,6 +262,10 @@ export function HomepageIntake({ brand, hostHint }: Props) {
               onClick={() => {
                 setMode(id);
                 setError(null);
+                if (id === "talk" && talkEnabled) {
+                  void openChat({ talk: true });
+                  return;
+                }
                 if (id === "upload") {
                   fileInputRef.current?.click();
                 }
@@ -271,23 +301,6 @@ export function HomepageIntake({ brand, hostHint }: Props) {
           </div>
         ) : null}
 
-        {talkEnabled && mode === "talk" ? (
-          <div className="intake-talk">
-            <p className="muted">
-              Opens the chat with live speech-to-text. You can switch to typing
-              anytime. AI replies stay on-screen text — this is not a voice call.
-            </p>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => void startTalkInChat()}
-              disabled={busy}
-            >
-              {busy ? "Starting…" : "Start talking"}
-            </button>
-          </div>
-        ) : null}
-
         {mode === "upload" ? (
           <div className="intake-upload">
             <p className="muted">
@@ -316,9 +329,9 @@ export function HomepageIntake({ brand, hostHint }: Props) {
             type="button"
             className="btn intake-go"
             onClick={() => void onGo()}
-            disabled={busy}
+            disabled={busy || (mode === "talk" && talkEnabled)}
           >
-            {busy ? "Starting…" : mode === "talk" ? "Start talking" : c.goLabel}
+            {busy ? "Starting…" : c.goLabel}
           </button>
           <Link href="/quote/manual" className="intake-manual">
             {c.manualLabel}
