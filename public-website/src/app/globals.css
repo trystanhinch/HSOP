@@ -654,10 +654,12 @@ main.page {
 .chat-compose {
   display: flex;
   gap: var(--space-2);
+  align-items: stretch;
 }
 
 .chat-compose input {
   flex: 1;
+  min-width: 0;
   padding: 0.8rem 0.9rem;
   border: 1px solid var(--color-line);
   border-radius: var(--radius);
@@ -675,12 +677,37 @@ main.page {
   font: inherit;
   font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
+}
+
+.chat-compose button.talk-btn {
+  background: transparent;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+}
+
+.chat-compose button.talk-btn.is-listening {
+  background: #9a3b2f;
+  border-color: #9a3b2f;
+  color: #fff;
 }
 
 .chat-compose button:disabled,
 .chat-actions .primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.chat-talk-status {
+  margin: 0;
+  padding: 0 var(--space-5) var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.chat-talk-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
 }
 
 .chat-actions {

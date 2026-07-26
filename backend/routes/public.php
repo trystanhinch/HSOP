@@ -38,6 +38,12 @@ Route::prefix('api/public')
         Route::post('/intake/media', [PublicIntakeController::class, 'media'])
             ->middleware('throttle:public-intake-media');
 
+        Route::post('/intake/talk-session', [PublicIntakeController::class, 'talkSession'])
+            ->middleware('throttle:public-intake-talk-session');
+
+        Route::post('/intake/transcribe', [PublicIntakeController::class, 'transcribe'])
+            ->middleware('throttle:public-intake-transcribe');
+
         Route::post('/intake/estimate', [PublicIntakeController::class, 'estimate'])
             ->middleware('throttle:public-intake-message');
 

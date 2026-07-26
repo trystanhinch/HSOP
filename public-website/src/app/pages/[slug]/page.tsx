@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { ChatWidget } from "@/components/ChatWidget";
 import { FinishRevealHero } from "@/components/FinishRevealHero";
 import {
@@ -115,7 +116,9 @@ function renderByTemplate(
           <h1>{heading}</h1>
           <p className="lede">{lede}</p>
         </div>
-        <ChatWidget brand={brand} hostHint={hostHint || brand.domain} />
+        <Suspense fallback={<p className="muted">Loading chat…</p>}>
+          <ChatWidget brand={brand} hostHint={hostHint || brand.domain} />
+        </Suspense>
       </div>
     );
   }

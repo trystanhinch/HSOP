@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { ChatWidget } from "@/components/ChatWidget";
 import {
   fetchBrand,
@@ -44,7 +45,9 @@ export default async function QuotePage() {
         <h1>{heading}</h1>
         <p className="lede">{lede}</p>
       </div>
-      <ChatWidget brand={b} hostHint={host || b.domain} />
+      <Suspense fallback={<p className="muted">Loading chat…</p>}>
+        <ChatWidget brand={b} hostHint={host || b.domain} />
+      </Suspense>
     </div>
   );
 }

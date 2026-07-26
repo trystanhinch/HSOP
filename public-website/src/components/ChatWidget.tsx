@@ -1,8 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { BrandConfig } from "@/lib/brand";
 import { apiBaseUrl, brandHeaders } from "@/lib/brand";
+import { useTalkIntakeEnabled } from "@/lib/talkEnabled";
+import { useTalkInput } from "@/hooks/useTalkInput";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -12,6 +15,8 @@ type Props = {
 };
 
 export function ChatWidget({ brand, hostHint }: Props) {
+  const searchParams = useSearchParams();
+  const talkEnabled = useTalkIntakeEnabled();
   const [token, setToken] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -48,6 +53,8 @@ export function ChatWidget({ brand, hostHint }: Props) {
     Array<{ url: string; file_name: string }>
   >([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const autoTalkArmed = useRef(false);
+  const inputBeforeListenRef = useRef("");
 
   const headers = useCallback(() => {
     const h = brandHeaders(hostHint || brand.domain) as Record<string, string>;
@@ -72,7 +79,10 @@ export function ChatWidget({ brand, hostHint }: Props) {
         if (existing) {
           const resume = await fetch(
             `${apiBaseUrl()}/api/public/intake/session?session_token=${encodeURIComponent(existing)}`,
-            { headers: brandHeaders(hostHint || brand.domain), credentials: "include" }
+            {
+              headers: brandHeaders(hostHint || brand.domain),
+              credentials: "include",
+            }
           );
           if (resume.ok) {
             const data = await resume.json();
@@ -122,91 +132,122 @@ export function ChatWidget({ brand, hostHint }: Props) {
     };
   }, [brand.domain, hostHint]);
 
-  async function sendMessage() {
-    const text = input.trim();
-    if (!text || !token || streaming) return;
-    setInput("");
-    setError(null);
-    setMessages((m) => [...m, { role: "user", content: text }]);
-    setStreaming(true);
-    setMessages((m) => [...m, { role: "assistant", content: "" }]);
+  const sendMessage = useCallback(
+    async (overrideText?: string) => {
+      const text = (overrideText ?? input).trim();
+      if (!text || !token || streaming) return;
+      setInput("");
+      setError(null);
+      setMessages((m) => [...m, { role: "user", content: text }]);
+      setStreaming(true);
+      setMessages((m) => [...m, { role: "assistant", content: "" }]);
 
-    try {
-      const res = await fetch(`${apiBaseUrl()}/api/public/intake/message`, {
-        method: "POST",
-        headers: {
-          ...headers(),
-          Accept: "text/event-stream",
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          session_token: token,
-          message: text,
-          stream: true,
-        }),
-      });
+      try {
+        const res = await fetch(`${apiBaseUrl()}/api/public/intake/message`, {
+          method: "POST",
+          headers: {
+            ...headers(),
+            Accept: "text/event-stream",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            session_token: token,
+            message: text,
+            stream: true,
+          }),
+        });
 
-      if (!res.ok || !res.body) {
-        throw new Error(`Chat failed (${res.status})`);
-      }
+        if (!res.ok || !res.body) {
+          throw new Error(`Chat failed (${res.status})`);
+        }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let assistant = "";
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let assistant = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || "";
-        for (const part of parts) {
-          const lines = part.split("\n");
-          let event = "message";
-          let dataLine = "";
-          for (const line of lines) {
-            if (line.startsWith("event:")) event = line.slice(6).trim();
-            if (line.startsWith("data:")) dataLine += line.slice(5).trim();
-          }
-          if (!dataLine) continue;
-          const payload = JSON.parse(dataLine);
-          if (event === "delta" && payload.text) {
-            assistant += payload.text;
-            const snapshot = assistant;
-            setMessages((m) => {
-              const copy = [...m];
-              copy[copy.length - 1] = { role: "assistant", content: snapshot };
-              return copy;
-            });
-          }
-          if (event === "collected" && payload.collected) {
-            setCollected(payload.collected);
-          }
-          if (event === "done") {
-            if (payload.reply) {
-              assistant = payload.reply;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+          for (const part of parts) {
+            const lines = part.split("\n");
+            let event = "message";
+            let dataLine = "";
+            for (const line of lines) {
+              if (line.startsWith("event:")) event = line.slice(6).trim();
+              if (line.startsWith("data:")) dataLine += line.slice(5).trim();
+            }
+            if (!dataLine) continue;
+            const payload = JSON.parse(dataLine);
+            if (event === "delta" && payload.text) {
+              assistant += payload.text;
+              const snapshot = assistant;
               setMessages((m) => {
                 const copy = [...m];
-                copy[copy.length - 1] = { role: "assistant", content: assistant };
+                copy[copy.length - 1] = { role: "assistant", content: snapshot };
                 return copy;
               });
             }
-            if (payload.collected) setCollected(payload.collected);
-            setReady(Boolean(payload.ready_to_submit));
-            if (payload.price_estimate) setPriceEstimate(payload.price_estimate);
-          }
-          if (event === "error") {
-            setError(payload.message || "Assistant error");
+            if (event === "collected" && payload.collected) {
+              setCollected(payload.collected);
+            }
+            if (event === "done") {
+              if (payload.reply) {
+                assistant = payload.reply;
+                setMessages((m) => {
+                  const copy = [...m];
+                  copy[copy.length - 1] = {
+                    role: "assistant",
+                    content: assistant,
+                  };
+                  return copy;
+                });
+              }
+              if (payload.collected) setCollected(payload.collected);
+              setReady(Boolean(payload.ready_to_submit));
+              if (payload.price_estimate) setPriceEstimate(payload.price_estimate);
+            }
+            if (event === "error") {
+              setError(payload.message || "Assistant error");
+            }
           }
         }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Send failed");
+      } finally {
+        setStreaming(false);
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Send failed");
-    } finally {
-      setStreaming(false);
+    },
+    [headers, input, streaming, token]
+  );
+
+  const talk = useTalkInput({
+    hostHint: hostHint || brand.domain,
+    enabled: talkEnabled,
+    onCaption: (text) => {
+      const prefix = inputBeforeListenRef.current.trim();
+      setInput(prefix ? `${prefix} ${text}`.trim() : text);
+    },
+    onCommitTurn: async (text) => {
+      const prefix = inputBeforeListenRef.current.trim();
+      const full = prefix ? `${prefix} ${text}`.trim() : text;
+      inputBeforeListenRef.current = "";
+      await sendMessage(full);
+    },
+  });
+
+  useEffect(() => {
+    if (!talkEnabled || !sessionReady || !token || autoTalkArmed.current) return;
+    if (searchParams.get("talk") === "1") {
+      autoTalkArmed.current = true;
+      inputBeforeListenRef.current = input;
+      void talk.start();
     }
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [talkEnabled, sessionReady, token, searchParams]);
 
   async function uploadPhotos(files: FileList | null) {
     if (!files?.length || !token) return;
@@ -313,6 +354,17 @@ export function ChatWidget({ brand, hostHint }: Props) {
     window.localStorage.removeItem("serviceop_intake_token");
   }
 
+  async function onTalkToggle() {
+    if (talk.listening) {
+      await talk.stop({ commit: true });
+      return;
+    }
+    inputBeforeListenRef.current = input;
+    setError(null);
+    talk.setError(null);
+    await talk.start();
+  }
+
   if (submittedLeadId) {
     return (
       <div className="chat">
@@ -324,6 +376,8 @@ export function ChatWidget({ brand, hostHint }: Props) {
       </div>
     );
   }
+
+  const combinedError = error || talk.error;
 
   return (
     <div className="chat">
@@ -362,21 +416,27 @@ export function ChatWidget({ brand, hostHint }: Props) {
             {Number(priceEstimate.high).toLocaleString()}{" "}
             {priceEstimate.currency || "CAD"}
           </strong>
-          <p className="muted">{priceEstimate.disclaimer || priceEstimate.message}</p>
+          <p className="muted">
+            {priceEstimate.disclaimer || priceEstimate.message}
+          </p>
           {priceEstimate.is_placeholder ? (
-            <p className="muted">Rates are provisional placeholders pending review.</p>
+            <p className="muted">
+              Rates are provisional placeholders pending review.
+            </p>
           ) : null}
         </div>
       )}
 
       {priceEstimate?.available && (
         <div className="slots">
-          <p className="slots-label">Pick a site-visit time (held briefly while you finish):</p>
+          <p className="slots-label">
+            Pick a site-visit time (held briefly while you finish):
+          </p>
           {loadingSlots && <p className="muted">Loading times…</p>}
           {!loadingSlots && slots.length === 0 && (
             <p className="muted">
-              No online times are open right now — you can still submit your request and{" "}
-              {brand.company_name} will contact you to schedule.
+              No online times are open right now — you can still submit your
+              request and {brand.company_name} will contact you to schedule.
             </p>
           )}
           <div className="slot-grid">
@@ -407,7 +467,11 @@ export function ChatWidget({ brand, hostHint }: Props) {
           </div>
           {holdToken && (
             <p className="muted">
-              Slot held{holdUntil ? ` until ${new Date(holdUntil).toLocaleTimeString()}` : ""}.
+              Slot held
+              {holdUntil
+                ? ` until ${new Date(holdUntil).toLocaleTimeString()}`
+                : ""}
+              .
             </p>
           )}
         </div>
@@ -419,23 +483,61 @@ export function ChatWidget({ brand, hostHint }: Props) {
         </div>
       )}
 
-      {error && (
+      {combinedError && (
         <p className="error" style={{ padding: "0 1.5rem" }} role="alert">
-          {error}
+          {combinedError}
         </p>
       )}
+
+      {talkEnabled && talk.listening ? (
+        <p className="chat-talk-status" aria-live="polite">
+          {talk.status === "connecting"
+            ? "Connecting microphone…"
+            : talk.status === "fallback"
+              ? "Listening (fallback) — tap Stop when finished."
+              : "Listening — text appears as you speak. Tap Stop to send."}
+        </p>
+      ) : null}
 
       <div className="chat-dock">
         <div className="chat-compose">
           <input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-            placeholder="Describe the problem…"
+            onChange={(e) => {
+              if (talk.listening) {
+                void talk.stop({ commit: false, keepCaption: true });
+              }
+              setInput(e.target.value);
+            }}
+            onKeyDown={(e) => e.key === "Enter" && void sendMessage()}
+            placeholder={
+              talk.listening
+                ? "Listening… (or start typing to switch)"
+                : "Describe the problem…"
+            }
             disabled={streaming || !token}
             aria-label="Message"
           />
-          <button type="button" onClick={sendMessage} disabled={streaming || !token}>
+          {talkEnabled ? (
+            <button
+              type="button"
+              className={`talk-btn${talk.listening ? " is-listening" : ""}`}
+              onClick={() => void onTalkToggle()}
+              disabled={streaming || !token || talk.status === "stopping"}
+              aria-pressed={talk.listening}
+            >
+              {talk.status === "connecting"
+                ? "…"
+                : talk.listening
+                  ? "Stop"
+                  : "Talk"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => void sendMessage()}
+            disabled={streaming || !token || talk.listening}
+          >
             Send
           </button>
         </div>
@@ -459,6 +561,12 @@ export function ChatWidget({ brand, hostHint }: Props) {
             Submit request
           </button>
         </div>
+        {talkEnabled ? (
+          <p className="chat-talk-hint muted">
+            Talk is push-to-talk dictation into this chat. Replies stay on-screen
+            text only — not a live voice call.
+          </p>
+        ) : null}
       </div>
     </div>
   );
