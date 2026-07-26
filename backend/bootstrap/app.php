@@ -23,6 +23,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\RoleMiddleware::class,
             'public.brand' => \App\Http\Middleware\ResolvePublicBrand::class,
+            'restrict.content_editor' => \App\Http\Middleware\RestrictContentEditor::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

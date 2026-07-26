@@ -23,11 +23,24 @@ import { useAuth } from '../context/AuthContext';
 import { getRoleDashboard } from '../utils/getRoleDashboard';
 import api from '../api/axios';
 
-const roleLabel = { owner: 'Admin', pm: 'Project Manager', contractor: 'Contractor', customer: 'Customer' };
-const roleBg = { owner: 'bg-purple-600', pm: 'bg-blue-600', contractor: 'bg-orange-500', customer: 'bg-green-600' };
+const roleLabel = {
+  owner: 'Admin',
+  pm: 'Project Manager',
+  contractor: 'Contractor',
+  customer: 'Customer',
+  content_editor: 'Content Editor',
+};
+const roleBg = {
+  owner: 'bg-purple-600',
+  pm: 'bg-blue-600',
+  contractor: 'bg-orange-500',
+  customer: 'bg-green-600',
+  content_editor: 'bg-teal-600',
+};
 
 const allNavItems = [
   { label: 'Dashboard', icon: LayoutDashboard, roles: ['owner', 'pm', 'contractor', 'customer'], dashboard: true },
+  { label: 'Brand Content', icon: Building2, path: '/brand-content', roles: ['content_editor', 'owner'] },
   { label: 'Leads', icon: Users, path: '/leads', roles: ['owner', 'pm'] },
   { label: 'Leads', icon: Users, path: '/my-leads', roles: ['contractor'] },
   { label: 'Jobs', icon: Briefcase, path: '/jobs', roles: ['owner', 'pm', 'contractor'] },

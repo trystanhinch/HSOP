@@ -43,12 +43,7 @@ class AuthController extends Controller
 
         return response()->json([
             'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
+            'user' => $user->toAuthArray(),
         ], 201);
     }
 
@@ -71,16 +66,18 @@ class AuthController extends Controller
             return response()->json(['message' => 'This account cannot be used for interactive login.'], 403);
         }
 
+        if ($user->role === 'content_editor' && ! $user->brand_id) {
+            Auth::logout();
+
+            return response()->json(['message' => 'Content editor account has no assigned brand.'], 403);
+        }
+
+        $user->load('brand:id,company_name,domain,slug');
         $token = $user->createToken('auth_token')->plainTextToken;
 
         return response()->json([
             'token' => $token,
-            'user' => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'role' => $user->role,
-            ],
+            'user' => $user->toAuthArray(),
         ]);
     }
 
@@ -93,6 +90,9 @@ class AuthController extends Controller
 
     public function me(Request $request): JsonResponse
     {
-        return response()->json($request->user());
+        $user = $request->user();
+        $user->loadMissing('brand:id,company_name,domain,slug');
+
+        return response()->json($user->toAuthArray());
     }
 }

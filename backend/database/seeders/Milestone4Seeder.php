@@ -78,6 +78,37 @@ class Milestone4Seeder extends Seeder
         );
 
         $this->seedPublicBrands($adminId);
+        $this->seedContentEditorUser();
+    }
+
+    /**
+     * Agency-scoped content editor for Acutera — content/branding only, no ops access.
+     */
+    private function seedContentEditorUser(): void
+    {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('users', 'brand_id')) {
+            return;
+        }
+
+        $acuteraId = \App\Models\Brand::query()
+            ->where('domain', 'acuteradrywall.ca')
+            ->value('id');
+
+        if (! $acuteraId) {
+            return;
+        }
+
+        User::updateOrCreate(
+            ['email' => 'content@hsop.com'],
+            [
+                'name' => 'Acutera Content Editor',
+                'password' => Hash::make('password'),
+                'role' => 'content_editor',
+                'brand_id' => $acuteraId,
+                'status' => 'active',
+                'sms_enabled' => false,
+            ]
+        );
     }
 
     private function seedPublicBrands(?int $adminId): void

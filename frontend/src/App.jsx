@@ -30,6 +30,7 @@ import Reports from './pages/Reports';
 import CompanySources from './pages/CompanySources';
 import PricingRules from './pages/PricingRules';
 import Availability from './pages/Availability';
+import BrandContent from './pages/BrandContent';
 import Settings from './pages/Settings';
 import Unauthorized from './pages/Unauthorized';
 import CustomerQuoteView from './pages/CustomerQuoteView';
@@ -57,6 +58,7 @@ export default function App() {
               <Route path="/dashboard/pm" element={<RoleGuard roles={['pm']}><PMDashboard /></RoleGuard>} />
               <Route path="/dashboard/contractor" element={<RoleGuard roles={['contractor']}><ContractorDashboard /></RoleGuard>} />
               <Route path="/dashboard/customer" element={<RoleGuard roles={['customer']}><CustomerDashboard /></RoleGuard>} />
+              <Route path="/brand-content" element={<RoleGuard roles={['content_editor', 'owner']}><BrandContent /></RoleGuard>} />
 
               <Route path="/leads" element={<RoleGuard roles={['owner', 'pm']}><Leads /></RoleGuard>} />
               <Route path="/my-leads" element={<RoleGuard roles={['contractor']}><ContractorLeads /></RoleGuard>} />

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -19,6 +20,7 @@ class User extends Authenticatable
         'phone',
         'password',
         'role',
+        'brand_id',
         'status',
         'sms_enabled',
         'stripe_account_id',
@@ -67,9 +69,19 @@ class User extends Authenticatable
         return $this->hasOne(Customer::class);
     }
 
+    public function brand(): BelongsTo
+    {
+        return $this->belongsTo(Brand::class);
+    }
+
     public function isOwner(): bool
     {
         return $this->role === 'owner';
+    }
+
+    public function isContentEditor(): bool
+    {
+        return $this->role === 'content_editor';
     }
 
     public function isAiSuperAdmin(): bool
@@ -80,5 +92,29 @@ class User extends Authenticatable
     public static function aiSuperAdmin(): ?self
     {
         return static::where('role', 'ai_super_admin')->first();
+    }
+
+    /**
+     * Safe auth payload for login /me (no secrets).
+     *
+     * @return array<string, mixed>
+     */
+    public function toAuthArray(): array
+    {
+        return [
+            'id' => $this->id,
+            'name' => $this->name,
+            'email' => $this->email,
+            'role' => $this->role,
+            'brand_id' => $this->brand_id,
+            'brand' => $this->relationLoaded('brand') && $this->brand
+                ? [
+                    'id' => $this->brand->id,
+                    'company_name' => $this->brand->company_name,
+                    'domain' => $this->brand->domain,
+                    'slug' => $this->brand->slug,
+                ]
+                : null,
+        ];
     }
 }

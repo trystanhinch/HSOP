@@ -45,6 +45,11 @@ class Brand extends Model
         return $this->hasMany(Lead::class);
     }
 
+    public function contentEditors(): HasMany
+    {
+        return $this->hasMany(User::class);
+    }
+
     public function pricingRules(): HasMany
     {
         return $this->hasMany(PricingRule::class);

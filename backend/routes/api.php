@@ -37,6 +37,7 @@ use App\Http\Controllers\Api\EmailLogController;
 use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\SmsLogController;
 use App\Http\Controllers\Api\UserController;
+use App\Http\Controllers\Api\BrandContentController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -60,9 +61,16 @@ Route::post('/portal/{token}/review', [\App\Http\Controllers\Api\ReviewFeedbackC
 Route::post('/portal/{token}/stripe/checkout', [\App\Http\Controllers\Api\StripeCheckoutController::class, 'portalCheckout']);
 Route::post('/stripe/webhook', \App\Http\Controllers\Api\StripeWebhookController::class);
 
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('/logout', [AuthController::class, 'logout']);
-    Route::get('/me', [AuthController::class, 'me']);
+Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout'])->name('api.logout');
+    Route::get('/me', [AuthController::class, 'me'])->name('api.me');
+
+    Route::get('/brand-content', [BrandContentController::class, 'show'])
+        ->middleware('role:content_editor,owner')
+        ->name('api.brand-content.show');
+    Route::put('/brand-content', [BrandContentController::class, 'update'])
+        ->middleware('role:content_editor,owner')
+        ->name('api.brand-content.update');
 
     Route::get('/dashboard/admin/kpis', [DashboardController::class, 'admin'])->middleware('role:owner');
     Route::get('/dashboard/pm/kpis', [DashboardController::class, 'pm'])->middleware('role:pm');

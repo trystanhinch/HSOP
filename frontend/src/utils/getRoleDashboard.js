@@ -4,6 +4,7 @@ export function getRoleDashboard(role) {
     pm: '/dashboard/pm',
     contractor: '/dashboard/contractor',
     customer: '/dashboard/customer',
+    content_editor: '/brand-content',
     ai_super_admin: '/unauthorized',
   };
   return map[role] || '/unauthorized';
