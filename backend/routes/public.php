@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Public\PublicIntakeController;
 use App\Http\Controllers\Api\Public\PublicAvailabilityController;
+use App\Http\Controllers\Api\Public\PublicBrandContentController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -15,6 +16,9 @@ Route::prefix('api/public')
     ->middleware(['throttle:public-intake', 'public.brand'])
     ->group(function () {
         Route::get('/brand', [PublicIntakeController::class, 'brand']);
+        Route::get('/sitemap', [PublicBrandContentController::class, 'sitemap']);
+        Route::get('/locations/{slug}', [PublicBrandContentController::class, 'location']);
+        Route::get('/pages/{slug}', [PublicBrandContentController::class, 'page']);
 
         Route::get('/availability', [PublicAvailabilityController::class, 'index'])
             ->middleware('throttle:public-availability');

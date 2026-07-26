@@ -18,6 +18,7 @@ class Brand extends Model
         'contact_info',
         'seo_defaults',
         'content',
+        'images',
         'status',
     ];
 
@@ -29,6 +30,7 @@ class Brand extends Model
             'contact_info' => 'array',
             'seo_defaults' => 'array',
             'content' => 'array',
+            'images' => 'array',
         ];
     }
 
@@ -62,9 +64,64 @@ class Brand extends Model
         return $this->hasMany(BrandPageSeoOverride::class);
     }
 
+    public function locationPages(): HasMany
+    {
+        return $this->hasMany(LocationPage::class);
+    }
+
+    public function customPages(): HasMany
+    {
+        return $this->hasMany(BrandPage::class);
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';
+    }
+
+    /**
+     * Public image slots only (url + alt). Paths stay internal.
+     *
+     * @return array<string, mixed>
+     */
+    public function normalizedImages(): array
+    {
+        $raw = is_array($this->images) ? $this->images : [];
+        $out = [
+            'logo' => $this->publicImageSlot($raw['logo'] ?? null),
+            'hero_image' => $this->publicImageSlot($raw['hero_image'] ?? null),
+            'og_image' => $this->publicImageSlot($raw['og_image'] ?? null),
+            'services' => [],
+        ];
+
+        $services = is_array($raw['services'] ?? null) ? $raw['services'] : [];
+        foreach ($this->serviceCatalog() as $service) {
+            $key = $service['key'];
+            $slot = $this->publicImageSlot($services[$key] ?? null);
+            if ($slot) {
+                $out['services'][$key] = $slot;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  mixed  $value
+     * @return array{url: string, alt: string|null}|null
+     */
+    private function publicImageSlot(mixed $value): ?array
+    {
+        if (! is_array($value) || empty($value['url']) || ! is_string($value['url'])) {
+            return null;
+        }
+
+        return [
+            'url' => $value['url'],
+            'alt' => isset($value['alt']) && is_string($value['alt']) && trim($value['alt']) !== ''
+                ? trim($value['alt'])
+                : null,
+        ];
     }
 
     /**
@@ -179,6 +236,30 @@ class Brand extends Model
             ])
             ->all();
 
+        $locations = $this->locationPages()
+            ->where('status', 'published')
+            ->orderBy('city_name')
+            ->get(['slug', 'city_name', 'region'])
+            ->map(fn (LocationPage $page) => [
+                'slug' => $page->slug,
+                'city_name' => $page->city_name,
+                'region' => $page->region,
+            ])
+            ->values()
+            ->all();
+
+        $pages = $this->customPages()
+            ->where('status', 'published')
+            ->orderBy('title')
+            ->get(['slug', 'title', 'template_type'])
+            ->map(fn (BrandPage $page) => [
+                'slug' => $page->slug,
+                'title' => $page->title,
+                'template_type' => $page->template_type,
+            ])
+            ->values()
+            ->all();
+
         return [
             'id' => $this->id,
             'slug' => $this->slug,
@@ -189,7 +270,10 @@ class Brand extends Model
             'contact_info' => $this->contact_info ?? [],
             'seo_defaults' => $this->seo_defaults ?? [],
             'content' => $this->content ?? [],
+            'images' => $this->normalizedImages(),
             'page_seo' => $pageSeo,
+            'locations' => $locations,
+            'pages' => $pages,
         ];
     }
 }

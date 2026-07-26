@@ -111,6 +111,17 @@ img {
   letter-spacing: -0.02em;
   text-decoration: none;
   line-height: 1.1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.brand-logo {
+  height: 2rem;
+  width: auto;
+  max-width: 7rem;
+  object-fit: contain;
+  display: block;
 }
 
 .brand-name:hover {
@@ -259,6 +270,24 @@ main.page {
       color-mix(in srgb, var(--color-mud) 45%, #cbb89a) 10px 22px
     );
   overflow: hidden;
+}
+
+.finish-reveal__before--photo {
+  background-image: none;
+  background-color: var(--color-mud);
+}
+
+.finish-reveal__before--photo::after {
+  content: none;
+}
+
+.finish-reveal__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 .finish-reveal__before::after {
@@ -503,6 +532,44 @@ main.page {
   line-height: 1.05;
   margin: 0 0 var(--space-4);
   max-width: 16ch;
+}
+
+.service-hero__image {
+  display: block;
+  width: min(100%, 42rem);
+  max-height: 18rem;
+  object-fit: cover;
+  margin: 0 0 var(--space-5);
+  border-radius: 0;
+}
+
+.footer-link-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+
+.footer-link-list li {
+  margin: 0.25rem 0;
+}
+
+.location-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  margin-top: var(--space-5);
+}
+
+.location-page__actions .ghost {
+  background: transparent;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: none;
 }
 
 /* ——— Quote stage ——— */

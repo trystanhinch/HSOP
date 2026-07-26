@@ -38,6 +38,9 @@ use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\SmsLogController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\BrandContentController;
+use App\Http\Controllers\Api\BrandContentImageController;
+use App\Http\Controllers\Api\BrandCustomPageController;
+use App\Http\Controllers\Api\BrandLocationPageController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -71,6 +74,35 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     Route::put('/brand-content', [BrandContentController::class, 'update'])
         ->middleware('role:content_editor,owner')
         ->name('api.brand-content.update');
+
+    Route::middleware('role:content_editor,owner')->group(function () {
+        Route::post('/brand-content/images', [BrandContentImageController::class, 'upload'])
+            ->name('api.brand-content.images.upload');
+        Route::put('/brand-content/images', [BrandContentImageController::class, 'updateMeta'])
+            ->name('api.brand-content.images.meta');
+        Route::delete('/brand-content/images', [BrandContentImageController::class, 'destroy'])
+            ->name('api.brand-content.images.destroy');
+
+        Route::get('/brand-content/locations', [BrandLocationPageController::class, 'index'])
+            ->name('api.brand-content.locations.index');
+        Route::post('/brand-content/locations', [BrandLocationPageController::class, 'store'])
+            ->name('api.brand-content.locations.store');
+        Route::put('/brand-content/locations/{locationPage}', [BrandLocationPageController::class, 'update'])
+            ->name('api.brand-content.locations.update');
+        Route::delete('/brand-content/locations/{locationPage}', [BrandLocationPageController::class, 'destroy'])
+            ->name('api.brand-content.locations.destroy');
+
+        Route::get('/brand-content/pages', [BrandCustomPageController::class, 'index'])
+            ->name('api.brand-content.pages.index');
+        Route::post('/brand-content/pages', [BrandCustomPageController::class, 'store'])
+            ->name('api.brand-content.pages.store');
+        Route::post('/brand-content/pages/duplicate', [BrandCustomPageController::class, 'duplicate'])
+            ->name('api.brand-content.pages.duplicate');
+        Route::put('/brand-content/pages/{brandPage}', [BrandCustomPageController::class, 'update'])
+            ->name('api.brand-content.pages.update');
+        Route::delete('/brand-content/pages/{brandPage}', [BrandCustomPageController::class, 'destroy'])
+            ->name('api.brand-content.pages.destroy');
+    });
 
     Route::get('/dashboard/admin/kpis', [DashboardController::class, 'admin'])->middleware('role:owner');
     Route::get('/dashboard/pm/kpis', [DashboardController::class, 'pm'])->middleware('role:pm');

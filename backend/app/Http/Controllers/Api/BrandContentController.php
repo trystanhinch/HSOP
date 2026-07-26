@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Http\Controllers\Api\Concerns\ResolvesEditableBrand;
 use App\Http\Controllers\Controller;
 use App\Models\Brand;
 use App\Models\BrandPageSeoOverride;
@@ -13,6 +14,7 @@ use Illuminate\Http\Request;
  */
 class BrandContentController extends Controller
 {
+    use ResolvesEditableBrand;
     public function show(Request $request): JsonResponse
     {
         $brand = $this->resolveEditableBrand($request);
@@ -97,31 +99,6 @@ class BrandContentController extends Controller
         }
 
         return response()->json($this->contentPayload($brand->fresh()));
-    }
-
-    private function resolveEditableBrand(Request $request): Brand
-    {
-        $user = $request->user();
-
-        if ($user->role === 'content_editor') {
-            if (! $user->brand_id) {
-                abort(403, 'Content editor has no assigned brand.');
-            }
-
-            // Ignore any attempted brand_id override — scoped to assigned brand only.
-            return Brand::query()->findOrFail($user->brand_id);
-        }
-
-        if ($user->role === 'owner') {
-            $brandId = $request->query('brand_id') ?? $request->input('brand_id');
-            if ($brandId) {
-                return Brand::query()->findOrFail($brandId);
-            }
-
-            return Brand::query()->where('status', 'active')->orderBy('id')->firstOrFail();
-        }
-
-        abort(403, 'Unauthorized');
     }
 
     /**
@@ -286,7 +263,19 @@ class BrandContentController extends Controller
             'contact_info' => $brand->contact_info ?? [],
             'seo_defaults' => $brand->seo_defaults ?? [],
             'content' => $brand->content ?? [],
+            'images' => $brand->normalizedImages(),
+            'image_slots' => [
+                'logo',
+                'hero_image',
+                'og_image',
+                ...array_map(
+                    static fn (array $service) => 'service:'.$service['key'],
+                    $brand->serviceCatalog()
+                ),
+            ],
             'service_categories' => $brand->serviceCatalog(),
+            'locations' => $brand->locationPages()->orderBy('city_name')->get()->map->publicPayload()->values()->all(),
+            'pages' => $brand->customPages()->orderByDesc('updated_at')->get()->map->publicPayload()->values()->all(),
             'seo_pages' => array_map(function (string $pageKey) use ($brand) {
                 /** @var BrandPageSeoOverride|null $override */
                 $override = $brand->pageSeoOverrides()
@@ -305,8 +294,11 @@ class BrandContentController extends Controller
                 'contact_info',
                 'seo_defaults',
                 'content',
+                'images',
                 'service_categories',
                 'seo_pages',
+                'locations',
+                'pages',
             ],
         ];
     }

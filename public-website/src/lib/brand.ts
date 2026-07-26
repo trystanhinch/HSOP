@@ -12,6 +12,59 @@ export type BrandPageSeo = {
   og_image?: string | null;
 };
 
+export type BrandImageSlot = {
+  url: string;
+  alt?: string | null;
+};
+
+export type BrandImages = {
+  logo?: BrandImageSlot | null;
+  hero_image?: BrandImageSlot | null;
+  og_image?: BrandImageSlot | null;
+  services?: Record<string, BrandImageSlot>;
+};
+
+export type BrandLocationSummary = {
+  slug: string;
+  city_name: string;
+  region?: string | null;
+};
+
+export type BrandCustomPageSummary = {
+  slug: string;
+  title: string;
+  template_type: string;
+};
+
+export type LocationPagePayload = {
+  id: number;
+  slug: string;
+  city_name: string;
+  region?: string | null;
+  content: {
+    headline?: string;
+    body?: string;
+    cta_label?: string;
+    [key: string]: unknown;
+  };
+  seo_title?: string | null;
+  seo_description?: string | null;
+  status: string;
+};
+
+export type CustomPagePayload = {
+  id: number;
+  slug: string;
+  title: string;
+  template_type: "simple" | "home" | "service" | "quote" | string;
+  content: Record<string, unknown>;
+  seo_title?: string | null;
+  seo_description?: string | null;
+  og_image?: string | null;
+  status: string;
+  source_key?: string | null;
+};
+
 export type BrandConfig = {
   id: number;
   slug: string;
@@ -88,6 +141,9 @@ export type BrandConfig = {
     };
     [key: string]: unknown;
   };
+  images?: BrandImages;
+  locations?: BrandLocationSummary[];
+  pages?: BrandCustomPageSummary[];
   page_seo: Record<string, BrandPageSeo>;
 };
 
@@ -147,6 +203,40 @@ export async function fetchBrand(host?: string | null): Promise<BrandConfig> {
   return json.brand;
 }
 
+export async function fetchLocationPage(
+  slug: string,
+  host?: string | null
+): Promise<{ location: LocationPagePayload; brand: BrandConfig }> {
+  const res = await fetch(
+    `${apiBaseUrl()}/api/public/locations/${encodeURIComponent(slug)}`,
+    {
+      headers: brandHeaders(host),
+      cache: "no-store",
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Location lookup failed (${res.status})`);
+  }
+  return (await res.json()) as { location: LocationPagePayload; brand: BrandConfig };
+}
+
+export async function fetchCustomPage(
+  slug: string,
+  host?: string | null
+): Promise<{ page: CustomPagePayload; brand: BrandConfig }> {
+  const res = await fetch(
+    `${apiBaseUrl()}/api/public/pages/${encodeURIComponent(slug)}`,
+    {
+      headers: brandHeaders(host),
+      cache: "no-store",
+    }
+  );
+  if (!res.ok) {
+    throw new Error(`Page lookup failed (${res.status})`);
+  }
+  return (await res.json()) as { page: CustomPagePayload; brand: BrandConfig };
+}
+
 export function pageTitle(
   brand: BrandConfig,
   pageLabel?: string
@@ -172,6 +262,19 @@ export function renderBrandTemplate(value: string, brand: BrandConfig): string {
     .replace(/\{\{\s*domain\s*\}\}/g, brand.domain);
 }
 
+export function resolveOgImage(
+  brand: BrandConfig,
+  pageKey?: string,
+  explicit?: string | null
+): string | undefined {
+  if (explicit) return explicit;
+  const override = pageKey ? brand.page_seo?.[pageKey]?.og_image : null;
+  if (override) return override;
+  if (brand.images?.og_image?.url) return brand.images.og_image.url;
+  if (brand.seo_defaults?.og_image) return brand.seo_defaults.og_image;
+  return undefined;
+}
+
 export function pageSeo(
   brand: BrandConfig,
   pageKey: string,
@@ -185,7 +288,7 @@ export function pageSeo(
   const description = override?.description
     ? renderBrandTemplate(override.description, brand)
     : fallbackDescription;
-  const ogImage = override?.og_image || brand.seo_defaults?.og_image;
+  const ogImage = resolveOgImage(brand, pageKey);
 
   return {
     title,

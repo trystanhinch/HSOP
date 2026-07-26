@@ -56,6 +56,7 @@ export default async function ServicePage({ params }: Props) {
   const copy = serviceCopy(service, b.company_name);
   const homeLabel = b.content?.service?.home_label || "Home";
   const requestPrefix = b.content?.service?.request_prefix || "Request";
+  const serviceImage = b.images?.services?.[service.key];
 
   return (
     <section className="service-hero">
@@ -65,6 +66,14 @@ export default async function ServicePage({ params }: Props) {
         {service.label}
       </p>
       <h1>{service.label}</h1>
+      {serviceImage?.url ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          className="service-hero__image"
+          src={serviceImage.url}
+          alt={serviceImage.alt || service.label}
+        />
+      ) : null}
       <p className="lede">{copy.lede}</p>
       <ul
         style={{

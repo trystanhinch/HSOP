@@ -18,6 +18,18 @@ class RestrictContentEditor
         'api.logout',
         'api.brand-content.show',
         'api.brand-content.update',
+        'api.brand-content.images.upload',
+        'api.brand-content.images.meta',
+        'api.brand-content.images.destroy',
+        'api.brand-content.locations.index',
+        'api.brand-content.locations.store',
+        'api.brand-content.locations.update',
+        'api.brand-content.locations.destroy',
+        'api.brand-content.pages.index',
+        'api.brand-content.pages.store',
+        'api.brand-content.pages.duplicate',
+        'api.brand-content.pages.update',
+        'api.brand-content.pages.destroy',
     ];
 
     /** @var list<string> path suffixes under /api (fallback if routes are unnamed) */
@@ -45,7 +57,7 @@ class RestrictContentEditor
         }
 
         foreach (self::ALLOWED_PATHS as $allowed) {
-            if ($path === $allowed) {
+            if ($path === $allowed || str_starts_with($path, $allowed.'/')) {
                 return $next($request);
             }
         }
