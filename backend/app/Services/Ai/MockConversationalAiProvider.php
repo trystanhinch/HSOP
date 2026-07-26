@@ -85,6 +85,8 @@ class MockConversationalAiProvider implements ConversationalAiProviderInterface
 
         $updated = $this->extractFields($lastUser, $collected, $services);
         $missing = $this->missingFields($updated);
+        $scopeAsked = (int) ($updated['scope_questions_asked'] ?? 0);
+        $hasProject = ! empty($updated['project_description']) || ! empty($updated['service_category']);
 
         if ($missing === []) {
             if (empty($updated['scope_confirmed'])) {
@@ -103,6 +105,15 @@ class MockConversationalAiProvider implements ConversationalAiProviderInterface
             }
         } elseif ($lastUser === '') {
             $reply = "Hi — I can help start your {$company} request. What are you seeing on site?";
+        } elseif ($hasProject && $scopeAsked < 3) {
+            // Scope-deepening before name/phone (mirrors live OpenAI pacing).
+            $scopeQuestions = [
+                'Is the damaged area soft or getting worse, or mostly surface staining?',
+                'Roughly how large is the affected area, and how easy is it to reach?',
+                'Any finish details we should know (patch only vs blend/paint a larger area)? A photo helps if you want to upload one.',
+            ];
+            $reply = $scopeQuestions[$scopeAsked];
+            $updated['scope_questions_asked'] = $scopeAsked + 1;
         } else {
             $next = $missing[0];
             $reply = match ($next) {

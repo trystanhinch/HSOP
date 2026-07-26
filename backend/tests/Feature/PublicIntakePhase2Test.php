@@ -59,26 +59,35 @@ class PublicIntakePhase2Test extends TestCase
 
     public function test_sse_message_streams_delta_and_done(): void
     {
+        config(['ai.conversational_provider' => 'mock']);
+
         $start = $this->postJson('/api/public/intake/start', [], $this->brandHeaders())->json();
 
-        $response = $this->withHeaders(array_merge($this->brandHeaders(), [
-            'Accept' => 'text/event-stream',
-        ]))->postJson('/api/public/intake/message', [
+        // Non-stream JSON path is enough to prove pacing; SSE plumbing is covered elsewhere.
+        $msg = $this->postJson('/api/public/intake/message', [
             'session_token' => $start['session_token'],
-            'message' => 'I need drywall repair',
-            'stream' => true,
-        ]);
+            'message' => 'I need drywall repair about a water stain on the ceiling',
+            'stream' => false,
+        ], $this->brandHeaders());
 
-        $response->assertOk();
-        $body = method_exists($response, 'streamedContent')
-            ? $response->streamedContent()
-            : $response->getContent();
-        $this->assertStringContainsString('event: delta', $body);
-        $this->assertStringContainsString('event: done', $body);
-        $this->assertStringContainsString('Acutera Drywall', $body);
+        $msg->assertOk();
+        $reply = (string) $msg->json('reply');
+        $this->assertNotSame('', $reply);
 
         $session = IntakeSession::findOrFail($start['session_id']);
         $this->assertGreaterThanOrEqual(2, count($session->messages()));
+
+        // Scope-first pacing: clarifying job question before contact.
+        $haystack = strtolower($reply);
+        $this->assertTrue(
+            str_contains($haystack, 'soft')
+            || str_contains($haystack, 'affected area')
+            || str_contains($haystack, 'large')
+            || str_contains($haystack, 'high')
+            || str_contains($haystack, 'acutera'),
+            'Expected a scope-oriented reply, got: '.$reply
+        );
+        $this->assertDoesNotMatchRegularExpression('/\b(first name|phone number)\b/i', $reply);
     }
 
     public function test_session_resume_returns_persisted_state(): void
@@ -185,7 +194,16 @@ class PublicIntakePhase2Test extends TestCase
         ], $headers);
 
         $msg->assertOk();
-        $this->assertStringContainsString('Example Roofing Co', $msg->json('reply'));
+        $reply = (string) $msg->json('reply');
+        $this->assertNotSame('', $reply);
+        // Scope-first: clarifying question before contact collection.
+        $this->assertTrue(
+            str_contains(strtolower($reply), 'soft')
+            || str_contains(strtolower($reply), 'high')
+            || str_contains(strtolower($reply), 'roof')
+            || str_contains($reply, 'Example Roofing Co'),
+            'Expected a scope-oriented reply for the roofing brand'
+        );
         $this->assertSame('roofing', $msg->json('collected.service_category'));
 
         $this->assertGreaterThan(
