@@ -19,6 +19,11 @@ type Props = {
   autoStartTalk?: boolean;
   /** Compact chrome when embedded under the homepage headline. */
   embedded?: boolean;
+  /**
+   * Homepage Type/Go handoff: send this as the first user turn once the
+   * session is ready (skipped if the session already contains it).
+   */
+  initialUserMessage?: string | null;
 };
 
 type PriceEstimate = {
@@ -48,6 +53,7 @@ function ChatWidgetInner({
   hostHint,
   autoStartTalk = false,
   embedded = false,
+  initialUserMessage = null,
 }: Props) {
   const searchParams = useSearchParams();
   const talkEnabled = useTalkIntakeEnabled();
@@ -89,6 +95,7 @@ function ChatWidgetInner({
   const restartTalkAfterAi = useRef(false);
   const priceFetchArmed = useRef(false);
   const slotsFetchArmed = useRef(false);
+  const initialMessageSent = useRef(false);
 
   const headers = useCallback(() => {
     const h = brandHeaders(hostHint || brand.domain) as Record<string, string>;
@@ -140,6 +147,7 @@ function ChatWidgetInner({
       greetingSeeded.current = false;
       priceFetchArmed.current = false;
       slotsFetchArmed.current = false;
+      // Keep initialMessageSent — Start over must not re-fire homepage seed text.
 
       try {
         // ?enableTalk=1 clears prior tokens on page load (see talkEnabled.ts).
@@ -230,6 +238,11 @@ function ChatWidgetInner({
 
   useEffect(() => {
     if (!sessionReady || !token || greetingSeeded.current) return;
+    // Homepage seed pending send — skip generic opener until that turn lands.
+    if (initialUserMessage?.trim() && !initialMessageSent.current) {
+      greetingSeeded.current = true;
+      return;
+    }
     if (messages.length > 0) {
       greetingSeeded.current = true;
       return;
@@ -241,7 +254,12 @@ function ChatWidgetInner({
         content: `Hi — what’s going on at the property? A short description is enough to start.`,
       },
     ]);
-  }, [sessionReady, token, messages.length]);
+  }, [sessionReady, token, messages.length, initialUserMessage]);
+
+  // If parent hands a new homepage description, allow one send of that text.
+  useEffect(() => {
+    initialMessageSent.current = false;
+  }, [initialUserMessage]);
 
   const sendMessage = useCallback(
     async (overrideText?: string) => {
@@ -340,6 +358,22 @@ function ChatWidgetInner({
     },
     [headers, input, streaming, token]
   );
+
+  // Homepage Type/Go: send the typed description as the first real turn.
+  useEffect(() => {
+    const seed = initialUserMessage?.trim();
+    if (!sessionReady || !token || !seed || streaming || initialMessageSent.current) {
+      return;
+    }
+    const already = messages.some(
+      (m) => m.role === "user" && m.content.trim() === seed
+    );
+    initialMessageSent.current = true;
+    greetingSeeded.current = true;
+    if (already) return;
+    void sendMessage(seed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionReady, token, initialUserMessage, streaming]);
 
   const talk = useTalkInput({
     hostHint: hostHint || brand.domain,

@@ -111,6 +111,8 @@ export function HomepageIntake({ brand, hostHint }: Props) {
   /** When true, the Project Assistant chat replaces the start form — same page. */
   const [chatOpen, setChatOpen] = useState(false);
   const [autoStartTalk, setAutoStartTalk] = useState(false);
+  /** Typed homepage description handed to ChatWidget as the first turn. */
+  const [seedMessage, setSeedMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function ensureSession(): Promise<string> {
@@ -142,12 +144,13 @@ export function HomepageIntake({ brand, hostHint }: Props) {
     return data.session_token as string;
   }
 
-  async function openChat(opts?: { talk?: boolean }) {
+  async function openChat(opts?: { talk?: boolean; seed?: string | null }) {
     setError(null);
     setBusy(true);
     try {
       await ensureSession();
       setAutoStartTalk(Boolean(opts?.talk && talkEnabled));
+      setSeedMessage(opts?.seed?.trim() || null);
       setChatOpen(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not open chat.");
@@ -161,7 +164,7 @@ export function HomepageIntake({ brand, hostHint }: Props) {
     setBusy(true);
     try {
       if (mode === "talk" && talkEnabled) {
-        await openChat({ talk: true });
+        await openChat({ talk: true, seed: null });
         return;
       }
 
@@ -180,7 +183,19 @@ export function HomepageIntake({ brand, hostHint }: Props) {
           throw new Error("Photo upload failed. Please try again.");
         }
       }
-      if (mode === "type" && text.trim()) {
+
+      const typed = mode === "type" ? text.trim() : "";
+
+      // Talk-enabled: stay on page and let ChatWidget send the typed first turn
+      // (avoids a race that used to wipe the homepage message).
+      if (talkEnabled) {
+        setAutoStartTalk(false);
+        setSeedMessage(typed || null);
+        setChatOpen(true);
+        return;
+      }
+
+      if (typed) {
         const res = await fetch(`${apiBaseUrl()}/api/public/intake/message`, {
           method: "POST",
           headers: {
@@ -190,20 +205,13 @@ export function HomepageIntake({ brand, hostHint }: Props) {
           credentials: "include",
           body: JSON.stringify({
             session_token: token,
-            message: text.trim(),
+            message: typed,
             stream: false,
           }),
         });
         if (!res.ok) {
           throw new Error("Could not send your message. Continuing to chat…");
         }
-      }
-
-      // With Talk enabled, stay on this page and expand the same assistant.
-      if (talkEnabled) {
-        setAutoStartTalk(false);
-        setChatOpen(true);
-        return;
       }
 
       const params = new URLSearchParams();
@@ -229,6 +237,7 @@ export function HomepageIntake({ brand, hostHint }: Props) {
             hostHint={hostHint}
             embedded
             autoStartTalk={autoStartTalk}
+            initialUserMessage={seedMessage}
           />
           <p className="intake-reassurance">{c.reassurance}</p>
         </div>
