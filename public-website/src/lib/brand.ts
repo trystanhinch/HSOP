@@ -114,6 +114,7 @@ export type BrandConfig = {
   content: {
     header?: {
       quote_cta_label?: string;
+      call_label?: string;
     };
     home?: {
       details_label?: string;
@@ -127,6 +128,16 @@ export type BrandConfig = {
       serving_prefix?: string;
       trust_fallback?: string;
       bottom_cta_label?: string;
+      intake_headline?: string;
+      intake_lede?: string;
+      mode_type_label?: string;
+      mode_talk_label?: string;
+      mode_upload_label?: string;
+      go_label?: string;
+      manual_quote_label?: string;
+      reassurance?: string;
+      call_label?: string;
+      composer_placeholder?: string;
     };
     service?: {
       home_label?: string;
