@@ -8,7 +8,6 @@ import { useTalkIntakeEnabled } from "@/lib/talkEnabled";
 import { useTalkInput } from "@/hooks/useTalkInput";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
-type InputMode = "type" | "talk" | "upload";
 
 type Props = {
   brand: BrandConfig;
@@ -19,6 +18,28 @@ type Props = {
   embedded?: boolean;
 };
 
+type PriceEstimate = {
+  available?: boolean;
+  low?: number;
+  high?: number;
+  currency?: string;
+  message?: string;
+  disclaimer?: string;
+  is_placeholder?: boolean;
+};
+
+type Slot = {
+  slot_start: string;
+  slot_end: string;
+  slot_start_local?: string;
+  resource_key: string;
+  timezone?: string;
+};
+
+function flagTrue(value: unknown): boolean {
+  return value === true || value === 1 || value === "1" || value === "true";
+}
+
 function ChatWidgetInner({
   brand,
   hostHint,
@@ -27,37 +48,26 @@ function ChatWidgetInner({
 }: Props) {
   const searchParams = useSearchParams();
   const talkEnabled = useTalkIntakeEnabled();
+  const supportPhone =
+    typeof brand.contact_info?.phone === "string"
+      ? brand.contact_info.phone.trim()
+      : "";
+
   const [token, setToken] = useState<string | null>(null);
   const [sessionReady, setSessionReady] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
-  const [inputMode, setInputMode] = useState<InputMode>(
-    autoStartTalk && talkEnabled ? "talk" : "type"
-  );
+  const [talkMode, setTalkMode] = useState(Boolean(autoStartTalk && talkEnabled));
   const [streaming, setStreaming] = useState(false);
   const [collected, setCollected] = useState<Record<string, unknown>>({});
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submittedLeadId, setSubmittedLeadId] = useState<number | null>(null);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
-  const [priceEstimate, setPriceEstimate] = useState<{
-    available?: boolean;
-    low?: number;
-    high?: number;
-    currency?: string;
-    message?: string;
-    disclaimer?: string;
-    is_placeholder?: boolean;
-  } | null>(null);
-  const [slots, setSlots] = useState<
-    Array<{
-      slot_start: string;
-      slot_end: string;
-      slot_start_local?: string;
-      resource_key: string;
-      timezone?: string;
-    }>
-  >([]);
+  const [priceEstimate, setPriceEstimate] = useState<PriceEstimate | null>(null);
+  const [priceRevealed, setPriceRevealed] = useState(false);
+  const [slots, setSlots] = useState<Slot[]>([]);
+  const [slotLimit, setSlotLimit] = useState(3);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [holdToken, setHoldToken] = useState<string | null>(null);
   const [holdUntil, setHoldUntil] = useState<string | null>(null);
@@ -65,12 +75,15 @@ function ChatWidgetInner({
   const [attachments, setAttachments] = useState<
     Array<{ url: string; file_name: string }>
   >([]);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoTalkArmed = useRef(false);
   const inputBeforeListenRef = useRef("");
   const greetingSeeded = useRef(false);
   const restartTalkAfterAi = useRef(false);
+  const priceFetchArmed = useRef(false);
+  const slotsFetchArmed = useRef(false);
 
   const headers = useCallback(() => {
     const h = brandHeaders(hostHint || brand.domain) as Record<string, string>;
@@ -78,12 +91,24 @@ function ChatWidgetInner({
     return h;
   }, [brand.domain, hostHint, token]);
 
+  const scopeConfirmed = flagTrue(collected.scope_confirmed);
+  const wantsPrice = flagTrue(collected.wants_price);
+  const wantsScheduling = flagTrue(collected.wants_scheduling);
+  const showCustomerPrice =
+    wantsPrice &&
+    priceRevealed &&
+    Boolean(priceEstimate?.available) &&
+    !priceEstimate?.is_placeholder &&
+    typeof priceEstimate?.low === "number" &&
+    typeof priceEstimate?.high === "number";
+  const showSubmit = ready && scopeConfirmed;
+
   useEffect(() => {
     const reduce =
       typeof window !== "undefined" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     bottomRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth" });
-  }, [messages, streaming, input]);
+  }, [messages, streaming, input, showCustomerPrice, slots, slotLimit]);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,7 +138,15 @@ function ChatWidgetInner({
             setCollected(data.collected || {});
             setReady(Boolean(data.ready_to_submit));
             setAttachments(data.attachments || []);
-            setPriceEstimate(data.price_estimate || null);
+            const pe = data.price_estimate || null;
+            setPriceEstimate(pe);
+            if (
+              flagTrue(data.collected?.wants_price) &&
+              pe?.available &&
+              !pe?.is_placeholder
+            ) {
+              setPriceRevealed(true);
+            }
             return;
           }
           window.localStorage.removeItem("serviceop_intake_token");
@@ -148,7 +181,6 @@ function ChatWidgetInner({
     };
   }, [brand.domain, hostHint]);
 
-  // Seed a visible assistant opener so the thread is never a blank void.
   useEffect(() => {
     if (!sessionReady || !token || greetingSeeded.current) return;
     if (messages.length > 0) {
@@ -159,10 +191,10 @@ function ChatWidgetInner({
     setMessages([
       {
         role: "assistant",
-        content: `Hi — tell me what you see on site (stain, hole, cold room…). ${brand.company_name} will ask only what’s needed. You can type, talk, or add a photo anytime.`,
+        content: `Hi — what’s going on at the property? A short description is enough to start.`,
       },
     ]);
-  }, [sessionReady, token, messages.length, brand.company_name]);
+  }, [sessionReady, token, messages.length]);
 
   const sendMessage = useCallback(
     async (overrideText?: string) => {
@@ -269,32 +301,86 @@ function ChatWidgetInner({
       const prefix = inputBeforeListenRef.current.trim();
       const full = prefix ? `${prefix} ${text}`.trim() : text;
       inputBeforeListenRef.current = "";
-      restartTalkAfterAi.current = inputMode === "talk";
+      restartTalkAfterAi.current = talkMode;
       await sendMessage(full);
     },
   });
 
-  // After AI finishes, if still in Talk mode, resume listening for the next turn.
   useEffect(() => {
     if (!talkEnabled || streaming || !restartTalkAfterAi.current) return;
-    if (inputMode !== "talk" || talk.listening) return;
+    if (!talkMode || talk.listening) return;
     restartTalkAfterAi.current = false;
     inputBeforeListenRef.current = "";
     void talk.start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [streaming, inputMode, talkEnabled]);
+  }, [streaming, talkMode, talkEnabled]);
 
   useEffect(() => {
     if (!talkEnabled || !sessionReady || !token || autoTalkArmed.current) return;
-    const wantTalk =
-      autoStartTalk || searchParams.get("talk") === "1";
+    const wantTalk = autoStartTalk || searchParams.get("talk") === "1";
     if (!wantTalk) return;
     autoTalkArmed.current = true;
-    setInputMode("talk");
+    setTalkMode(true);
     inputBeforeListenRef.current = "";
     void talk.start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [talkEnabled, sessionReady, token, autoStartTalk, searchParams]);
+
+  // Price: only after explicit opt-in; never reveal placeholder rates.
+  useEffect(() => {
+    if (!token || !wantsPrice || priceFetchArmed.current) return;
+    priceFetchArmed.current = true;
+    (async () => {
+      try {
+        const res = await fetch(`${apiBaseUrl()}/api/public/intake/estimate`, {
+          method: "POST",
+          headers: { ...headers(), "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ session_token: token }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const pe = (data.price_estimate || null) as PriceEstimate | null;
+        setPriceEstimate(pe);
+        if (pe?.available && !pe.is_placeholder) {
+          setPriceRevealed(true);
+        }
+      } catch {
+        /* ignore — AI copy handles follow-up */
+      }
+    })();
+  }, [token, wantsPrice, headers]);
+
+  async function loadSlots() {
+    if (!token) return;
+    setLoadingSlots(true);
+    try {
+      const svc =
+        typeof collected.service_category === "string"
+          ? collected.service_category
+          : "";
+      const q = svc ? `?service=${encodeURIComponent(svc)}&days=14` : "?days=14";
+      const res = await fetch(`${apiBaseUrl()}/api/public/availability${q}`, {
+        headers: headers(),
+        credentials: "include",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      setSlots(data.slots || []);
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingSlots(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!token || !wantsScheduling || slotsFetchArmed.current) return;
+    slotsFetchArmed.current = true;
+    setSlotLimit(3);
+    void loadSlots();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, wantsScheduling, collected.service_category]);
 
   async function uploadPhotos(files: FileList | null) {
     if (!files?.length || !token) return;
@@ -324,46 +410,12 @@ function ChatWidgetInner({
       ...m,
       {
         role: "assistant",
-        content: `Got ${files.length} photo${files.length === 1 ? "" : "s"}. You can keep describing the job by typing or talking.`,
+        content: `Got ${files.length} photo${files.length === 1 ? "" : "s"}. Anything else about the job?`,
       },
     ]);
   }
 
-  async function loadSlots(service?: string) {
-    setLoadingSlots(true);
-    try {
-      const svc =
-        service ||
-        (typeof collected.service_category === "string"
-          ? collected.service_category
-          : "");
-      const q = svc ? `?service=${encodeURIComponent(svc)}&days=14` : "?days=14";
-      const res = await fetch(`${apiBaseUrl()}/api/public/availability${q}`, {
-        headers: headers(),
-        credentials: "include",
-      });
-      if (!res.ok) return;
-      const data = await res.json();
-      setSlots((data.slots || []).slice(0, 12));
-    } catch {
-      /* ignore */
-    } finally {
-      setLoadingSlots(false);
-    }
-  }
-
-  useEffect(() => {
-    if (priceEstimate?.available && token) {
-      void loadSlots();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [priceEstimate?.available, token, collected.service_category]);
-
-  async function selectSlot(slot: {
-    slot_start: string;
-    slot_end: string;
-    resource_key: string;
-  }) {
+  async function selectSlot(slot: Slot) {
     if (!token) return;
     setError(null);
     const res = await fetch(`${apiBaseUrl()}/api/public/availability/hold`, {
@@ -411,30 +463,33 @@ function ChatWidgetInner({
     window.localStorage.removeItem("serviceop_intake_token");
   }
 
-  async function setMode(mode: InputMode) {
+  async function toggleTalk() {
     setError(null);
     talk.setError(null);
-    if (mode !== "talk" && talk.listening) {
-      await talk.stop({ commit: false, keepCaption: true });
+    if (talk.listening) {
+      await talk.stop({ commit: true });
+      return;
     }
-    setInputMode(mode);
-    restartTalkAfterAi.current = false;
-    if (mode === "talk" && talkEnabled) {
-      inputBeforeListenRef.current = input;
-      await talk.start();
-    }
-    if (mode === "upload") {
-      fileInputRef.current?.click();
-    }
+    setTalkMode(true);
+    inputBeforeListenRef.current = input;
+    await talk.start();
   }
 
-  /** One action while listening: stop mic + send the turn. */
   async function sendTalkTurn() {
     if (talk.listening) {
       await talk.stop({ commit: true });
       return;
     }
     await sendMessage();
+  }
+
+  async function requestHumanHandoff() {
+    restartTalkAfterAi.current = false;
+    if (talk.listening) {
+      await talk.stop({ commit: false, keepCaption: true });
+    }
+    setTalkMode(false);
+    await sendMessage("I'd like to speak with someone from your team.");
   }
 
   if (submittedLeadId) {
@@ -450,8 +505,8 @@ function ChatWidgetInner({
   }
 
   const combinedError = error || talk.error;
-  // Submit is end-of-flow only — never compete with Talk/Send mid-turn.
-  const showSubmit = ready;
+  const visibleSlots = slots.slice(0, slotLimit);
+  const hasMoreSlots = slots.length > slotLimit;
 
   return (
     <div className={`chat${embedded ? " chat--embedded" : ""}`}>
@@ -465,81 +520,81 @@ function ChatWidgetInner({
             </div>
           ))
         )}
+
+        {showCustomerPrice ? (
+          <div className="estimate estimate--inline" aria-live="polite">
+            <p className="estimate__label">Ballpark range</p>
+            <strong>
+              ${Number(priceEstimate!.low).toLocaleString()} – $
+              {Number(priceEstimate!.high).toLocaleString()}{" "}
+              {priceEstimate!.currency || "CAD"}
+            </strong>
+            <p className="muted">
+              {priceEstimate!.disclaimer ||
+                "Estimate only — final pricing depends on a site visit."}
+            </p>
+          </div>
+        ) : null}
+
+        {wantsScheduling ? (
+          <div className="slots slots--inline">
+            <p className="slots-label">A few open visit times:</p>
+            {loadingSlots && <p className="muted">Loading times…</p>}
+            {!loadingSlots && slots.length === 0 && (
+              <p className="muted">
+                No online times are open right now — you can still submit and{" "}
+                {brand.company_name} will contact you to schedule.
+              </p>
+            )}
+            <div className="slot-grid">
+              {visibleSlots.map((s) => {
+                const label = new Date(
+                  s.slot_start_local || s.slot_start
+                ).toLocaleString(undefined, {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                  timeZone: s.timezone || "America/Vancouver",
+                });
+                const active = selectedSlot === s.slot_start;
+                return (
+                  <button
+                    key={s.slot_start + s.resource_key}
+                    type="button"
+                    className={`slot-btn${active ? " active" : ""}`}
+                    onClick={() => selectSlot(s)}
+                    aria-pressed={active}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+            {hasMoreSlots ? (
+              <button
+                type="button"
+                className="ghost slot-more"
+                onClick={() => setSlotLimit((n) => n + 3)}
+              >
+                See more times
+              </button>
+            ) : null}
+            {holdToken && (
+              <p className="muted">
+                Slot held
+                {holdUntil
+                  ? ` until ${new Date(holdUntil).toLocaleTimeString()}`
+                  : ""}
+                .
+              </p>
+            )}
+          </div>
+        ) : null}
+
         <div ref={bottomRef} />
       </div>
-
-      {Object.keys(collected).length > 0 && (
-        <div className="collected" style={{ padding: "0 1.5rem" }}>
-          Noted:{" "}
-          {Object.entries(collected)
-            .map(([k, v]) => `${k.replace(/_/g, " ")} ${String(v)}`)
-            .join(" · ")}
-        </div>
-      )}
-
-      {priceEstimate?.available && (
-        <div className="estimate" aria-live="polite">
-          <p className="estimate__label">Your finish range</p>
-          <strong>
-            ${Number(priceEstimate.low).toLocaleString()} – $
-            {Number(priceEstimate.high).toLocaleString()}{" "}
-            {priceEstimate.currency || "CAD"}
-          </strong>
-          <p className="muted">
-            {priceEstimate.disclaimer || priceEstimate.message}
-          </p>
-        </div>
-      )}
-
-      {priceEstimate?.available && (
-        <div className="slots">
-          <p className="slots-label">
-            Pick a site-visit time (held briefly while you finish):
-          </p>
-          {loadingSlots && <p className="muted">Loading times…</p>}
-          {!loadingSlots && slots.length === 0 && (
-            <p className="muted">
-              No online times are open right now — you can still submit and{" "}
-              {brand.company_name} will contact you to schedule.
-            </p>
-          )}
-          <div className="slot-grid">
-            {slots.map((s) => {
-              const label = new Date(
-                s.slot_start_local || s.slot_start
-              ).toLocaleString(undefined, {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-                timeZone: s.timezone || "America/Vancouver",
-              });
-              const active = selectedSlot === s.slot_start;
-              return (
-                <button
-                  key={s.slot_start + s.resource_key}
-                  type="button"
-                  className={`slot-btn${active ? " active" : ""}`}
-                  onClick={() => selectSlot(s)}
-                  aria-pressed={active}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-          {holdToken && (
-            <p className="muted">
-              Slot held
-              {holdUntil
-                ? ` until ${new Date(holdUntil).toLocaleTimeString()}`
-                : ""}
-              .
-            </p>
-          )}
-        </div>
-      )}
 
       {attachments.length > 0 && (
         <div className="muted" style={{ padding: "0 1.5rem" }}>
@@ -554,31 +609,28 @@ function ChatWidgetInner({
       )}
 
       <div className="chat-dock">
-        {talkEnabled ? (
-          <div className="chat-modes" role="tablist" aria-label="How to reply">
-            {(
-              [
-                ["type", "Type"],
-                ["talk", "Talk"],
-                ["upload", "Upload Photos"],
-              ] as const
-            ).map(([id, label]) => (
-              <button
-                key={id}
-                type="button"
-                role="tab"
-                className={`chat-mode${inputMode === id ? " is-active" : ""}${
-                  id === "talk" && talk.listening ? " is-listening" : ""
-                }`}
-                aria-selected={inputMode === id}
-                onClick={() => void setMode(id)}
-                disabled={streaming || !token}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        ) : null}
+        <div className="chat-compose-actions" role="group" aria-label="Reply options">
+          {talkEnabled ? (
+            <button
+              type="button"
+              className={`chat-action${talkMode || talk.listening ? " is-active" : ""}${
+                talk.listening ? " is-listening" : ""
+              }`}
+              onClick={() => void toggleTalk()}
+              disabled={streaming || !token || talk.status === "connecting"}
+            >
+              {talk.listening ? "Listening…" : "Talk"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className="chat-action"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={streaming || !token}
+          >
+            Upload Photos
+          </button>
+        </div>
 
         <input
           ref={fileInputRef}
@@ -588,7 +640,6 @@ function ChatWidgetInner({
           hidden
           onChange={(e) => {
             void uploadPhotos(e.target.files);
-            setInputMode("type");
             e.target.value = "";
           }}
         />
@@ -600,7 +651,7 @@ function ChatWidgetInner({
               if (talk.listening) {
                 restartTalkAfterAi.current = false;
                 void talk.stop({ commit: false, keepCaption: true });
-                setInputMode("type");
+                setTalkMode(false);
               }
               setInput(e.target.value);
             }}
@@ -610,9 +661,7 @@ function ChatWidgetInner({
             placeholder={
               talk.listening
                 ? "Listening… words appear here as you speak"
-                : inputMode === "talk"
-                  ? "Tap Talk to speak — or type anytime"
-                  : "Describe the problem…"
+                : "Type a reply…"
             }
             disabled={streaming || !token}
             aria-label="Message"
@@ -630,11 +679,7 @@ function ChatWidgetInner({
               (!talk.listening && !input.trim())
             }
           >
-            {talk.status === "connecting"
-              ? "…"
-              : talk.listening
-                ? "Send"
-                : "Send"}
+            {talk.status === "connecting" ? "…" : "Send"}
           </button>
         </div>
 
@@ -644,30 +689,31 @@ function ChatWidgetInner({
           </p>
         ) : null}
 
-        {showSubmit ? (
-          <div className="chat-actions">
-            {!talkEnabled ? (
-              <label className="file-btn">
-                Add photos
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  hidden
-                  onChange={(e) => uploadPhotos(e.target.files)}
-                />
-              </label>
-            ) : null}
+        <div className="chat-secondary">
+          <button
+            type="button"
+            className="chat-handoff"
+            onClick={() => void requestHumanHandoff()}
+            disabled={streaming || !token}
+          >
+            Speak with someone
+          </button>
+          {supportPhone ? (
+            <a className="chat-handoff-phone" href={`tel:${supportPhone.replace(/[^\d+]/g, "")}`}>
+              Call {supportPhone}
+            </a>
+          ) : null}
+          {showSubmit ? (
             <button
               type="button"
-              className="primary"
+              className="primary chat-submit"
               onClick={() => void submitLead()}
-              disabled={!token || !ready}
+              disabled={!token}
             >
               Submit request
             </button>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </div>
   );
