@@ -179,6 +179,54 @@ class PublicIntakeController extends Controller
         ]), $session->session_token, $brand);
     }
 
+    /**
+     * Mint an ephemeral OpenAI Realtime transcription session for browser Talk.
+     * Audio → text only; AI replies stay on the existing text chat path.
+     */
+    public function talkSession(Request $request, \App\Services\Ai\OpenAiRealtimeTalkService $talk): JsonResponse
+    {
+        /** @var Brand $brand */
+        $brand = $request->attributes->get('brand');
+
+        try {
+            $session = $talk->createEphemeralSession($brand->id);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json($session);
+    }
+
+    /**
+     * Fallback: record-a-voice-note → Whisper text (not live conversational voice AI).
+     */
+    public function transcribe(Request $request, \App\Services\Ai\OpenAiTranscriptionService $transcription): JsonResponse
+    {
+        /** @var Brand $brand */
+        $brand = $request->attributes->get('brand');
+
+        $request->validate([
+            'audio' => [
+                'required',
+                'file',
+                'max:10240', // 10 MB
+                'mimetypes:audio/webm,audio/wav,audio/mpeg,audio/mp4,audio/ogg,audio/x-wav,video/webm',
+            ],
+        ]);
+
+        try {
+            $result = $transcription->transcribe($request->file('audio'), $brand->id);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'text' => $result['text'],
+            'provider' => $result['provider'],
+            'model' => $result['model'],
+        ]);
+    }
+
     public function submit(Request $request): JsonResponse
     {
         /** @var Brand $brand */

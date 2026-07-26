@@ -25,6 +25,8 @@ return [
     'openai' => [
         'api_key' => env('OPENAI_API_KEY'),
         'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+        'whisper_model' => env('OPENAI_WHISPER_MODEL', 'whisper-1'),
+        'realtime_transcription_model' => env('OPENAI_REALTIME_TRANSCRIPTION_MODEL', 'gpt-4o-mini-transcribe'),
         'timeout' => (int) env('OPENAI_TIMEOUT', 20),
         // Default rates for gpt-4o-mini (USD per 1M tokens) — adjust via env if model changes
         'cost_per_1m_input_tokens' => (float) env('OPENAI_COST_PER_1M_INPUT', 0.15),

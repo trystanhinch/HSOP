@@ -98,6 +98,14 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute(20)->by('media:'.$token);
         });
 
+        RateLimiter::for('public-intake-talk-session', function (Request $request) {
+            return Limit::perMinute(20)->by('talk-session:'.$request->ip());
+        });
+
+        RateLimiter::for('public-intake-transcribe', function (Request $request) {
+            return Limit::perMinute(12)->by('transcribe:'.$request->ip());
+        });
+
         RateLimiter::for('public-availability', function (Request $request) {
             return Limit::perMinute(60)->by('avail:'.$request->ip());
         });
