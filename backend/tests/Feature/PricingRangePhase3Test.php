@@ -101,7 +101,9 @@ class PricingRangePhase3Test extends TestCase
             'message' => 'I need drywall repair about 150 sqft in Coquitlam',
         ], $this->brandHeaders());
         $msg->assertOk();
-        $this->assertTrue((bool) data_get($msg->json('price_estimate'), 'available'));
+        // Placeholder rates must never be customer-visible even when an internal estimate exists.
+        $this->assertFalse((bool) data_get($msg->json('price_estimate'), 'available'));
+        $this->assertTrue((bool) data_get($msg->json('price_estimate'), 'is_placeholder'));
 
         $submit = $this->postJson('/api/public/intake/submit', [
             'session_token' => $token,

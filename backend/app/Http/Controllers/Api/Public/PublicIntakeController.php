@@ -421,14 +421,38 @@ class PublicIntakeController extends Controller
             return null;
         }
 
+        $isPlaceholder = (bool) ($snapshot['is_placeholder'] ?? false);
+        $internallyAvailable = (bool) ($snapshot['available'] ?? false);
+
+        // Placeholder rates stay fully hidden from customers until real rates exist.
+        if ($isPlaceholder || ! $internallyAvailable) {
+            return [
+                'available' => false,
+                'is_placeholder' => $isPlaceholder,
+            ];
+        }
+
+        $low = $snapshot['low'] ?? null;
+        $high = $snapshot['high'] ?? null;
+        $currency = $snapshot['currency'] ?? 'CAD';
+        $disclaimer = \App\Services\Pricing\PricingRangeEstimator::DISCLAIMER;
+        $message = is_numeric($low) && is_numeric($high)
+            ? sprintf(
+                'Based on what you\'ve shared, a ballpark range is $%s – $%s %s.',
+                number_format((float) $low),
+                number_format((float) $high),
+                $currency
+            )
+            : null;
+
         return array_filter([
-            'available' => $snapshot['available'] ?? null,
-            'low' => $snapshot['low'] ?? null,
-            'high' => $snapshot['high'] ?? null,
-            'currency' => $snapshot['currency'] ?? null,
-            'disclaimer' => $snapshot['disclaimer'] ?? null,
-            'message' => $snapshot['message'] ?? null,
-            'is_placeholder' => $snapshot['is_placeholder'] ?? null,
+            'available' => true,
+            'low' => $low,
+            'high' => $high,
+            'currency' => $currency,
+            'disclaimer' => $disclaimer,
+            'message' => $message,
+            'is_placeholder' => false,
             'widened' => $snapshot['widened'] ?? null,
             'confidence' => $snapshot['confidence'] ?? null,
         ], fn ($v) => $v !== null);

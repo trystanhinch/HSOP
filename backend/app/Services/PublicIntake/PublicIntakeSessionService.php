@@ -239,34 +239,25 @@ class PublicIntakeSessionService
             'at' => now()->toIso8601String(),
         ];
 
+        // Keep computing estimates for Learning Centre / lead submit — never append
+        // price copy into the customer-visible assistant reply (opt-in + real rates only).
+        $estimate = $this->maybeEstimate($brand, $collected);
+        $storedEstimate = ($estimate['available'] ?? false)
+            ? $estimate
+            : ($state['price_estimate'] ?? null);
+
         $session->conversation_state = [
             'messages' => $messages,
             'collected' => $collected,
             'attachments' => $attachments,
             'last_provider' => $provider,
             'ready_to_submit' => $ready,
-            'needs_manual_review' => $needsReview,
+            'needs_manual_review' => $needsReview || ! empty($collected['wants_human_handoff']),
             'last_usage' => $usage,
-            'price_estimate' => null,
+            'price_estimate' => $storedEstimate,
+            // Legacy flag retained; auto-announce path removed for conversational pacing.
             'price_estimate_announced' => (bool) ($state['price_estimate_announced'] ?? false),
         ];
-
-        $estimate = $this->maybeEstimate($brand, $collected);
-        if ($estimate['available'] ?? false) {
-            $session->conversation_state = array_merge($session->conversation_state, [
-                'price_estimate' => $estimate,
-            ]);
-            // Append a brief estimate note once when first available (avoid spam)
-            $alreadyAnnounced = (bool) ($state['price_estimate_announced'] ?? false);
-            if (! $alreadyAnnounced && ! empty($estimate['message'])) {
-                $reply = trim($reply."\n\n".$estimate['message']);
-                $messages[count($messages) - 1]['content'] = $reply;
-                $session->conversation_state = array_merge($session->conversation_state, [
-                    'messages' => $messages,
-                    'price_estimate_announced' => true,
-                ]);
-            }
-        }
 
         $session->expires_at = now()->addHours((int) config('public.intake_session_ttl_hours', 48));
         $session->save();
@@ -290,8 +281,9 @@ class PublicIntakeSessionService
             'collected' => $collected,
             'provider' => $provider,
             'usage' => $usage,
-            'needs_manual_review' => $needsReview,
-            'price_estimate' => ($estimate['available'] ?? false) ? $estimate : ($session->conversation_state['price_estimate'] ?? null),
+            'needs_manual_review' => $needsReview || ! empty($collected['wants_human_handoff']),
+            // Full snapshot for controller sanitization — placeholders become unavailable publicly.
+            'price_estimate' => is_array($storedEstimate) ? $storedEstimate : null,
             'expires_at' => $session->expires_at?->toIso8601String(),
         ];
     }

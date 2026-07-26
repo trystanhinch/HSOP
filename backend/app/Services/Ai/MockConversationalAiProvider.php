@@ -87,23 +87,33 @@ class MockConversationalAiProvider implements ConversationalAiProviderInterface
         $missing = $this->missingFields($updated);
 
         if ($missing === []) {
-            $reply = "Thanks — I have what I need for {$company}. You can submit your request whenever you're ready.";
+            if (empty($updated['scope_confirmed'])) {
+                $desc = (string) ($updated['project_description'] ?? 'your project');
+                $reply = 'Just to confirm — you need help with: '.mb_strimwidth($desc, 0, 120, '…')
+                    .'. Does that sound right?';
+            } elseif (! array_key_exists('wants_price', $updated)) {
+                $reply = 'Would you like a rough price range, or skip straight to next steps?';
+            } elseif (! empty($updated['wants_price']) && empty($updated['price_note_sent'])) {
+                $reply = 'Thanks — a team member from '.$company.' will follow up with pricing. Want to pick a site-visit time?';
+                $updated['price_note_sent'] = true;
+            } elseif (! array_key_exists('wants_scheduling', $updated)) {
+                $reply = 'Would you like to hold a site-visit time, or just submit the request?';
+            } else {
+                $reply = "Thanks — I have what I need for {$company}. Want me to submit this request?";
+            }
         } elseif ($lastUser === '') {
-            $reply = "Hi! Welcome to {$company}. I can help start your request. What kind of work do you need ({$servicesPhrase})?";
+            $reply = "Hi — I can help start your {$company} request. What are you seeing on site?";
         } else {
             $next = $missing[0];
             $reply = match ($next) {
-                'service_category' => "Got it. Which {$company} service fits best: {$servicesPhrase}?",
-                'contact_name' => "Thanks — for {$company}, what name should we use for this request?",
+                'service_category' => "Which {$company} service fits best: {$servicesPhrase}?",
+                'contact_name' => "Thanks — what first name should {$company} use?",
                 'phone' => 'What\'s the best phone number to reach you?',
-                'email' => 'And an email address (optional but helpful)?',
-                'project_description' => 'Briefly describe the project (scope, size, timing).',
-                'address' => 'What\'s the job address or city/area?',
-                default => 'Could you share a bit more detail so we can create your request?',
+                'email' => 'And an email address (optional)?',
+                'project_description' => 'In a sentence or two, what needs fixing?',
+                'address' => 'What city or area is the job in?',
+                default => 'Could you share a bit more so we can help?',
             };
-            if ($lastUser !== '') {
-                $reply = 'Got it: "'.mb_strimwidth($lastUser, 0, 80, '…').'". '.$reply;
-            }
         }
 
         $this->log($history, $updated, $reply, 'mock', $context, $systemPrompt);
@@ -185,6 +195,27 @@ class MockConversationalAiProvider implements ConversationalAiProviderInterface
 
         if (! isset($out['size_sqft']) && preg_match('/(\d+(?:\.\d+)?)\s*(?:sq\.?\s*ft|sqft|sf)\b/i', $text, $m)) {
             $out['size_sqft'] = (float) $m[1];
+        }
+
+        if (preg_match('/\b(yes|yeah|yep|correct|that\'?s right|sounds right|confirm)\b/i', $text)
+            && ! empty($out['project_description'])
+            && empty($out['scope_confirmed'])) {
+            $out['scope_confirmed'] = true;
+        }
+
+        if (preg_match('/\b(price|estimate|ballpark|how much|cost)\b/i', $text)) {
+            $out['wants_price'] = true;
+        }
+        if (preg_match('/\b(no thanks|skip (the )?price|don\'?t (need|want) (a )?price)\b/i', $text)) {
+            $out['wants_price'] = false;
+        }
+
+        if (preg_match('/\b(schedule|book|visit|appointment|come out)\b/i', $text)) {
+            $out['wants_scheduling'] = true;
+        }
+
+        if (preg_match('/\b(speak (with|to)|talk to|call me|human|person|someone)\b/i', $text)) {
+            $out['wants_human_handoff'] = true;
         }
 
         return $out;

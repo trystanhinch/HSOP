@@ -664,6 +664,69 @@ main.page {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
+.chat-compose-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chat-action {
+  border: 1px solid var(--color-line);
+  background: color-mix(in srgb, var(--color-surface) 88%, var(--color-bg));
+  color: var(--color-ink);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.chat-action.is-active,
+.chat-action.is-listening {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-surface);
+}
+
+.chat-secondary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.chat-handoff,
+.chat-handoff-phone {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--color-muted);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.chat-handoff:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.chat-submit {
+  margin-left: auto;
+}
+
+.estimate--inline,
+.slots--inline {
+  margin: 0.25rem 0 0;
+  align-self: stretch;
+}
+
+.slot-more {
+  margin-top: 0.5rem;
+}
+
 .chat-compose input.is-listening {
   border-color: var(--color-accent);
   background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
