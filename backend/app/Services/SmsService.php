@@ -6,6 +6,7 @@ use App\Models\Setting;
 use App\Models\SmsLog;
 use App\Models\User;
 use App\Services\TestData\TestDataGuard;
+use App\Services\Customers\CommunicationGuard;
 use Illuminate\Support\Facades\Log;
 
 class SmsService
@@ -65,6 +66,24 @@ class SmsService
             ]);
 
             return ['success' => false, 'reason' => 'test_data', 'detail' => $guard['reason']];
+        }
+
+        $comm = app(CommunicationGuard::class)->checkSms(
+            userId: $userId ? (int) $userId : null,
+            phone: $toPhone,
+        );
+        if ($comm['blocked']) {
+            $this->writeLog([
+                'to_phone' => $toPhone ?: 'MISSING_OR_INVALID',
+                'user_id' => $userId,
+                'trigger_event' => $triggerEvent,
+                'related_job_id' => $jobId,
+                'message_body' => $message,
+                'status' => 'blocked_do_not_contact',
+                'error_message' => 'Blocked: '.$comm['reason'],
+            ]);
+
+            return ['success' => false, 'reason' => 'do_not_contact', 'detail' => $comm['reason']];
         }
 
         if (! Setting::isGloballyEnabled('sms')) {
