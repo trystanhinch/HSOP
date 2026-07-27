@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTestData;
 use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SiteVisit extends Model
 {
+    use HasTestData;
+
     protected $fillable = [
         'lead_id', 'pm_id', 'contractor_id', 'customer_id',
         'visit_date', 'visit_time', 'notes', 'status',

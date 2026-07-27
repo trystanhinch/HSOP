@@ -23,4 +23,7 @@ return [
     'poll_query' => env('GMAIL_POLL_QUERY', 'in:inbox newer_than:14d'),
     'max_results' => (int) env('GMAIL_MAX_RESULTS', 25),
     'enabled' => (bool) env('GMAIL_FETCH_ENABLED', true),
+
+    // Duplicate voicemail notifications for the same caller within this window merge to one lead.
+    'voicemail_dedupe_hours' => (int) env('GMAIL_VOICEMAIL_DEDUPE_HOURS', 24),
 ];
