@@ -35,6 +35,7 @@ use App\Http\Controllers\Api\ProfitReportController;
 use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SettingsController;
+use App\Http\Controllers\Api\PaymentDestinationController;
 use App\Http\Controllers\Api\EmailLogController;
 use App\Http\Controllers\Api\FinancialLedgerController;
 use App\Http\Controllers\Api\FileController;
@@ -285,6 +286,11 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
 
     Route::get('/settings', [SettingsController::class, 'index'])->middleware('role:owner');
     Route::post('/settings', [SettingsController::class, 'update'])->middleware('role:owner');
+
+    // A-03 — customer payment destinations (owner-only; separate from contractor payout/Connect)
+    Route::get('/payment-destinations', [PaymentDestinationController::class, 'index'])->middleware('role:owner');
+    Route::post('/payment-destinations', [PaymentDestinationController::class, 'store'])->middleware('role:owner');
+    Route::put('/payment-destinations/{paymentDestination}', [PaymentDestinationController::class, 'update'])->middleware('role:owner');
 
     Route::middleware('role:owner')->group(function () {
         Route::get('/company-sources', [CompanySourceController::class, 'index']);

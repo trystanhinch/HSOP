@@ -25,7 +25,17 @@ export default function Settings() {
   const [notifForm, setNotifForm] = useState({ sms_globally_enabled: false, email_globally_enabled: false });
   const [pricingForm, setPricingForm] = useState({ gst_rate: '5', markup_divisor: '0.80' });
   const [splitForm, setSplitForm] = useState({ split_contractor_pct: '80', split_pm_pct: '10', split_company_pct: '10' });
-  const [paymentForm, setPaymentForm] = useState({ payment_instructions: '' });
+  const [paymentDestinations, setPaymentDestinations] = useState([]);
+  const [paymentBrands, setPaymentBrands] = useState([]);
+  const [paymentMode, setPaymentMode] = useState('TEST');
+  const [paymentLegacy, setPaymentLegacy] = useState(null);
+  const [destForm, setDestForm] = useState({
+    brand_id: '',
+    payment_method: 'e_transfer',
+    destination_value: '',
+    owner_override: false,
+    override_reason: '',
+  });
   const [smsLogs, setSmsLogs] = useState([]);
   const [emailLogs, setEmailLogs] = useState([]);
   const [users, setUsers] = useState([]);
@@ -69,13 +79,38 @@ export default function Settings() {
         split_pm_pct: data.split_pm_pct || '10',
         split_company_pct: data.split_company_pct || '10',
       });
-      setPaymentForm({ payment_instructions: data.payment?.instructions || '' });
+      setPaymentLegacy({
+        company_email: data.payment?.legacy_company_email || data.settings?.company_email || null,
+        instructions: data.payment?.legacy_instructions || null,
+      });
     }).catch(() => {});
+  };
+
+  const loadPaymentDestinations = () => {
+    api.get('/payment-destinations')
+      .then(({ data }) => {
+        setPaymentDestinations(data.destinations || []);
+        setPaymentBrands(data.brands || []);
+        setPaymentMode(data.payment_mode || 'TEST');
+        if ((data.brands || []).length && !destForm.brand_id) {
+          setDestForm((f) => ({ ...f, brand_id: String(data.brands[0].id) }));
+        }
+      })
+      .catch(() => {
+        setPaymentDestinations([]);
+        setPaymentBrands([]);
+      });
   };
 
   useEffect(() => {
     loadSettings();
   }, []);
+
+  useEffect(() => {
+    if (activeTab === 'Payment') {
+      loadPaymentDestinations();
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (activeTab === 'Users & Roles') {
@@ -284,9 +319,61 @@ export default function Settings() {
     saveSettings(splitForm, 'Payout split settings saved.');
   };
 
-  const savePayment = (e) => {
+  const savePayment = async (e) => {
     e.preventDefault();
-    saveSettings(paymentForm, 'Payment settings saved.');
+    if (!destForm.brand_id) {
+      await showError('Select a brand.');
+      return;
+    }
+    const payload = {
+      brand_id: Number(destForm.brand_id),
+      payment_method: destForm.payment_method,
+      destination_value: destForm.payment_method === 'stripe' ? 'platform' : destForm.destination_value,
+      is_verified: true,
+      is_active: true,
+      owner_override: destForm.owner_override,
+      override_reason: destForm.override_reason || undefined,
+    };
+
+    const existing = paymentDestinations.find(
+      (d) => String(d.brand_id) === String(destForm.brand_id) && d.payment_method === destForm.payment_method
+    );
+    const changingLive = existing?.customer_ready
+      && String(existing.destination_value || '') !== String(payload.destination_value || '');
+
+    if (changingLive) {
+      const ok = await confirmAction({
+        title: 'Change live payment destination?',
+        text: `Current: ${existing.destination_value || '(empty)'} → New: ${payload.destination_value || '(empty)'}. This affects customer invoices and portals.`,
+        confirmText: 'Yes, change live destination',
+      });
+      if (!ok) return;
+      payload.confirm_live_change = true;
+      payload.reason = destForm.override_reason || 'Owner confirmed live destination change';
+    }
+
+    setSaving(true);
+    try {
+      if (existing?.id) {
+        await api.put(`/payment-destinations/${existing.id}`, payload);
+      } else {
+        await api.post('/payment-destinations', payload);
+      }
+      await showSuccess('Payment destination saved.');
+      setDestForm((f) => ({ ...f, destination_value: '', owner_override: false, override_reason: '' }));
+      loadPaymentDestinations();
+    } catch (err) {
+      const errors = err.response?.data?.errors;
+      const needsOverride = errors?.requires_owner_override || String(err.response?.data?.message || '').includes('contractor');
+      if (needsOverride && !destForm.owner_override) {
+        await showError(errors?.destination_value?.[0] || err.response?.data?.message || 'Blocked: contractor email.');
+        setDestForm((f) => ({ ...f, owner_override: true }));
+      } else {
+        await showError(errors?.destination_value?.[0] || errors?.override_reason?.[0] || errors?.confirm_live_change?.[0] || err.response?.data?.message || 'Failed to save.');
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   const saveAiSettings = async (e) => {
@@ -557,14 +644,133 @@ export default function Settings() {
       )}
 
       {activeTab === 'Payment' && (
-        <form onSubmit={savePayment} className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
-          <h3 className="font-semibold text-slate-800">Payment Instructions</h3>
-          <textarea value={paymentForm.payment_instructions} onChange={(e) => setPaymentForm({ payment_instructions: e.target.value })}
-            rows={4} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-          <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
-            {saving ? 'Saving...' : 'Save Payment Settings'}
-          </button>
-        </form>
+        <div className="space-y-4 max-w-3xl">
+          <div className={`rounded-xl border p-4 flex flex-wrap items-center justify-between gap-2 ${
+            paymentMode === 'LIVE'
+              ? 'bg-slate-800 text-white border-slate-700'
+              : 'bg-amber-100 border-amber-400 text-amber-950'
+          }`}>
+            <div>
+              <p className="text-xs font-bold tracking-wider uppercase">Customer payment mode</p>
+              <p className="text-lg font-semibold">{paymentMode === 'LIVE' ? 'LIVE — real money' : 'TEST — not live charges'}</p>
+            </div>
+            <span className={`px-3 py-1 rounded text-xs font-bold tracking-wider ${
+              paymentMode === 'LIVE' ? 'bg-green-500 text-white' : 'bg-amber-500 text-amber-950 animate-pulse'
+            }`}>
+              {paymentMode}
+            </span>
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 p-4 text-sm text-slate-600">
+            <p className="font-medium text-slate-800 mb-1">Customer payment destinations (not contractor payouts)</p>
+            <p>
+              Stripe Connect / contractor payout details are managed on contractor profiles.
+              This screen only controls where <em>customers</em> send money (platform Stripe or company e-transfer).
+            </p>
+            {paymentLegacy && (paymentLegacy.company_email || paymentLegacy.instructions) && (
+              <div className="mt-3 rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs">
+                <p className="font-semibold text-slate-700">Legacy settings (read-only audit history — not shown to customers)</p>
+                <p>company_email: {paymentLegacy.company_email || '—'}</p>
+                <p>payment_instructions: {paymentLegacy.instructions || '—'}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-slate-500">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">Brand</th>
+                  <th className="text-left px-4 py-2 font-medium">Method</th>
+                  <th className="text-left px-4 py-2 font-medium">Destination</th>
+                  <th className="text-left px-4 py-2 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paymentDestinations.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-6 text-center text-slate-500">No destinations yet — save one below.</td></tr>
+                ) : paymentDestinations.map((d) => (
+                  <tr key={d.id}>
+                    <td className="px-4 py-2">{d.brand?.company_name || d.brand_id}</td>
+                    <td className="px-4 py-2">{d.payment_method}</td>
+                    <td className="px-4 py-2 font-mono text-xs">{d.destination_value || '—'}</td>
+                    <td className="px-4 py-2">
+                      {d.customer_ready ? (
+                        <span className="text-green-700 text-xs font-medium">Verified / live</span>
+                      ) : d.needs_owner_review || d.blocked_if_resaved ? (
+                        <span className="text-amber-700 text-xs font-medium">Needs owner review</span>
+                      ) : (
+                        <span className="text-slate-500 text-xs">Inactive / unverified</span>
+                      )}
+                      {d.blocked_if_resaved && (
+                        <p className="text-[11px] text-red-600 mt-0.5">Matches contractor email — blocked unless override</p>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <form onSubmit={savePayment} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+            <h3 className="font-semibold text-slate-800">Save / verify destination</h3>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Brand</label>
+              <select
+                value={destForm.brand_id}
+                onChange={(e) => setDestForm({ ...destForm, brand_id: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="">Select brand</option>
+                {paymentBrands.map((b) => (
+                  <option key={b.id} value={b.id}>{b.company_name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-slate-500 block mb-1">Payment method</label>
+              <select
+                value={destForm.payment_method}
+                onChange={(e) => setDestForm({ ...destForm, payment_method: e.target.value, destination_value: e.target.value === 'stripe' ? 'platform' : '' })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+              >
+                <option value="stripe">Stripe (platform — default)</option>
+                <option value="e_transfer">E-Transfer (company email)</option>
+              </select>
+            </div>
+            {destForm.payment_method === 'e_transfer' ? (
+              <div>
+                <label className="text-xs text-slate-500 block mb-1">Company e-transfer email</label>
+                <input
+                  type="email"
+                  value={destForm.destination_value}
+                  onChange={(e) => setDestForm({ ...destForm, destination_value: e.target.value })}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                  placeholder="payments@company.com"
+                  required
+                />
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">Stripe destination is <code className="text-xs bg-slate-100 px-1 rounded">platform</code> (single platform Stripe account).</p>
+            )}
+            {destForm.owner_override && (
+              <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                <p className="text-sm text-amber-900 font-medium">Owner override required — this email matches a contractor account.</p>
+                <textarea
+                  value={destForm.override_reason}
+                  onChange={(e) => setDestForm({ ...destForm, override_reason: e.target.value })}
+                  rows={2}
+                  required
+                  placeholder="Required reason (e.g. sole proprietor exception)"
+                  className="w-full border border-amber-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+            )}
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
+              {saving ? 'Saving...' : 'Save & verify destination'}
+            </button>
+          </form>
+        </div>
       )}
 
       {activeTab === 'SMS Log' && (

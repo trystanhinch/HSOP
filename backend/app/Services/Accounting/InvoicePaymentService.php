@@ -58,6 +58,13 @@ class InvoicePaymentService
                 $exGst = round((float) $invoice->subtotal * ($amount / (float) $invoice->amount), 2);
             }
             $payment = Payment::where('invoice_id', $invoice->id)->latest('id')->first();
+            $meta = is_array($data['meta'] ?? null) ? $data['meta'] : [];
+            if (! empty($data['ledger_note'])) {
+                $meta['note'] = $data['ledger_note'];
+            }
+            if (($method === 'e_transfer' || $method === 'etransfer') && empty($meta['note']) && auth()->user()) {
+                $meta['note'] = 'e-transfer, manually confirmed by '.auth()->user()->name.' (user #'.auth()->id().')';
+            }
             app(\App\Services\Finance\FinancialLedgerService::class)->recordEntry([
                 'entry_type' => $fullyPaid
                     ? \App\Models\FinancialLedgerEntry::TYPE_PAYMENT_RECEIVED
@@ -70,6 +77,7 @@ class InvoicePaymentService
                 'payment_id' => $payment?->id,
                 'actor_user_id' => auth()->id(),
                 'reference' => $data['reference_number'] ?? $txn,
+                'meta' => $meta ?: null,
                 'is_test_data' => (bool) ($invoice->is_test_data ?? false),
             ]);
 

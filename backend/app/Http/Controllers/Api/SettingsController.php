@@ -27,9 +27,13 @@ class SettingsController extends Controller
                 'email_quote_sent' => true,
                 'email_job_update' => true,
             ],
+            // A-03: customer payment destinations moved to /payment-destinations.
+            // Legacy settings keys retained for audit/history only — not used on customer surfaces.
             'payment' => [
-                'method' => 'e_transfer',
-                'instructions' => $settings['payment_instructions'] ?? 'Send e-transfer to payments@hsop.ca',
+                'managed_via' => 'payment_destinations',
+                'legacy_instructions' => $settings['payment_instructions'] ?? null,
+                'legacy_company_email' => $settings['company_email'] ?? null,
+                'note' => 'Edit customer payment destinations under Settings → Payment (brand-scoped). Contractor payout uses Stripe Connect separately.',
             ],
             'branding' => [
                 'primary_color' => '#3B82F6',
@@ -47,7 +51,6 @@ class SettingsController extends Controller
     {
         $data = $request->validate([
             'company_name' => 'nullable|string|max:255',
-            'company_email' => 'nullable|email',
             'company_phone' => 'nullable|string|max:20',
             'gst_rate' => 'nullable|numeric|min:0|max:100',
             'markup_divisor' => 'nullable|numeric|min:0.01|max:1',
@@ -56,7 +59,6 @@ class SettingsController extends Controller
             'split_company_pct' => 'nullable|numeric|min:0|max:99',
             'sms_globally_enabled' => 'nullable|boolean',
             'email_globally_enabled' => 'nullable|boolean',
-            'payment_instructions' => 'nullable|string',
             'name' => 'nullable|string|max:255',
             'email' => 'nullable|email',
             'phone' => 'nullable|string|max:20',
@@ -64,7 +66,13 @@ class SettingsController extends Controller
             'gst_number' => 'nullable|string|max:50',
         ]);
 
-        foreach (['company_name', 'company_email', 'company_phone', 'gst_rate', 'markup_divisor', 'split_contractor_pct', 'split_pm_pct', 'split_company_pct', 'sms_globally_enabled', 'email_globally_enabled', 'sms_enabled', 'email_enabled', 'payment_instructions'] as $key) {
+        if ($request->exists('payment_instructions') || $request->exists('company_email')) {
+            return response()->json([
+                'message' => 'Customer payment destinations are managed via /api/payment-destinations (Settings → Payment). Legacy settings keys are read-only for audit history.',
+            ], 422);
+        }
+
+        foreach (['company_name', 'company_phone', 'gst_rate', 'markup_divisor', 'split_contractor_pct', 'split_pm_pct', 'split_company_pct', 'sms_globally_enabled', 'email_globally_enabled', 'sms_enabled', 'email_enabled'] as $key) {
             if (array_key_exists($key, $data) && $data[$key] !== null) {
                 $val = is_bool($data[$key]) ? ($data[$key] ? 'true' : 'false') : (string) $data[$key];
                 Setting::set($key, $val);

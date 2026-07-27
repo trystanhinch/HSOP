@@ -13,12 +13,12 @@ use App\Models\Lead;
 use App\Models\Quote;
 use App\Models\RevisionRequest;
 use App\Models\RevisionRequestPhoto;
-use App\Models\Setting;
 use App\Models\User;
 use App\Services\Accounting\InvoiceService;
 use App\Services\EmailService;
 use App\Services\JobNotificationService;
 use App\Services\LeadQuoteWorkflowService;
+use App\Services\Payments\PaymentDestinationService;
 use App\Services\PayoutEligibilityService;
 use App\Services\PayoutWorkflowService;
 use App\Services\SmsMessageTemplates;
@@ -129,10 +129,7 @@ class CustomerPortalController extends Controller
                 'balance' => $job->invoice->balance,
                 'status' => $job->invoice->status,
             ] : null,
-            'payment' => [
-                'company_email' => Setting::where('key', 'company_email')->value('value') ?? 'payments@hsop.ca',
-                'instructions' => Setting::where('key', 'payment_instructions')->value('value'),
-            ],
+            'payment' => app(PaymentDestinationService::class)->customerFacingForJob($job),
             'token' => $token,
         ]);
     }
@@ -338,6 +335,8 @@ class CustomerPortalController extends Controller
         $this->ensureInvoice($job);
         $job->refresh();
 
+        $dest = app(PaymentDestinationService::class)->customerFacingForJob($job);
+
         return response()->json([
             'job' => [
                 'id' => $job->id,
@@ -353,15 +352,16 @@ class CustomerPortalController extends Controller
                 'balance' => $job->invoice->balance,
                 'status' => $job->invoice->status,
             ] : null,
-            'company_email' => Setting::where('key', 'company_email')->value('value') ?? 'payments@hsop.ca',
-            'payment_instructions' => Setting::where('key', 'payment_instructions')->value('value'),
+            'company_email' => $dest['company_email'],
+            'payment_instructions' => $dest['payment_instructions'],
+            'payment' => $dest,
             'token' => $token,
-            'card_payments_enabled' => config('payment.provider') === 'stripe',
-            'payment_provider' => config('payment.provider'),
-            // Publishable key only — never the secret
-            'stripe_publishable_key' => config('payment.provider') === 'stripe'
-                ? config('payment.stripe.publishable')
-                : null,
+            'card_payments_enabled' => (bool) ($dest['card_payments_enabled'] ?? false),
+            'payment_provider' => $dest['payment_provider'] ?? config('payment.provider'),
+            'payment_mode' => $dest['payment_mode'] ?? null,
+            'stripe_publishable_key' => $dest['stripe_publishable_key'] ?? null,
+            'destination_configured' => (bool) ($dest['destination_configured'] ?? false),
+            'needs_owner_review' => (bool) ($dest['needs_owner_review'] ?? false),
         ]);
     }
 

@@ -620,8 +620,15 @@ export default function CustomerPortal() {
                 <div className="bg-slate-50 rounded-lg p-4 border border-slate-200">
                   <p className="font-medium text-slate-800 text-sm mb-1">Pay by E-Transfer</p>
                   <p className="text-xs text-slate-600">
-                    Send to: <strong>{data.payment?.company_email || 'notifications@serviceop.ca'}</strong>
+                    Send to: <strong>{data.payment?.company_email || 'Payment destination pending verification'}</strong>
                   </p>
+                  {data.payment?.payment_mode && (
+                    <p className={`text-[10px] font-bold tracking-wider mt-1 ${
+                      data.payment.payment_mode === 'LIVE' ? 'text-slate-700' : 'text-amber-700'
+                    }`}>
+                      Payment mode: {data.payment.payment_mode}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-600 mt-1">Reference: your name + job address</p>
                 </div>
                 <Link to={`/payment/${job.id}?token=${token}`}

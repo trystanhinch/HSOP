@@ -125,24 +125,41 @@ export default function PaymentPage() {
 
         {!alreadyPaid && (
           <div className="border-2 border-slate-200 rounded-xl p-5 bg-white mb-4">
-            <h3 className="font-semibold text-slate-800 mb-2">Pay by E-Transfer</h3>
-            <p className="text-sm text-slate-600 mb-3">
-              Send your e-transfer to: <strong>{data.company_email}</strong>
-            </p>
-            <p className="text-sm text-slate-600 mb-3">
-              Amount: <strong>${total}</strong>
-            </p>
-            {data.payment_instructions && (
-              <p className="text-xs text-slate-500 mb-3">{data.payment_instructions}</p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h3 className="font-semibold text-slate-800">Pay by E-Transfer</h3>
+              {data.payment_mode && (
+                <span className={`text-[10px] font-bold tracking-wider px-2 py-0.5 rounded ${
+                  data.payment_mode === 'LIVE' ? 'bg-slate-800 text-white' : 'bg-amber-300 text-amber-950'
+                }`}>
+                  {data.payment_mode}
+                </span>
+              )}
+            </div>
+            {data.company_email ? (
+              <>
+                <p className="text-sm text-slate-600 mb-3">
+                  Send your e-transfer to: <strong>{data.company_email}</strong>
+                </p>
+                <p className="text-sm text-slate-600 mb-3">
+                  Amount: <strong>${total}</strong>
+                </p>
+                {data.payment_instructions && (
+                  <p className="text-xs text-slate-500 mb-3">{data.payment_instructions}</p>
+                )}
+                <p className="text-xs text-slate-400">
+                  Please use your name and job address as the message reference.
+                  Once we receive your payment, we will confirm it and your job will be marked complete.
+                </p>
+                <button type="button" onClick={notifyEtransferSent} disabled={submitting}
+                  className="mt-4 w-full bg-slate-800 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-slate-900 disabled:opacity-50">
+                  {submitting ? 'Submitting...' : 'I Have Sent the E-Transfer'}
+                </button>
+              </>
+            ) : (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                {data.message || data.payment?.message || 'E-transfer destination is being configured. Please pay by card if available, or contact the company.'}
+              </p>
             )}
-            <p className="text-xs text-slate-400">
-              Please use your name and job address as the message reference.
-              Once we receive your payment, we will confirm it and your job will be marked complete.
-            </p>
-            <button type="button" onClick={notifyEtransferSent} disabled={submitting}
-              className="mt-4 w-full bg-slate-800 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-slate-900 disabled:opacity-50">
-              {submitting ? 'Submitting...' : 'I Have Sent the E-Transfer'}
-            </button>
           </div>
         )}
 

@@ -30,6 +30,9 @@ class PaymentController extends Controller
             'payment_date' => $request->payment_date,
             'reference_number' => $request->reference_number,
             'payment_method' => $request->payment_method ?? 'e_transfer',
+            'ledger_note' => ($request->payment_method ?? 'e_transfer') === 'e_transfer'
+                ? 'e-transfer, manually confirmed by '.($request->user()?->name ?? 'owner').' (user #'.($request->user()?->id ?? 0).')'
+                : null,
         ]);
 
         return response()->json([

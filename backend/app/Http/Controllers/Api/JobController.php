@@ -11,7 +11,6 @@ use App\Models\Payment;
 use App\Models\Quote;
 use App\Models\RevisionRequest;
 use App\Models\RevisionRequestPhoto;
-use App\Models\Setting;
 use App\Models\SiteVisit;
 use App\Models\User;
 use App\Mail\JobReadyForReviewMail;
@@ -22,6 +21,7 @@ use App\Services\Accounting\InvoiceService;
 use App\Services\EmailService;
 use App\Services\JobNotificationService;
 use App\Services\PricingService;
+use App\Services\Payments\PaymentDestinationService;
 use App\Services\PayoutEligibilityService;
 use App\Services\PayoutWorkflowService;
 use App\Services\SmsMessageTemplates;
@@ -824,11 +824,13 @@ class JobController extends Controller
         ]);
 
         if ($job->invoice && $job->invoice->status !== 'paid') {
+            $owner = auth()->user();
             $this->invoicePayments->markPaid($job->invoice, [
                 'amount' => $job->invoice->balance,
                 'payment_date' => $request->payment_date,
                 'reference_number' => $request->payment_reference,
                 'payment_method' => 'e_transfer',
+                'ledger_note' => 'e-transfer, manually confirmed by '.($owner?->name ?? 'owner').' (user #'.($owner?->id ?? 0).')',
             ]);
         } else {
             $this->eligibility->evaluateForJob($job->fresh(['invoice', 'quote', 'revisionRequests', 'contractor', 'pm']));
@@ -875,6 +877,8 @@ class JobController extends Controller
 
         $job->load(['quote', 'invoice', 'lead']);
 
+        $dest = app(PaymentDestinationService::class)->customerFacingForJob($job);
+
         return response()->json([
             'job' => [
                 'id' => $job->id,
@@ -896,13 +900,15 @@ class JobController extends Controller
                 'balance' => $job->quote->customer_total,
                 'status' => 'awaiting_payment',
             ] : null),
-            'company_email' => Setting::where('key', 'company_email')->value('value') ?? 'payments@hsop.ca',
-            'payment_instructions' => Setting::where('key', 'payment_instructions')->value('value'),
-            'card_payments_enabled' => config('payment.provider') === 'stripe',
-            'payment_provider' => config('payment.provider'),
-            'stripe_publishable_key' => config('payment.provider') === 'stripe'
-                ? config('payment.stripe.publishable')
-                : null,
+            'company_email' => $dest['company_email'],
+            'payment_instructions' => $dest['payment_instructions'],
+            'payment' => $dest,
+            'card_payments_enabled' => (bool) ($dest['card_payments_enabled'] ?? false),
+            'payment_provider' => $dest['payment_provider'] ?? config('payment.provider'),
+            'payment_mode' => $dest['payment_mode'] ?? null,
+            'stripe_publishable_key' => $dest['stripe_publishable_key'] ?? null,
+            'destination_configured' => (bool) ($dest['destination_configured'] ?? false),
+            'needs_owner_review' => (bool) ($dest['needs_owner_review'] ?? false),
         ]);
     }
 
