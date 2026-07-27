@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTestData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class ActivityTimelineEntry extends Model
 {
+    use HasTestData;
+
     public $timestamps = false;
 
     protected $fillable = [
