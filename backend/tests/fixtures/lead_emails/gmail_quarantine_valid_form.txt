@@ -1,0 +1,13 @@
+Subject: New drywall lead — Fraser Valley Drywall form
+From: leads@fraservalley drywall.example.com
+
+First Name: QA Quarantine
+Last Name: ValidLead
+Phone: (604) 555-0199
+Email: qa-a02-valid@example.com
+Service Required: Drywall repair / paint
+Text area: Basement drywall patch and paint in Surrey after water damage.
+Source Website: Fraser Valley Drywall
+Address: Surrey, BC
+Submitted: 2026-07-27 10:00 AM
+Marketing consent: Yes

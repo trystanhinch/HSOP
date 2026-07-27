@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Casts\DateOnly;
 use App\Models\Concerns\HasActivityTimeline;
 use App\Models\Concerns\HasNextAction;
+use App\Models\Concerns\HasTestData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Lead extends Model
 {
-    use HasActivityTimeline, HasNextAction;
+    use HasActivityTimeline, HasNextAction, HasTestData;
     protected $fillable = [
         'company_id',
         'company_source_id',

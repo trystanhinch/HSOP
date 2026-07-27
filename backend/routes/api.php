@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\JobUpdateController;
 use App\Http\Controllers\Api\LeadController;
+use App\Http\Controllers\Api\IntakeQuarantineController;
 use App\Http\Controllers\Api\LearningSnapshotController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\NextActionController;
@@ -111,6 +112,9 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     Route::get('/dashboard/kpis', [DashboardController::class, 'kpis'])->middleware('role:owner');
 
     Route::get('/admin/database-overview', [AdminController::class, 'databaseOverview'])->middleware('role:owner');
+    Route::get('/admin/test-data', [\App\Http\Controllers\Api\TestDataController::class, 'summary'])->middleware('role:owner');
+    Route::post('/admin/test-data/dry-run', [\App\Http\Controllers\Api\TestDataController::class, 'dryRun'])->middleware('role:owner');
+    Route::post('/admin/test-data/apply', [\App\Http\Controllers\Api\TestDataController::class, 'apply'])->middleware('role:owner');
 
     Route::get('/companies', [CompanyController::class, 'index']);
 
@@ -123,6 +127,11 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
 
     Route::get('/leads', [LeadController::class, 'index']);
     Route::get('/leads/review-count', [LeadController::class, 'reviewCount'])->middleware('role:owner');
+    Route::get('/intake-quarantine/pending-count', [IntakeQuarantineController::class, 'pendingCount'])->middleware('role:owner');
+    Route::get('/intake-quarantine', [IntakeQuarantineController::class, 'index'])->middleware('role:owner');
+    Route::get('/intake-quarantine/{intakeQuarantine}', [IntakeQuarantineController::class, 'show'])->middleware('role:owner');
+    Route::post('/intake-quarantine/{intakeQuarantine}/approve', [IntakeQuarantineController::class, 'approve'])->middleware('role:owner');
+    Route::post('/intake-quarantine/{intakeQuarantine}/ignore', [IntakeQuarantineController::class, 'ignore'])->middleware('role:owner');
     Route::post('/leads', [LeadController::class, 'store'])->middleware('role:owner,pm');
     Route::get('/leads/{lead}', [LeadController::class, 'show']);
     Route::put('/leads/{lead}', [LeadController::class, 'update'])->middleware('role:owner,pm');

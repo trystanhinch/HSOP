@@ -1,5 +1,6 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { getRoleDashboard } from '../utils/getRoleDashboard';
+import api from '../api/axios';
 
 const AuthContext = createContext(null);
 
@@ -33,6 +34,21 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('user');
     setUser(null);
   };
+
+  // Keep app_env fresh for the environment badge after deploys / reloads.
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token || !user) return;
+    let cancelled = false;
+    api.get('/me').then(({ data }) => {
+      if (cancelled || !data?.id) return;
+      const next = { ...user, ...data };
+      localStorage.setItem('user', JSON.stringify(next));
+      setUser(next);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, login, logout, getRoleDashboard }}>

@@ -57,25 +57,25 @@ class CommandCenterQueryService
 
         return [
             'window' => ['from' => $from->toDateTimeString(), 'to' => $to->toDateTimeString()],
-            'new_leads_today' => Lead::whereBetween('created_at', [$from, $to])->count(),
-            'leads_needing_manual_review' => Lead::where('needs_manual_review', true)->count(),
-            'quotes_sent_today' => Quote::whereBetween('sent_at', [$from, $to])->count(),
-            'quotes_awaiting_customer' => Quote::whereIn('status', ['sent', 'viewed', 'follow_up'])->count(),
-            'jobs_in_progress' => Job::whereIn('status', [
+            'new_leads_today' => Lead::productionOnly()->whereBetween('created_at', [$from, $to])->count(),
+            'leads_needing_manual_review' => Lead::productionOnly()->where('needs_manual_review', true)->count(),
+            'quotes_sent_today' => Quote::productionOnly()->whereBetween('sent_at', [$from, $to])->count(),
+            'quotes_awaiting_customer' => Quote::productionOnly()->whereIn('status', ['sent', 'viewed', 'follow_up'])->count(),
+            'jobs_in_progress' => Job::productionOnly()->whereIn('status', [
                 'scheduled', 'in_progress', 'update_posted', 'progress_updated', 'revision_in_progress',
             ])->count(),
-            'invoices_paid_today' => Invoice::where('status', 'paid')
+            'invoices_paid_today' => Invoice::productionOnly()->where('status', 'paid')
                 ->whereDate('payment_date', $from->toDateString())->count(),
-            'revenue_paid_today_subtotal' => round((float) Invoice::where('status', 'paid')
+            'revenue_paid_today_subtotal' => round((float) Invoice::productionOnly()->where('status', 'paid')
                 ->whereDate('payment_date', $from->toDateString())->sum('subtotal'), 2),
-            'payouts_scheduled' => Payout::where('status', 'scheduled')->count(),
-            'payouts_queued' => Payout::where('status', 'queued')->count(),
+            'payouts_scheduled' => Payout::productionOnly()->where('status', 'scheduled')->count(),
+            'payouts_queued' => Payout::productionOnly()->where('status', 'queued')->count(),
             'reviews_needing_follow_up' => ReviewFeedback::where('star_rating', '<', 5)
                 ->whereIn('follow_up_status', ['new', 'pm_notified', 'customer_contacted', 'escalated'])
                 ->count(),
             'ai_errors_today' => AiActionLog::whereNotNull('error')
                 ->whereBetween('created_at', [$from, $to])->count(),
-            'overdue_next_actions' => NextAction::where('status', 'pending')
+            'overdue_next_actions' => NextAction::productionOnly()->where('status', 'pending')
                 ->whereNotNull('due_at')->where('due_at', '<', now())->count(),
         ];
     }
