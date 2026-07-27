@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Mail\HsopNotificationMail;
 use App\Models\EmailLog;
 use App\Models\Setting;
+use App\Services\TestData\TestDataGuard;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -20,6 +21,24 @@ class EmailService
         $userId = null,
         $jobId = null
     ): array {
+        $guard = app(TestDataGuard::class)->checkOutbound(
+            userId: $userId ? (int) $userId : null,
+            jobId: $jobId ? (int) $jobId : null,
+            email: $toEmail,
+        );
+        if ($guard['blocked']) {
+            $this->writeLog([
+                'to_email' => $toEmail ?: 'MISSING',
+                'user_id' => $userId,
+                'trigger_event' => $triggerEvent,
+                'related_job_id' => $jobId,
+                'status' => 'blocked_test_data',
+                'error_message' => 'Blocked: '.$guard['reason'],
+            ]);
+
+            return ['success' => false, 'reason' => 'test_data', 'detail' => $guard['reason']];
+        }
+
         if (! Setting::isGloballyEnabled('email')) {
             $this->writeLog([
                 'to_email' => $toEmail ?: 'MISSING',
@@ -81,6 +100,24 @@ class EmailService
         $userId = null,
         $jobId = null
     ): array {
+        $guard = app(TestDataGuard::class)->checkOutbound(
+            userId: $userId ? (int) $userId : null,
+            jobId: $jobId ? (int) $jobId : null,
+            email: $toEmail,
+        );
+        if ($guard['blocked']) {
+            $this->writeLog([
+                'to_email' => $toEmail ?: 'MISSING',
+                'user_id' => $userId,
+                'trigger_event' => $triggerEvent,
+                'related_job_id' => $jobId,
+                'status' => 'blocked_test_data',
+                'error_message' => 'Blocked: '.$guard['reason'],
+            ]);
+
+            return ['success' => false, 'reason' => 'test_data', 'detail' => $guard['reason']];
+        }
+
         if (! Setting::isGloballyEnabled('email')) {
             $this->writeLog([
                 'to_email' => $toEmail ?: 'MISSING',
@@ -138,6 +175,9 @@ class EmailService
     private function writeLog(array $data): void
     {
         try {
+            if (($data['status'] ?? null) === 'blocked_test_data') {
+                $data['is_test_data'] = true;
+            }
             EmailLog::create($data);
         } catch (\Exception $e) {
             Log::warning('EmailLog write failed', [
