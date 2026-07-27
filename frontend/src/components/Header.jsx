@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction } from '../utils/swal';
+import EnvironmentBadge from './EnvironmentBadge';
 
 export default function Header({ title }) {
   const { user, logout } = useAuth();
@@ -21,8 +22,12 @@ export default function Header({ title }) {
 
   return (
     <div className="flex items-center justify-between flex-1 min-w-0">
-      <h1 className="text-lg font-semibold text-slate-900 truncate">{title}</h1>
+      <div className="flex items-center gap-2 min-w-0">
+        <h1 className="text-lg font-semibold text-slate-900 truncate">{title}</h1>
+        <EnvironmentBadge className="hidden sm:inline-flex flex-shrink-0" />
+      </div>
       <div className="flex items-center gap-3 flex-shrink-0">
+        <EnvironmentBadge className="sm:hidden" />
         <button type="button" className="hidden sm:block p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
           <Bell className="w-5 h-5" />
         </button>

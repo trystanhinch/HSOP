@@ -19,7 +19,6 @@ backend/public/storage
 
 # IDE & OS
 .idea/
-.vscode/
 *.swp
 .DS_Store
 Thumbs.db
@@ -40,3 +39,8 @@ tmp-secret-rotation-verify-meta.json
 tmp-leaked-env-inventory.json
 tmp-inventory-leaked-envs.mjs
 
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+config.bat
+node_modules
