@@ -48,6 +48,25 @@ function flagTrue(value: unknown): boolean {
   return value === true || value === 1 || value === "1" || value === "true";
 }
 
+function looksLikeSubmitIntent(text: string): boolean {
+  const t = text.toLowerCase();
+  return (
+    /\b(submit(\s+(my|the)?\s*request)?|send(\s+(my|the)?\s*request)|go ahead and submit|please submit|i'?m done|that'?s (all|everything)|finish up|confirm (my )?request)\b/.test(
+      t
+    ) || /\b(yes[,.]?\s+)?(please\s+)?submit\b/.test(t)
+  );
+}
+
+function assistantClaimedSubmit(reply: string): boolean {
+  const t = reply.toLowerCase();
+  return (
+    /\b(i('ll| will)|we('ll| will)|i am going to|i'm going to)\s+submit\b/.test(t) ||
+    /\b(request (has been|is being|was) submitted|submitted your request|submitting (your|the) request)\b/.test(
+      t
+    )
+  );
+}
+
 function ChatWidgetInner({
   brand,
   hostHint,
@@ -96,6 +115,7 @@ function ChatWidgetInner({
   const priceFetchArmed = useRef(false);
   const slotsFetchArmed = useRef(false);
   const initialMessageSent = useRef(false);
+  const submittingLead = useRef(false);
 
   const headers = useCallback(() => {
     const h = brandHeaders(hostHint || brand.domain) as Record<string, string>;
@@ -264,12 +284,22 @@ function ChatWidgetInner({
   const sendMessage = useCallback(
     async (overrideText?: string) => {
       const text = (overrideText ?? input).trim();
-      if (!text || !token || streaming) return;
+      if (!text || !token || streaming) {
+        return null as {
+          ready: boolean;
+          collected: Record<string, unknown>;
+          reply: string;
+        } | null;
+      }
       setInput("");
       setError(null);
       setMessages((m) => [...m, { role: "user", content: text }]);
       setStreaming(true);
       setMessages((m) => [...m, { role: "assistant", content: "" }]);
+
+      let finalReady = false;
+      let finalCollected: Record<string, unknown> = {};
+      let finalReply = "";
 
       try {
         const res = await fetch(`${apiBaseUrl()}/api/public/intake/message`, {
@@ -322,10 +352,12 @@ function ChatWidgetInner({
             }
             if (event === "collected" && payload.collected) {
               setCollected(payload.collected);
+              finalCollected = payload.collected;
             }
             if (event === "done") {
               if (payload.reply) {
                 assistant = payload.reply;
+                finalReply = payload.reply;
                 setMessages((m) => {
                   const copy = [...m];
                   copy[copy.length - 1] = {
@@ -335,8 +367,12 @@ function ChatWidgetInner({
                   return copy;
                 });
               }
-              if (payload.collected) setCollected(payload.collected);
-              setReady(Boolean(payload.ready_to_submit));
+              if (payload.collected) {
+                setCollected(payload.collected);
+                finalCollected = payload.collected;
+              }
+              finalReady = Boolean(payload.ready_to_submit);
+              setReady(finalReady);
               if (payload.price_estimate) {
                 const pe = sanitizePriceEstimate(payload.price_estimate);
                 setPriceEstimate(pe);
@@ -350,8 +386,11 @@ function ChatWidgetInner({
             }
           }
         }
+
+        return { ready: finalReady, collected: finalCollected, reply: finalReply };
       } catch (e) {
         setError(e instanceof Error ? e.message : "Send failed");
+        return null;
       } finally {
         setStreaming(false);
       }
@@ -375,6 +414,59 @@ function ChatWidgetInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionReady, token, initialUserMessage, streaming]);
 
+  const submitLead = useCallback(async () => {
+    if (!token || submittingLead.current || submittedLeadId) return null;
+    submittingLead.current = true;
+    setError(null);
+    try {
+      const res = await fetch(`${apiBaseUrl()}/api/public/intake/submit`, {
+        method: "POST",
+        headers: { ...headers(), "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ session_token: token }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || "Submit failed");
+        return null;
+      }
+      const leadId =
+        typeof data.lead_id === "number" ? data.lead_id : Number(data.lead_id);
+      if (!Number.isFinite(leadId) || leadId <= 0) {
+        setError(
+          "Your request could not be saved. Please try Submit request again or call us."
+        );
+        return null;
+      }
+      setSubmittedLeadId(leadId);
+      setBookingConfirmed(Boolean(data.booking?.confirmed));
+      clearIntakeSessionToken();
+      return leadId;
+    } finally {
+      submittingLead.current = false;
+    }
+  }, [headers, submittedLeadId, token]);
+
+  const maybeAutoSubmitAfterTurn = useCallback(
+    async (
+      userText: string,
+      turn: { ready: boolean; collected: Record<string, unknown>; reply: string } | null,
+      opts?: { forceIfReady?: boolean }
+    ) => {
+      if (!turn) return;
+      const scopeOk = flagTrue(turn.collected.scope_confirmed);
+      const should =
+        Boolean(opts?.forceIfReady && turn.ready) ||
+        (turn.ready &&
+          scopeOk &&
+          (looksLikeSubmitIntent(userText) || assistantClaimedSubmit(turn.reply)));
+      if (should) {
+        await submitLead();
+      }
+    },
+    [submitLead]
+  );
+
   const talk = useTalkInput({
     hostHint: hostHint || brand.domain,
     enabled: talkEnabled,
@@ -389,7 +481,8 @@ function ChatWidgetInner({
       const full = prefix ? `${prefix} ${text}`.trim() : text;
       inputBeforeListenRef.current = "";
       restartTalkAfterAi.current = talkMode;
-      await sendMessage(full);
+      const turn = await sendMessage(full);
+      await maybeAutoSubmitAfterTurn(full, turn);
     },
   });
 
@@ -589,26 +682,11 @@ function ChatWidgetInner({
     setHoldUntil(data.held_until || null);
   }
 
-  async function submitLead() {
-    if (!token) return;
-    setError(null);
+  async function submitLeadClicked() {
     if (talk.listening) {
       await talk.stop({ commit: false, keepCaption: true });
     }
-    const res = await fetch(`${apiBaseUrl()}/api/public/intake/submit`, {
-      method: "POST",
-      headers: { ...headers(), "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ session_token: token }),
-    });
-    const data = await res.json();
-    if (!res.ok) {
-      setError(data.message || "Submit failed");
-      return;
-    }
-    setSubmittedLeadId(data.lead_id);
-    setBookingConfirmed(Boolean(data.booking?.confirmed));
-    clearIntakeSessionToken();
+    await submitLead();
   }
 
   async function toggleTalk() {
@@ -628,7 +706,9 @@ function ChatWidgetInner({
       await talk.stop({ commit: true });
       return;
     }
-    await sendMessage();
+    const text = input.trim();
+    const turn = await sendMessage();
+    await maybeAutoSubmitAfterTurn(text, turn);
   }
 
   async function requestHumanHandoff() {
@@ -637,7 +717,10 @@ function ChatWidgetInner({
       await talk.stop({ commit: false, keepCaption: true });
     }
     setTalkMode(false);
-    await sendMessage("I'd like to speak with someone from your team.");
+    const handoffText = "I'd like to speak with someone from your team.";
+    const turn = await sendMessage(handoffText);
+    // Handoff with enough contact data must still create a lead for PM follow-up.
+    await maybeAutoSubmitAfterTurn(handoffText, turn, { forceIfReady: true });
   }
 
   if (submittedLeadId) {
@@ -870,8 +953,8 @@ function ChatWidgetInner({
             <button
               type="button"
               className="primary chat-submit"
-              onClick={() => void submitLead()}
-              disabled={!token || uploading}
+              onClick={() => void submitLeadClicked()}
+              disabled={!token || uploading || submittingLead.current}
             >
               Submit request
             </button>
