@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTestData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class CompanySource extends Model
 {
+    use HasTestData;
+
     protected $fillable = [
         'company_name',
         'domain',
@@ -16,6 +19,7 @@ class CompanySource extends Model
         'default_contractor_ids',
         'sender_identity',
         'lead_parsing_rule',
+        'intake_allow_patterns',
         'marketing_cost_monthly',
         'status',
     ];
@@ -25,6 +29,7 @@ class CompanySource extends Model
         return [
             'service_categories' => 'array',
             'default_contractor_ids' => 'array',
+            'intake_allow_patterns' => 'array',
             'marketing_cost_monthly' => 'decimal:2',
         ];
     }
