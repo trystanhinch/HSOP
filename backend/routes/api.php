@@ -241,7 +241,11 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     Route::put('/contractors/{id}/documents/{doc}/review', [ContractorDocumentController::class, 'review'])->middleware('role:owner,pm');
 
     Route::get('/customers', [CustomerController::class, 'index'])->middleware('role:owner,pm');
+    Route::get('/customers/duplicate-groups/{groupId}', [CustomerController::class, 'duplicateGroup'])->middleware('role:owner');
+    Route::post('/customers/merge', [CustomerController::class, 'merge'])->middleware('role:owner');
     Route::get('/customers/{id}', [CustomerController::class, 'show'])->middleware('role:owner,pm');
+    Route::put('/customers/{id}', [CustomerController::class, 'update'])->middleware('role:owner');
+    Route::get('/customers/{id}/export', [CustomerController::class, 'export'])->middleware('role:owner');
     Route::delete('/customers/{id}', [CustomerController::class, 'destroy'])->middleware('role:owner');
 
     Route::get('/admin-pm-messages/conversations', [AdminPmMessageController::class, 'conversations'])->middleware('role:owner,pm');

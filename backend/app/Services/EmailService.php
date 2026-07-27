@@ -6,6 +6,7 @@ use App\Mail\HsopNotificationMail;
 use App\Models\EmailLog;
 use App\Models\Setting;
 use App\Services\TestData\TestDataGuard;
+use App\Services\Customers\CommunicationGuard;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -37,6 +38,23 @@ class EmailService
             ]);
 
             return ['success' => false, 'reason' => 'test_data', 'detail' => $guard['reason']];
+        }
+
+        $comm = app(CommunicationGuard::class)->checkEmail(
+            userId: $userId ? (int) $userId : null,
+            email: $toEmail,
+        );
+        if ($comm['blocked']) {
+            $this->writeLog([
+                'to_email' => $toEmail ?: 'MISSING',
+                'user_id' => $userId,
+                'trigger_event' => $triggerEvent,
+                'related_job_id' => $jobId,
+                'status' => 'blocked_do_not_contact',
+                'error_message' => 'Blocked: '.$comm['reason'],
+            ]);
+
+            return ['success' => false, 'reason' => 'do_not_contact', 'detail' => $comm['reason']];
         }
 
         if (! Setting::isGloballyEnabled('email')) {
@@ -116,6 +134,23 @@ class EmailService
             ]);
 
             return ['success' => false, 'reason' => 'test_data', 'detail' => $guard['reason']];
+        }
+
+        $comm = app(CommunicationGuard::class)->checkEmail(
+            userId: $userId ? (int) $userId : null,
+            email: $toEmail,
+        );
+        if ($comm['blocked']) {
+            $this->writeLog([
+                'to_email' => $toEmail ?: 'MISSING',
+                'user_id' => $userId,
+                'trigger_event' => $triggerEvent,
+                'related_job_id' => $jobId,
+                'status' => 'blocked_do_not_contact',
+                'error_message' => 'Blocked: '.$comm['reason'],
+            ]);
+
+            return ['success' => false, 'reason' => 'do_not_contact', 'detail' => $comm['reason']];
         }
 
         if (! Setting::isGloballyEnabled('email')) {
