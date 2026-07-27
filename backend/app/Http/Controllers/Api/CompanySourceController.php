@@ -64,6 +64,8 @@ class CompanySourceController extends Controller
             'default_contractor_ids.*' => 'integer|exists:users,id',
             'sender_identity' => 'nullable|string|max:255',
             'lead_parsing_rule' => 'nullable|string',
+            'intake_allow_patterns' => 'nullable|array',
+            'intake_allow_patterns.*' => 'string|max:255',
             'marketing_cost_monthly' => 'nullable|numeric|min:0',
             'status' => 'nullable|in:active,paused,testing,archived',
         ];
