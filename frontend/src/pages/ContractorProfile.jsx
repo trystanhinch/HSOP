@@ -93,12 +93,32 @@ export default function ContractorProfile() {
 
   const backLink = user?.role === 'contractor' ? getRoleDashboard('contractor') : '/contractors';
   const backLabel = user?.role === 'contractor' ? 'Back to Dashboard' : 'Back to Contractors';
+  const missingSteps = contractor.missing_steps || [];
+  const warnings = contractor.operational_warnings || [];
 
   return (
     <div>
       <Link to={backLink} className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-800 mb-6">
         <ArrowLeft size={16} /> {backLabel}
       </Link>
+
+      {(missingSteps.length > 0 || warnings.length > 0) && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold mb-1">
+            Profile status: {contractor.state || contractor.approval_status || 'incomplete'}
+          </div>
+          {missingSteps.length > 0 && (
+            <ul className="list-disc pl-5 space-y-0.5">
+              {missingSteps.map((s) => (
+                <li key={s.key || s.label}>{s.label || s}</li>
+              ))}
+            </ul>
+          )}
+          {user?.role === 'pm' && warnings.map((w) => (
+            <p key={w} className="mt-1">{w}</p>
+          ))}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h1 className="text-xl font-bold text-slate-800">Contractor Profile</h1>

@@ -370,8 +370,11 @@ class JobController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $request->validate(['contractor_id' => 'required|exists:users,id']);
-        $contractor = User::where('id', $request->contractor_id)->where('role', 'contractor')->firstOrFail();
+        $request->validate(['contractor_id' => 'required|integer']);
+        $resolved = app(\App\Services\Contractors\ContractorAssignmentGuard::class)
+            ->assertAssignable((int) $request->contractor_id);
+        $contractor = $resolved['user'];
+        $profile = $resolved['profile'];
         $job = Job::findOrFail($id);
 
         if ($request->user()->role === 'pm' && $job->pm_id !== $request->user()->id) {
@@ -380,6 +383,7 @@ class JobController extends Controller
 
         $job->update([
             'contractor_id' => $contractor->id,
+            'contractor_profile_id' => $profile->id,
             'status' => 'contractor_assigned',
             'contractor_price_status' => 'pending',
         ]);
@@ -387,7 +391,11 @@ class JobController extends Controller
         $this->notifications->contractorAssigned($job->fresh(), $contractor);
         $this->performance->onContractorAssigned($job->fresh());
 
-        return response()->json(['message' => 'Contractor assigned']);
+        return response()->json([
+            'message' => 'Contractor assigned',
+            'contractor_id' => $contractor->id,
+            'contractor_profile_id' => $profile->id,
+        ]);
     }
 
     public function schedule(Request $request, string $id): JsonResponse

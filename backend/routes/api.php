@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\ContractorLeadController;
+use App\Http\Controllers\Api\ContractorController;
 use App\Http\Controllers\Api\ContractorDocumentController;
 use App\Http\Controllers\Api\CustomerController;
 use App\Http\Controllers\Api\DashboardController;

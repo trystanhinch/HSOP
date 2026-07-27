@@ -310,11 +310,24 @@ class AvailabilityBookingPhase4Test extends TestCase
     public function test_milestone4_manual_site_visit_schedule_unaffected(): void
     {
         $owner = User::where('role', 'owner')->firstOrFail();
-        $contractor = User::where('role', 'contractor')->first()
-            ?: User::create([
-                'name' => 'Sched Con', 'email' => 'sched-con-'.uniqid().'@test.local',
-                'password' => bcrypt('password'), 'role' => 'contractor', 'status' => 'active', 'phone' => '6045550999',
-            ]);
+        $contractor = User::create([
+            'name' => 'Sched Con', 'email' => 'sched-con-'.uniqid().'@test.local',
+            'password' => bcrypt('password'), 'role' => 'contractor', 'status' => 'active', 'phone' => '6045550999',
+        ]);
+        \App\Models\Contractor::create([
+            'user_id' => $contractor->id,
+            'legal_name' => 'Sched Con Ltd',
+            'operating_name' => 'Sched Con',
+            'contact_name' => 'Sched Con',
+            'phone' => $contractor->phone,
+            'email' => $contractor->email,
+            'services' => ['drywall'],
+            'cities' => ['Vancouver'],
+            'wcb_status' => 'approved',
+            'liability_insurance_status' => 'approved',
+            'approval_status' => 'approved',
+            'state' => 'approved',
+        ]);
 
         $lead = Lead::create([
             'contact_name' => 'Manual Visit',

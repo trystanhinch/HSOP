@@ -57,7 +57,10 @@ class AdminUserController extends Controller
                 'contact_name' => $data['name'],
                 'email' => $data['email'],
                 'phone' => $data['phone'] ?? null,
-                'approval_status' => 'approved',
+                'wcb_status' => 'not_uploaded',
+                'liability_insurance_status' => 'not_uploaded',
+                'approval_status' => 'pending',
+                'state' => 'profile_incomplete',
                 'services' => [],
                 'cities' => [],
             ]);

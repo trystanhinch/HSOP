@@ -39,7 +39,7 @@ class DashboardController extends Controller
 
             'total_leads' => Lead::productionOnly()->count(),
             'active_jobs' => Job::productionOnly()->whereIn('status', ['new_job', 'contractor_assigned', 'quote_sent', 'quote_approved', 'scheduled', 'in_progress', 'ready_for_review'])->count(),
-            'total_contractors' => \App\Models\User::productionOnly()->where('role', 'contractor')->count(),
+            'total_contractors' => app(\App\Services\Contractors\ContractorDirectoryService::class)->directoryCount(),
             'total_customers' => \App\Models\User::productionOnly()->where('role', 'customer')->count(),
             'revenue_month' => (float) Invoice::productionOnly()->where('status', 'paid')->whereMonth('created_at', now()->month)->sum('amount'),
             'total_profit_month' => (float) Quote::productionOnly()->where('status', 'approved')
