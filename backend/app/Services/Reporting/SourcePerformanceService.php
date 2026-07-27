@@ -16,11 +16,11 @@ class SourcePerformanceService
         $sources = CompanySource::query()->orderBy('company_name')->get();
 
         $rows = $sources->map(function (CompanySource $source) {
-            $leadQuery = Lead::where('company_source_id', $source->id);
+            $leadQuery = Lead::productionOnly()->where('company_source_id', $source->id);
             $leadIds = (clone $leadQuery)->pluck('id');
-            $jobIds = Job::whereIn('lead_id', $leadIds)->pluck('id');
+            $jobIds = Job::productionOnly()->whereIn('lead_id', $leadIds)->pluck('id');
 
-            $quotesSent = Quote::where(function ($q) use ($jobIds, $leadIds) {
+            $quotesSent = Quote::productionOnly()->where(function ($q) use ($jobIds, $leadIds) {
                 $q->whereIn('job_id', $jobIds);
                 if ($leadIds->isNotEmpty()) {
                     $q->orWhereIn('lead_id', $leadIds);
@@ -29,9 +29,9 @@ class SourcePerformanceService
                 $q->whereNotNull('sent_at')->orWhereIn('status', ['sent', 'viewed', 'follow_up', 'approved']);
             })->count();
 
-            $quotesApproved = Quote::whereIn('job_id', $jobIds)->where('status', 'approved')->count();
+            $quotesApproved = Quote::productionOnly()->whereIn('job_id', $jobIds)->where('status', 'approved')->count();
 
-            $paidBySource = Invoice::where('status', 'paid')
+            $paidBySource = Invoice::productionOnly()->where('status', 'paid')
                 ->where(function ($q) use ($source, $jobIds) {
                     $q->where('company_source_id', $source->id)
                         ->orWhere('source_company', $source->company_name)
