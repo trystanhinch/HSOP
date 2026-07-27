@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\EmailLogController;
+use App\Http\Controllers\Api\FinancialLedgerController;
 use App\Http\Controllers\Api\FileController;
 use App\Http\Controllers\Api\SmsLogController;
 use App\Http\Controllers\Api\UserController;
@@ -213,6 +214,11 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     Route::post('/accounting/payouts/{payout}/mock-transfer', [AccountingController::class, 'mockTransfer'])->middleware('role:owner');
     Route::post('/accounting/payouts/{payout}/execute-transfer', [AccountingController::class, 'executeTransfer'])->middleware('role:owner');
 
+    Route::get('/ledger/summary', [FinancialLedgerController::class, 'summary'])->middleware('role:owner');
+    Route::get('/ledger/drilldown', [FinancialLedgerController::class, 'drilldown'])->middleware('role:owner');
+    Route::get('/ledger/payout-groups', [FinancialLedgerController::class, 'payoutGroups'])->middleware('role:owner');
+    Route::get('/ledger/payouts/job/{jobId}', [FinancialLedgerController::class, 'payoutJob'])->middleware('role:owner');
+
     Route::get('/stripe/connect/status', [\App\Http\Controllers\Api\StripeConnectController::class, 'status'])->middleware('role:owner,pm,contractor');
     Route::post('/stripe/connect/start', [\App\Http\Controllers\Api\StripeConnectController::class, 'start'])->middleware('role:pm,contractor');
     Route::post('/stripe/connect/refresh', [\App\Http\Controllers\Api\StripeConnectController::class, 'refresh'])->middleware('role:pm,contractor');
@@ -267,6 +273,9 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     Route::get('/payouts', [PayoutController::class, 'index']);
     Route::get('/payouts/{payout}', [PayoutController::class, 'show']);
     Route::put('/payouts/{payout}/approve', [PayoutController::class, 'approve'])->middleware('role:owner');
+    Route::put('/payouts/{payout}/hold', [PayoutController::class, 'hold'])->middleware('role:owner');
+    Route::put('/payouts/{payout}/release', [PayoutController::class, 'release'])->middleware('role:owner');
+    Route::put('/payouts/{payout}/retry', [PayoutController::class, 'retry'])->middleware('role:owner');
     Route::put('/payouts/{payout}/mark-paid', [PayoutController::class, 'markPaid'])->middleware('role:owner');
     Route::put('/payouts/{payout}', [PayoutController::class, 'update'])->middleware('role:owner');
 

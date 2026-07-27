@@ -20,34 +20,23 @@ class AccountingController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        $filters = array_filter([
+            'from' => $request->query('from'),
+            'to' => $request->query('to'),
+            'basis' => $request->query('basis', 'cash'),
+            'source' => $request->query('source'),
+            'service_category' => $request->query('service_category'),
+        ], fn ($v) => $v !== null && $v !== '');
+
+        $ledger = app(\App\Services\Finance\FinancialLedgerService::class)->summary($filters);
+
         $invoiceQuery = Invoice::productionOnly()->with('job:id,service_category');
         $this->applyInvoiceFilters($invoiceQuery, $request);
         $all = $invoiceQuery->get();
-
         $paid = $all->where('status', 'paid');
-        $unpaidStatuses = ['draft', 'sent', 'invoice_sent', 'awaiting_payment', 'payment_pending', 'partially_paid', 'overdue', 'unpaid', 'partial', 'payment_failed'];
+        $unpaidStatuses = \App\Services\Finance\FinancialLedgerService::UNPAID_INVOICE_STATUSES;
         $unpaid = $all->whereIn('status', $unpaidStatuses);
         $overdue = $all->filter(fn (Invoice $i) => $i->is_overdue);
-
-        $grossRevenue = round((float) $paid->sum('subtotal'), 2);
-        $gstCollected = round((float) $paid->sum('gst'), 2);
-
-        $payoutQuery = Payout::productionOnly();
-        $this->applyPayoutFilters($payoutQuery, $request);
-        $payoutRows = $payoutQuery->get();
-
-        $splitKey = fn (Payout $p) => $p->split_type ?: $p->payout_type;
-        $owed = $payoutRows->whereNotIn('status', ['paid', 'failed', 'not_eligible']);
-        $paidPayouts = $payoutRows->where('status', 'paid');
-
-        $contractorOwed = round((float) $owed->filter(fn ($p) => $splitKey($p) === 'contractor')->sum('payout_amount'), 2);
-        $pmOwed = round((float) $owed->filter(fn ($p) => $splitKey($p) === 'pm')->sum('payout_amount'), 2);
-        $contractorPaid = round((float) $paidPayouts->filter(fn ($p) => $splitKey($p) === 'contractor')->sum('payout_amount'), 2);
-        $pmPaid = round((float) $paidPayouts->filter(fn ($p) => $splitKey($p) === 'pm')->sum('payout_amount'), 2);
-        $companyPaid = round((float) $paidPayouts->filter(fn ($p) => $splitKey($p) === 'company')->sum('payout_amount'), 2);
-
-        // Revenue (ex-GST) minus contractor+PM payouts (owed + paid)
-        $companyProfit = round($grossRevenue - ($contractorPaid + $contractorOwed) - ($pmPaid + $pmOwed), 2);
 
         $byCategory = $paid->groupBy(fn (Invoice $i) => $i->job?->service_category ?: 'unknown')
             ->map(fn ($group, $key) => [
@@ -64,22 +53,31 @@ class AccountingController extends Controller
             ])->values();
 
         return response()->json([
+            'refreshed_at' => $ledger['refreshed_at'],
+            'filters' => $ledger['filters'],
+            'labels' => $ledger['labels'],
             'invoices' => [
                 'total' => $all->count(),
                 'paid' => $paid->count(),
-                'unpaid' => $unpaid->count(),
+                'unpaid' => $unpaid->filter(fn ($i) => (float) $i->balance > 0)->count(),
                 'overdue' => $overdue->count(),
             ],
-            'gst_collected' => $gstCollected,
-            'gross_revenue' => $grossRevenue,
+            'gst_collected' => $ledger['gst_collected'],
+            'gross_revenue' => $ledger['collected_revenue'], // ex-GST collected
+            'invoiced_revenue' => $ledger['invoiced_revenue'],
+            'accounts_receivable' => $ledger['accounts_receivable'],
             'payouts' => [
-                'contractor_owed' => $contractorOwed,
-                'contractor_paid' => $contractorPaid,
-                'pm_owed' => $pmOwed,
-                'pm_paid' => $pmPaid,
-                'company_paid' => $companyPaid,
+                'contractor_owed' => $ledger['contractor_liability'],
+                'contractor_paid' => $ledger['contractor_paid'],
+                'pm_owed' => $ledger['pm_liability'],
+                'pm_paid' => $ledger['pm_paid'],
+                'company_paid' => $ledger['company_paid'],
             ],
-            'company_profit' => $companyProfit,
+            // Realized profit (paid-only costs) — A-01 decision #2
+            'company_profit' => $ledger['realized_profit'],
+            'realized_profit' => $ledger['realized_profit'],
+            'projected_profit' => $ledger['projected_profit'],
+            'incomplete_cost_quote_count' => $ledger['incomplete_cost_quote_count'],
             'revenue_by_service_category' => $byCategory,
             'revenue_by_source_company' => $bySource,
             'payment_provider' => config('payment.provider'),

@@ -303,6 +303,41 @@ class ContractorAuthoritativeProfileA04Test extends TestCase
         $this->assertNotNull($job->fresh()->contractor_profile_id);
     }
 
+    public function test_7b_pm_and_company_payouts_skipped_for_manual_review(): void
+    {
+        $pm = $this->makePm();
+        $customer = $this->makeCustomer();
+        $job = Job::create([
+            'customer_id' => $customer->id,
+            'pm_id' => $pm->id,
+            'status' => 'completed',
+            'address' => 'PM Payout St',
+        ]);
+        $pmPayout = Payout::create([
+            'job_id' => $job->id,
+            'contractor_id' => $pm->id, // overloaded recipient id — PM user, not contractor
+            'pm_id' => $pm->id,
+            'payout_type' => 'pm',
+            'split_type' => 'pm',
+            'payout_amount' => 50,
+            'status' => 'pending',
+        ]);
+        $companyPayout = Payout::create([
+            'job_id' => $job->id,
+            'contractor_id' => $pm->id,
+            'payout_type' => 'company',
+            'split_type' => 'company',
+            'payout_amount' => 25,
+            'status' => 'pending',
+        ]);
+
+        $result = app(ContractorDirectoryService::class)->syncProfilesAndLinks(false);
+        $flaggedIds = collect($result['manual_review'])->where('type', 'payout')->pluck('id');
+
+        $this->assertFalse($flaggedIds->contains($pmPayout->id), 'PM payout must not be manual-reviewed as contractor');
+        $this->assertFalse($flaggedIds->contains($companyPayout->id), 'Company payout must not be manual-reviewed as contractor');
+    }
+
     public function test_8_pm_cannot_assign_suspended_and_stripe_hidden_from_pm(): void
     {
         $pm = $this->makePm();

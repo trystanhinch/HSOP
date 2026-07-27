@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Download } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
@@ -8,9 +9,16 @@ function Money({ value }) {
   return <span>${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
 }
 
-function Stat({ label, value }) {
+function Stat({ label, value, to }) {
+  const navigate = useNavigate();
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4">
+    <div
+      className={`bg-white rounded-xl border border-slate-200 p-4 ${to ? 'cursor-pointer hover:border-blue-300 hover:shadow-sm' : ''}`}
+      onClick={() => to && navigate(to)}
+      onKeyDown={(e) => { if (to && e.key === 'Enter') navigate(to); }}
+      role={to ? 'button' : undefined}
+      tabIndex={to ? 0 : undefined}
+    >
       <p className="text-xs text-slate-500">{label}</p>
       <p className="text-xl font-semibold text-slate-900 mt-1">{value}</p>
     </div>
@@ -100,27 +108,36 @@ export default function Accounting() {
         </div>
       </PageHeader>
 
-      <p className="text-xs text-slate-500">Payment provider: <span className="font-mono">{data.payment_provider}</span></p>
+      <p className="text-xs text-slate-500">
+        Payment provider: <span className="font-mono">{data.payment_provider}</span>
+        {data.refreshed_at && <> · Ledger refreshed: {new Date(data.refreshed_at).toLocaleString()}</>}
+        {data.filters?.basis && <> · basis: {data.filters.basis}</>}
+      </p>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Stat label="Total invoices" value={data.invoices.total} />
         <Stat label="Paid" value={data.invoices.paid} />
-        <Stat label="Unpaid" value={data.invoices.unpaid} />
+        <Stat label="Unpaid (AR)" value={data.invoices.unpaid} />
         <Stat label="Overdue" value={data.invoices.overdue} />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Stat label="Gross revenue (ex-GST)" value={<Money value={data.gross_revenue} />} />
+        <Stat label="Collected revenue (ex-GST)" value={<Money value={data.gross_revenue} />} to="/ledger?metric=collected_revenue" />
+        <Stat label="Accounts receivable (ex-GST)" value={<Money value={data.accounts_receivable} />} to="/ledger?metric=accounts_receivable" />
         <Stat label="GST collected" value={<Money value={data.gst_collected} />} />
-        <Stat label="Company profit" value={<Money value={data.company_profit} />} />
-        <Stat label="Contractor owed" value={<Money value={data.payouts.contractor_owed} />} />
+        <Stat label="Realized profit" value={<Money value={data.realized_profit ?? data.company_profit} />} to="/ledger?metric=realized_profit" />
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Stat label="Contractor paid" value={<Money value={data.payouts.contractor_paid} />} />
-        <Stat label="PM owed" value={<Money value={data.payouts.pm_owed} />} />
-        <Stat label="PM paid" value={<Money value={data.payouts.pm_paid} />} />
-        <Stat label="Company share paid" value={<Money value={data.payouts.company_paid} />} />
+        <Stat label="Projected profit" value={<Money value={data.projected_profit} />} to="/ledger?metric=projected_profit" />
+        <Stat label="Contractor owed" value={<Money value={data.payouts.contractor_owed} />} to="/ledger?metric=open_payouts" />
+        <Stat label="Contractor paid" value={<Money value={data.payouts.contractor_paid} />} to="/payouts" />
+        <Stat label="PM owed" value={<Money value={data.payouts.pm_owed} />} to="/ledger?metric=open_payouts" />
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <Stat label="PM paid" value={<Money value={data.payouts.pm_paid} />} to="/payouts" />
+        <Stat label="Company / Platform paid" value={<Money value={data.payouts.company_paid} />} to="/payouts" />
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">

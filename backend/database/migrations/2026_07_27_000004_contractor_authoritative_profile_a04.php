@@ -157,8 +157,13 @@ return new class extends Migration
             }
         });
 
+        // Skip pm/company rows — contractor_id stores recipient user id, not a contractor.
         Payout::withTestData()->whereNotNull('contractor_id')->orderBy('id')->chunkById(200, function ($payouts) use ($profileByUserId, &$linkedPayouts, &$manualReview) {
             foreach ($payouts as $payout) {
+                $split = $payout->split_type ?: $payout->payout_type;
+                if ($split !== 'contractor') {
+                    continue;
+                }
                 $userId = (int) $payout->contractor_id;
                 $profileId = $profileByUserId[$userId] ?? null;
                 if (! $profileId) {
@@ -166,6 +171,7 @@ return new class extends Migration
                         'type' => 'payout',
                         'id' => $payout->id,
                         'contractor_id' => $userId,
+                        'payout_type' => $split,
                         'reason' => 'no_matching_contractor_user_or_profile',
                     ];
                     continue;

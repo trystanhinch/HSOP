@@ -19,6 +19,10 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
+function money(n) {
+  return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
@@ -30,6 +34,10 @@ export default function AdminDashboard() {
   if (!data) {
     return <div className="text-center py-12 text-[#64748B]">Loading dashboard...</div>;
   }
+
+  const refreshed = data.financial_refreshed_at
+    ? new Date(data.financial_refreshed_at).toLocaleString()
+    : null;
 
   return (
     <div className="space-y-6">
@@ -76,14 +84,32 @@ export default function AdminDashboard() {
       </section>
 
       <section>
-        <h3 className="text-sm font-semibold text-slate-700 mb-3">Financial</h3>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          <KPICard title="Awaiting Payment" value={data.jobs_awaiting_payment ?? 0} icon={DollarSign} color="#EF4444" to="/invoices?status=invoice_sent" />
-          <KPICard title="Pending Payouts" value={data.payouts_pending ?? 0} icon={Wallet} color="#F97316" to="/payouts?status=pending" />
-          <KPICard title="Profit This Month" value={`$${Number(data.total_profit_month || 0).toFixed(2)}`} icon={TrendingUp} color="#22C55E" to="/reports" />
-          <KPICard title="Total Profit" value={`$${Number(data.total_profit_all_time || 0).toFixed(2)}`} icon={DollarSign} color="#22C55E" to="/reports" />
-          <KPICard title="Revenue Collected" value={`$${Number(data.total_collected_revenue || 0).toFixed(2)}`} icon={Wallet} color="#3B82F6" to="/invoices" />
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+          <h3 className="text-sm font-semibold text-slate-700">Financial</h3>
+          {refreshed && (
+            <p className="text-xs text-slate-400">
+              Ledger last refreshed: {refreshed}
+              {data.financial_filters?.basis ? ` · basis: ${data.financial_filters.basis}` : ''}
+            </p>
+          )}
         </div>
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+          <KPICard title="Accounts Receivable" value={money(data.accounts_receivable)} icon={DollarSign} color="#EF4444" to="/ledger?metric=accounts_receivable" />
+          <KPICard title="Pending Payouts" value={data.payouts_pending ?? 0} icon={Wallet} color="#F97316" to="/payouts" />
+          <KPICard title="Projected Profit (This Month)" value={money(data.projected_profit_month)} icon={TrendingUp} color="#22C55E" to="/ledger?metric=projected_profit_month" />
+          <KPICard title="Projected Profit (All Time)" value={money(data.projected_profit_all_time)} icon={TrendingUp} color="#16A34A" to="/ledger?metric=projected_profit" />
+          <KPICard title="Realized Profit (All Time)" value={money(data.realized_profit_all_time)} icon={DollarSign} color="#0EA5E9" to="/ledger?metric=realized_profit" />
+          <KPICard title="Collected Revenue (ex-GST)" value={money(data.total_collected_revenue)} icon={Wallet} color="#3B82F6" to="/ledger?metric=collected_revenue" />
+        </div>
+        {(data.incomplete_cost_quote_count ?? 0) > 0 && (
+          <button
+            type="button"
+            onClick={() => navigate('/ledger?metric=incomplete_cost_data')}
+            className="mt-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"
+          >
+            {data.incomplete_cost_quote_count} quote(s) flagged incomplete cost data (excluded from Projected Profit)
+          </button>
+        )}
       </section>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -118,56 +144,16 @@ export default function AdminDashboard() {
                   <th className="text-left px-4 py-2 text-[#64748B] font-medium">Customer</th>
                   <th className="text-left px-4 py-2 text-[#64748B] font-medium">Category</th>
                   <th className="text-left px-4 py-2 text-[#64748B] font-medium">Status</th>
-                  <th className="text-left px-4 py-2 text-[#64748B] font-medium hidden sm:table-cell">PM</th>
+                  <th className="text-left px-4 py-2 text-[#64748B] font-medium">Date</th>
                 </tr>
               </thead>
               <tbody>
                 {(data.recent_leads || []).map((lead) => (
-                  <tr
-                    key={lead.id}
-                    className="border-b border-[#E2E8F0] hover:bg-slate-50 cursor-pointer transition-colors"
-                    onClick={() => navigate(`/leads/${lead.id}`)}
-                  >
-                    <td className="px-4 py-2 font-medium text-[#3B82F6]">
-                      {lead.contact_name || lead.customer?.name || '—'}
-                    </td>
+                  <tr key={lead.id} className="border-b border-[#E2E8F0] hover:bg-slate-50 cursor-pointer" onClick={() => navigate(`/leads/${lead.id}`)}>
+                    <td className="px-4 py-2">{lead.contact_name}</td>
                     <td className="px-4 py-2 capitalize">{formatCategory(lead.service_category)}</td>
                     <td className="px-4 py-2"><StatusBadge status={lead.status} /></td>
-                    <td className="px-4 py-2 hidden sm:table-cell">{lead.assigned_pm?.name || '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow-sm border border-[#E2E8F0] overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#E2E8F0] bg-slate-50">
-            <h3 className="text-sm font-semibold text-[#0F172A]">Recent Jobs</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr className="border-b border-[#E2E8F0]">
-                  <th className="text-left px-4 py-2 text-[#64748B] font-medium">Customer</th>
-                  <th className="text-left px-4 py-2 text-[#64748B] font-medium">Contractor</th>
-                  <th className="text-left px-4 py-2 text-[#64748B] font-medium">Status</th>
-                  <th className="text-left px-4 py-2 text-[#64748B] font-medium hidden sm:table-cell">Start</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(data.recent_jobs || []).map((job) => (
-                  <tr
-                    key={job.id}
-                    className="border-b border-[#E2E8F0] hover:bg-slate-50 cursor-pointer transition-colors"
-                    onClick={() => navigate(`/jobs/${job.id}`)}
-                  >
-                    <td className="px-4 py-2 font-medium text-[#3B82F6]">
-                      {job.customer?.name || '—'}
-                    </td>
-                    <td className="px-4 py-2">{job.contractor?.name || '—'}</td>
-                    <td className="px-4 py-2"><StatusBadge status={job.status} /></td>
-                    <td className="px-4 py-2 hidden sm:table-cell">{formatDate(job.scheduled_start_date || job.start_date)}</td>
+                    <td className="px-4 py-2 text-slate-500">{formatDate(lead.created_at)}</td>
                   </tr>
                 ))}
               </tbody>
