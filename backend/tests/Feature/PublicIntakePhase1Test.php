@@ -163,7 +163,7 @@ class PublicIntakePhase1Test extends TestCase
         $this->assertSame($leadId, $session->converted_lead_id);
     }
 
-    public function test_submit_duplicate_phone_attaches_without_new_lead(): void
+    public function test_submit_same_phone_still_creates_new_website_lead(): void
     {
         $suffix = substr(uniqid(), -6);
         $phone = '(604) 571-'.$suffix;
@@ -188,12 +188,25 @@ class PublicIntakePhase1Test extends TestCase
         ], $this->brandHeaders());
 
         $res->assertOk()
-            ->assertJsonPath('duplicate', true)
-            ->assertJsonPath('duplicate_match_type', 'exact_phone')
-            ->assertJsonPath('lead_id', $existing->id);
+            ->assertJsonPath('duplicate', false)
+            ->assertJsonPath('duplicate_match_type', null);
 
-        $this->assertSame($beforeCount, Lead::count());
-        $this->assertSame(0, Lead::where('contact_name', 'Dup Visitor '.$suffix)->count());
+        $this->assertSame($beforeCount + 1, Lead::count());
+        $newLeadId = $res->json('lead_id');
+        $this->assertNotNull($newLeadId);
+        $this->assertNotEquals($existing->id, $newLeadId);
+        $this->assertSame(1, Lead::where('contact_name', 'Dup Visitor '.$suffix)->count());
+
+        // Same conversation cannot create a second lead.
+        $again = $this->postJson('/api/public/intake/submit', [
+            'session_token' => $start['session_token'],
+            'contact_name' => 'Dup Visitor '.$suffix,
+            'phone' => $phone,
+            'project_description' => 'Retry same conversation '.$suffix,
+            'service_category' => 'drywall_paint',
+        ], $this->brandHeaders());
+        $again->assertStatus(422);
+        $this->assertSame($beforeCount + 1, Lead::count());
     }
 
     public function test_start_is_rate_limited(): void

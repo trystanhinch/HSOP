@@ -11,21 +11,26 @@ use App\Models\Lead;
 use App\Models\NextAction;
 use App\Models\User;
 use App\Services\ActivityTimelineService;
+use App\Services\AiActionAuthorizer;
 use App\Services\LeadCustomerResolver;
-use Illuminate\Database\Eloquent\Model;
 
 /**
  * Thin adapter: public intake session → same Lead::create path as email intake.
  * Brand/company_source come from the session's resolved brand — never hardcoded.
+ *
+ * Website chat does NOT merge on phone/email like email intake. Each submitted
+ * session is a distinct inquiry; same-session double-submit is blocked by
+ * IntakeSession::isConverted() before this pipeline runs.
  */
 class PublicIntakePipeline
 {
     public function __construct(
-        private DuplicateLeadDetector $duplicateDetector,
         private CompanySourceMatcher $sourceMatcher,
         private AiProviderInterface $aiProvider,
         private ActivityTimelineService $timeline,
         private LeadCustomerResolver $customerResolver,
+        private LeadIntakeMessagingService $messaging,
+        private AiActionAuthorizer $authorizer,
     ) {}
 
     /**
@@ -40,11 +45,6 @@ class PublicIntakePipeline
         }
 
         $parsed = $this->toParsedLead($session, $brand);
-        $duplicate = $this->duplicateDetector->detect($parsed);
-
-        if ($duplicate['is_duplicate']) {
-            return $this->handleDuplicate($session, $brand, $parsed, $duplicate, $sendNotifications);
-        }
 
         $leadData = $parsed->toArray();
         $collectedCategory = $session->conversation_state['collected']['service_category'] ?? null;
@@ -196,6 +196,32 @@ class PublicIntakePipeline
             }
         }
 
+        $notifications = [];
+        $aiLogs = [];
+        if ($sendNotifications) {
+            $aiEnabled = $this->authorizer->isAiEnabled();
+            $lead->load('companySource', 'assignedPm');
+            $notifications = $this->messaging->handle(
+                $lead,
+                $parsed,
+                $aiSummary,
+                $aiEnabled,
+            );
+            if ($booking) {
+                $notifications['booking_confirmed'] = true;
+                $notifications['booking_id'] = $booking->id;
+            } else {
+                $notifications['lead_created'] = true;
+            }
+            $aiLogs = AiActionLog::query()
+                ->where('trigger_event', 'lead_intake')
+                ->where('data_viewed->lead_id', $lead->id)
+                ->latest()
+                ->take(5)
+                ->get()
+                ->all();
+        }
+
         return new LeadIntakeResult(
             parsed: $parsed,
             duplicate: false,
@@ -204,10 +230,8 @@ class PublicIntakePipeline
             classification: $classification,
             aiSummary: $aiSummary,
             companySourceId: $companySource?->id,
-            notifications: $sendNotifications
-                ? ($booking ? ['booking_confirmed' => true, 'booking_id' => $booking->id] : ['lead_created' => true])
-                : [],
-            aiActionLogs: [],
+            notifications: $notifications,
+            aiActionLogs: array_map(fn ($l) => ['id' => $l->id], $aiLogs),
         );
     }
 
@@ -300,60 +324,6 @@ class PublicIntakePipeline
         }
 
         return null;
-    }
-
-    /**
-     * @param  array{is_duplicate: bool, match_type: ?string, lead: ?Lead, customer: ?\App\Models\Customer}  $duplicate
-     */
-    private function handleDuplicate(
-        IntakeSession $session,
-        Brand $brand,
-        ParsedLeadEmail $parsed,
-        array $duplicate,
-        bool $sendNotifications,
-    ): LeadIntakeResult {
-        $aiUser = User::aiSuperAdmin();
-        $subject = $duplicate['lead'] ?? $duplicate['customer'];
-        $lead = $duplicate['lead'] ?? null;
-
-        if ($subject instanceof Model) {
-            $this->timeline->record(
-                $subject,
-                'lead_intake_duplicate',
-                'Duplicate website intake — attached to existing record ('.$duplicate['match_type'].').',
-                $aiUser,
-                [
-                    'match_type' => $duplicate['match_type'],
-                    'intake_channel' => 'website_chat',
-                    'conversation_id' => $session->id,
-                    'brand_id' => $brand->id,
-                    'parsed' => $parsed->toArray(),
-                ],
-            );
-        }
-
-        $this->recordAiLog($aiUser, $lead, 'create_internal_note', $parsed, null, null, [
-            'duplicate' => true,
-            'match_type' => $duplicate['match_type'],
-            'intake_channel' => 'website_chat',
-            'brand_id' => $brand->id,
-        ]);
-
-        if ($lead) {
-            $session->update(['converted_lead_id' => $lead->id]);
-        }
-
-        return new LeadIntakeResult(
-            parsed: $parsed,
-            duplicate: true,
-            duplicateMatchType: $duplicate['match_type'],
-            lead: $lead,
-            classification: null,
-            aiSummary: null,
-            companySourceId: $lead?->company_source_id,
-            notifications: $sendNotifications ? ['skipped' => 'duplicate'] : [],
-            aiActionLogs: [],
-        );
     }
 
     private function createNextAction(Lead $lead, ?User $aiUser): NextAction

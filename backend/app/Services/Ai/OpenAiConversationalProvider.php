@@ -225,7 +225,7 @@ class OpenAiConversationalProvider implements ConversationalAiProviderInterface
 
             if ($reply === '') {
                 $reply = $this->ready($workingCollected)
-                    ? "Thanks — I have what I need for {$company}. You can submit your request whenever you're ready."
+                    ? "Thanks — I have what I need for {$company}. Tap Submit request when you're ready."
                     : "Thanks — could you share a bit more so we can create your request?";
             }
 
