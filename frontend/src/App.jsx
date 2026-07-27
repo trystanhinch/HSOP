@@ -27,6 +27,7 @@ import Payouts from './pages/Payouts';
 import Accounting from './pages/Accounting';
 import AiCommandCenter from './pages/AiCommandCenter';
 import Reports from './pages/Reports';
+import Ledger from './pages/Ledger';
 import CompanySources from './pages/CompanySources';
 import PricingRules from './pages/PricingRules';
 import Availability from './pages/Availability';
@@ -77,6 +78,7 @@ export default function App() {
               <Route path="/accounting" element={<RoleGuard roles={['owner']}><Accounting /></RoleGuard>} />
               <Route path="/ai-command-center" element={<RoleGuard roles={['owner']}><AiCommandCenter /></RoleGuard>} />
               <Route path="/reports" element={<RoleGuard roles={['owner']}><Reports /></RoleGuard>} />
+              <Route path="/ledger" element={<RoleGuard roles={['owner']}><Ledger /></RoleGuard>} />
               <Route path="/company-sources" element={<RoleGuard roles={['owner']}><CompanySources /></RoleGuard>} />
               <Route path="/pricing-rules" element={<RoleGuard roles={['owner']}><PricingRules /></RoleGuard>} />
               <Route path="/availability" element={<RoleGuard roles={['owner', 'pm']}><Availability /></RoleGuard>} />

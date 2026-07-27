@@ -16,6 +16,8 @@ class DashboardController extends Controller
 {
     public function admin(): JsonResponse
     {
+        $ledger = app(\App\Services\Finance\FinancialLedgerService::class)->summary();
+
         return response()->json([
             'new_leads' => Lead::productionOnly()->where('status', 'new')->count(),
             'leads_needing_review' => Lead::productionOnly()->where('needs_manual_review', true)->count(),
@@ -34,21 +36,32 @@ class DashboardController extends Controller
             'site_visits_today' => \App\Models\SiteVisit::productionOnly()->where('visit_date', today())->count(),
             'site_visits_this_week' => \App\Models\SiteVisit::productionOnly()->whereBetween('visit_date', [now()->startOfWeek(), now()->endOfWeek()])->count(),
             'completed_jobs' => Job::productionOnly()->whereIn('status', ['completed', 'paid_completed'])->count(),
-            'jobs_awaiting_payment' => Invoice::productionOnly()->whereIn('status', ['invoice_sent', 'awaiting_payment', 'partially_paid', 'sent', 'draft'])->where('balance', '>', 0)->count(),
-            'payouts_pending' => Payout::productionOnly()->whereIn('status', ['pending', 'ready_for_payout', 'approved'])->count(),
+            'jobs_awaiting_payment' => $ledger['counts']['unpaid_invoices'],
+            'payouts_pending' => $ledger['counts']['open_payouts'],
 
             'total_leads' => Lead::productionOnly()->count(),
             'active_jobs' => Job::productionOnly()->whereIn('status', ['new_job', 'contractor_assigned', 'quote_sent', 'quote_approved', 'scheduled', 'in_progress', 'ready_for_review'])->count(),
             'total_contractors' => app(\App\Services\Contractors\ContractorDirectoryService::class)->directoryCount(),
             'total_customers' => \App\Models\User::productionOnly()->where('role', 'customer')->count(),
-            'revenue_month' => (float) Invoice::productionOnly()->where('status', 'paid')->whereMonth('created_at', now()->month)->sum('amount'),
-            'total_profit_month' => (float) Quote::productionOnly()->where('status', 'approved')
-                ->whereMonth('accepted_at', now()->month)
-                ->whereYear('accepted_at', now()->year)
-                ->sum('hsop_markup'),
-            'total_profit_all_time' => (float) Quote::productionOnly()->where('status', 'approved')->sum('hsop_markup'),
-            'total_collected_revenue' => (float) Invoice::productionOnly()->where('status', 'paid')->sum('amount'),
-            'total_pending_payouts' => (float) Payout::productionOnly()->whereIn('status', ['pending', 'ready_for_payout', 'approved'])->sum('payout_amount'),
+
+            'projected_profit_month' => $ledger['projected_profit_month'],
+            'projected_profit_all_time' => $ledger['projected_profit'],
+            'realized_profit_month' => $ledger['realized_profit_month'],
+            'realized_profit_all_time' => $ledger['realized_profit'],
+            'total_collected_revenue' => $ledger['collected_revenue'],
+            'accounts_receivable' => $ledger['accounts_receivable'],
+            'gst_collected' => $ledger['gst_collected'],
+            'incomplete_cost_quote_count' => $ledger['incomplete_cost_quote_count'],
+            'financial_refreshed_at' => $ledger['refreshed_at'],
+            'financial_filters' => $ledger['filters'],
+            'financial_labels' => $ledger['labels'],
+
+            // Deprecated aliases — same ledger values
+            'total_profit_month' => $ledger['projected_profit_month'],
+            'total_profit_all_time' => $ledger['projected_profit'],
+            'revenue_month' => $ledger['collected_revenue'],
+            'total_pending_payouts' => $ledger['contractor_liability'] + $ledger['pm_liability'],
+
             'lead_status_counts' => Lead::productionOnly()->select('status', DB::raw('count(*) as total'))->groupBy('status')->get(),
             'recent_leads' => Lead::productionOnly()->with(['assignedPm:id,name', 'company:id,name'])->latest()->take(8)->get(),
             'recent_jobs' => Job::productionOnly()->with(['customer:id,name', 'contractor:id,name', 'pm:id,name'])->latest()->take(8)->get(),

@@ -179,8 +179,15 @@ class ContractorDirectoryService
             }
         });
 
+        // payouts.contractor_id is overloaded: for payout_type/split_type pm|company it
+        // stores the recipient user id (often a PM), not a contractor. Only contractor
+        // splits should be matched against the contractors directory.
         Payout::withTestData()->whereNotNull('contractor_id')->orderBy('id')->chunkById(200, function ($payouts) use ($profileByUserId, $apply, &$payoutsLinked, &$manualReview) {
             foreach ($payouts as $payout) {
+                $split = $payout->split_type ?: $payout->payout_type;
+                if ($split !== 'contractor') {
+                    continue;
+                }
                 $userId = (int) $payout->contractor_id;
                 $profileId = $profileByUserId[$userId] ?? null;
                 if (! $profileId) {
@@ -188,6 +195,7 @@ class ContractorDirectoryService
                         'type' => 'payout',
                         'id' => $payout->id,
                         'contractor_id' => $userId,
+                        'payout_type' => $split,
                         'reason' => 'no_matching_contractor_user_or_profile',
                     ];
                     continue;
@@ -227,6 +235,14 @@ class ContractorDirectoryService
             ->pluck('contractor_id');
         $payoutUserIds = Payout::productionOnly()
             ->whereNotNull('contractor_id')
+            ->where(function ($q) {
+                $q->where('split_type', 'contractor')
+                    ->orWhere(function ($inner) {
+                        $inner->where(function ($s) {
+                            $s->whereNull('split_type')->orWhere('split_type', '');
+                        })->where('payout_type', 'contractor');
+                    });
+            })
             ->pluck('contractor_id');
 
         $userIds = $jobUserIds->merge($payoutUserIds)->unique()->filter()->values();

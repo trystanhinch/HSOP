@@ -85,55 +85,70 @@ export default function Payouts() {
   const isOwner = user?.role === 'owner';
   const isPm = user?.role === 'pm';
   const [payouts, setPayouts] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [refreshedAt, setRefreshedAt] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [editPayout, setEditPayout] = useState(null);
 
   const refreshPayouts = useCallback(() => {
+    if (isOwner) {
+      const params = { group_by_job: 1 };
+      if (statusFilter) params.status = statusFilter;
+      api.get('/payouts', { params })
+        .then(({ data }) => {
+          setGroups(data.groups || []);
+          setPayouts([]);
+          setRefreshedAt(data.refreshed_at || null);
+        })
+        .catch(() => { setGroups([]); setPayouts([]); });
+      return;
+    }
     const params = statusFilter ? { status: statusFilter } : {};
     api.get('/payouts', { params })
       .then(({ data }) => setPayouts(data.data || data))
       .catch(() => setPayouts([]));
-  }, [statusFilter]);
+  }, [statusFilter, isOwner]);
 
   useEffect(() => { refreshPayouts(); }, [refreshPayouts]);
 
-  const handleApprove = async (payoutId) => {
-    const ok = await confirmAction({
-      title: 'Approve payout?',
-      text: 'Approve this contractor payout for payment?',
-      confirmText: 'Yes, approve',
-    });
+  const runAction = async (title, text, path) => {
+    const ok = await confirmAction({ title, text, confirmText: 'Confirm' });
     if (!ok) return;
-
     try {
-      await api.put(`/payouts/${payoutId}/approve`);
-      await showSuccess('Payout approved.');
+      await api.put(path);
+      await showSuccess('Updated.');
       refreshPayouts();
     } catch (e) {
-      await showError(e.response?.data?.message || 'Failed to approve payout.');
+      await showError(e.response?.data?.message || 'Action failed.');
     }
   };
 
-  const handleMarkPaid = async (payoutId) => {
-    const ok = await confirmAction({
-      title: 'Mark payout as paid?',
-      text: 'Confirm that this payout has been sent to the contractor.',
-      confirmText: 'Yes, mark paid',
-    });
-    if (!ok) return;
+  const handleApprove = async (payoutId) => {
+    await runAction('Approve payout?', 'Approve this payout for payment?', `/payouts/${payoutId}/approve`);
+  };
 
-    try {
-      await api.put(`/payouts/${payoutId}/mark-paid`);
-      await showSuccess('Payout marked as paid.');
-      refreshPayouts();
-    } catch (e) {
-      await showError(e.response?.data?.message || 'Failed to mark payout as paid.');
-    }
+  const handleMarkPaid = async (payoutId) => {
+    await runAction('Mark payout as paid?', 'Confirm this payout has been sent.', `/payouts/${payoutId}/mark-paid`);
+  };
+
+  const handleHold = async (payoutId) => {
+    await runAction('Hold payout?', 'Place this payout on hold.', `/payouts/${payoutId}/hold`);
+  };
+
+  const handleRelease = async (payoutId) => {
+    await runAction('Release hold?', 'Release this payout from hold.', `/payouts/${payoutId}/release`);
+  };
+
+  const handleRetry = async (payoutId) => {
+    await runAction('Retry transfer?', 'Retry Stripe/platform transfer for this payout.', `/payouts/${payoutId}/retry`);
   };
 
   return (
     <div>
       <PageHeader title={isPm ? 'My Commissions' : 'Payouts'} />
+      {isOwner && refreshedAt && (
+        <p className="text-xs text-slate-400 mb-3">Grouped by job · last refreshed {new Date(refreshedAt).toLocaleString()}</p>
+      )}
 
       {isPm && (
         <div className="mb-4">
@@ -159,6 +174,78 @@ export default function Payouts() {
         ))}
       </div>
 
+      {isOwner ? (
+        <div className="space-y-4">
+          {groups.length === 0 ? (
+            <p className="text-center text-slate-500 py-8">No payout groups found.</p>
+          ) : groups.map((g) => (
+            <div key={g.job_id} className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex flex-wrap justify-between gap-2">
+                <div>
+                  <button type="button" className="font-semibold text-slate-800 hover:underline" onClick={() => navigate(`/jobs/${g.job_id}`)}>
+                    Job #{g.job_id} — {g.job_address || '—'}
+                  </button>
+                  <p className="text-xs text-slate-500">
+                    {g.customer_name || '—'} · completion: {g.completion_state || '—'} · payment: {g.payment_state || '—'}
+                    {g.reconciles === true && ' · ✓ reconciles'}
+                    {g.reconciles === false && ' · ⚠ allocation mismatch'}
+                  </p>
+                </div>
+                <div className="text-sm font-medium">${Number(g.total_allocations || 0).toFixed(2)}</div>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-500">
+                    <th className="text-left px-4 py-2 font-medium">Split</th>
+                    <th className="text-left px-4 py-2 font-medium">Recipient</th>
+                    <th className="text-right px-4 py-2 font-medium">Amount</th>
+                    <th className="text-left px-4 py-2 font-medium">Status</th>
+                    <th className="text-left px-4 py-2 font-medium">Transfer / reasons</th>
+                    <th className="text-left px-4 py-2 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(g.allocations || []).map((a) => (
+                    <tr key={a.id} className="border-b border-slate-50">
+                      <td className="px-4 py-2 capitalize">{a.split_type}</td>
+                      <td className="px-4 py-2">{a.recipient_label}</td>
+                      <td className="px-4 py-2 text-right">${Number(a.amount || 0).toFixed(2)}</td>
+                      <td className="px-4 py-2"><StatusBadge status={a.status} /></td>
+                      <td className="px-4 py-2 text-xs text-slate-500">
+                        {a.stripe_transfer_id && <div>Transfer: {a.stripe_transfer_id}</div>}
+                        {a.paid_date && <div>Paid: {formatDate(a.paid_date)}</div>}
+                        {(a.not_ready_reasons || []).map((r) => <div key={r}>{r}</div>)}
+                        {!a.stripe_transfer_id && !(a.not_ready_reasons || []).length && (a.eligibility_status || '—')}
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex flex-wrap gap-1">
+                          {['pending', 'ready_for_payout', 'eligible', 'scheduled', 'queued'].includes(a.status) && (
+                            <button type="button" onClick={() => handleApprove(a.id)} className="text-xs px-2 py-1 bg-blue-600 text-white rounded">Approve</button>
+                          )}
+                          {a.status !== 'paid' && a.status !== 'on_hold' && (
+                            <button type="button" onClick={() => handleHold(a.id)} className="text-xs px-2 py-1 border rounded">Hold</button>
+                          )}
+                          {(a.status === 'on_hold' || a.status === 'hold_issue') && (
+                            <button type="button" onClick={() => handleRelease(a.id)} className="text-xs px-2 py-1 border rounded">Release</button>
+                          )}
+                          {['failed', 'queued', 'approved', 'ready_for_payout', 'scheduled'].includes(a.status) && (
+                            <button type="button" onClick={() => handleRetry(a.id)} className="text-xs px-2 py-1 border rounded">Retry</button>
+                          )}
+                          {(a.status === 'approved' || a.status === 'ready_for_payout') && (
+                            <button type="button" onClick={() => handleMarkPaid(a.id)} className="text-xs px-2 py-1 bg-green-600 text-white rounded">Mark paid</button>
+                          )}
+                          <button type="button" onClick={() => setEditPayout({ id: a.id, ...a })} className="text-xs px-2 py-1 border rounded">Details</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      ) : (
+      <>
       <div className="md:hidden space-y-3 mb-4">
         {payouts.length === 0 ? (
           <p className="text-center text-slate-500 py-8">No payouts found.</p>
@@ -169,34 +256,7 @@ export default function Payouts() {
               <StatusBadge status={p.status} />
             </div>
             <p className="text-sm text-slate-500">Job #{p.job_id} — {p.job?.address || '—'}</p>
-            {user?.role !== 'contractor' && (
-              <p className="text-sm text-slate-500">{p.contractor?.name || '—'}</p>
-            )}
             <p className="text-sm font-medium text-slate-800 mt-1">${Number(p.payout_amount || 0).toFixed(2)}</p>
-            {isOwner && p.status === 'pending' && (
-              <button type="button" onClick={() => handleApprove(p.id)}
-                className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2.5 text-sm font-medium">
-                Approve
-              </button>
-            )}
-            {isOwner && p.status === 'ready_for_payout' && (
-              <button type="button" onClick={() => handleApprove(p.id)}
-                className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2.5 text-sm font-medium">
-                Approve for Payment
-              </button>
-            )}
-            {isOwner && (
-              <button type="button" onClick={() => setEditPayout(p)}
-                className="mt-2 w-full border border-slate-300 text-slate-700 rounded-lg py-2 text-sm font-medium">
-                Edit Details
-              </button>
-            )}
-            {isOwner && (p.status === 'approved' || p.status === 'ready_for_payout') && (
-              <button type="button" onClick={() => handleMarkPaid(p.id)}
-                className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white rounded-lg py-2.5 text-sm font-medium">
-                Mark as Paid
-              </button>
-            )}
           </div>
         ))}
       </div>
@@ -217,26 +277,18 @@ export default function Payouts() {
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-[#64748B]">Payout #</th>
                 <th className="text-left px-4 py-3 font-medium text-[#64748B]">Job</th>
-                {user?.role !== 'contractor' && (
-                  <th className="text-left px-4 py-3 font-medium text-[#64748B]">Contractor</th>
-                )}
                 <th className="text-left px-4 py-3 font-medium text-[#64748B]">Amount</th>
                 <th className="text-left px-4 py-3 font-medium text-[#64748B]">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-[#64748B] hidden md:table-cell">Eligibility</th>
                 <th className="text-left px-4 py-3 font-medium text-[#64748B] hidden md:table-cell">Paid Date</th>
-                {isOwner && <th className="text-left px-4 py-3 font-medium text-[#64748B]">Actions</th>}
               </tr>
             )}
           </thead>
           <tbody className="divide-y divide-[#E2E8F0]">
             {payouts.length === 0 ? (
-              <tr><td colSpan={isPm ? 6 : (isOwner ? 8 : 7)} className="px-4 py-8 text-center text-slate-500">No payouts found.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No payouts found.</td></tr>
             ) : isPm ? payouts.map((p) => (
-              <tr
-                key={p.id}
-                className="hover:bg-slate-50 cursor-pointer transition-colors"
-                onClick={() => p.job_id && navigate(`/jobs/${p.job_id}`)}
-              >
+              <tr key={p.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => p.job_id && navigate(`/jobs/${p.job_id}`)}>
                 <td className="px-4 py-3">{p.job?.address || p.job?.job_title || '—'}</td>
                 <td className="px-4 py-3">{p.job?.customer?.name || '—'}</td>
                 <td className="px-4 py-3 font-medium">${Number(p.payout_amount || 0).toFixed(2)}</td>
@@ -245,50 +297,20 @@ export default function Payouts() {
                 <td className="px-4 py-3 hidden md:table-cell">{formatDate(p.paid_date)}</td>
               </tr>
             )) : payouts.map((p) => (
-              <tr
-                key={p.id}
-                className={`hover:bg-slate-50 ${p.job_id ? 'cursor-pointer transition-colors' : ''}`}
-                onClick={() => p.job_id && navigate(`/jobs/${p.job_id}`)}
-              >
+              <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium">#{p.id}</td>
-                <td className="px-4 py-3">
-                  <div className="font-medium">#{p.job_id}</div>
-                  <div className="text-xs text-slate-500 truncate max-w-[180px]">{p.job?.address || '—'}</div>
-                </td>
-                {user?.role !== 'contractor' && (
-                  <td className="px-4 py-3">{p.contractor?.name || '—'}</td>
-                )}
+                <td className="px-4 py-3">#{p.job_id}</td>
                 <td className="px-4 py-3">${Number(p.payout_amount || 0).toFixed(2)}</td>
                 <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                 <td className="px-4 py-3 hidden md:table-cell capitalize text-xs text-slate-500">{eligibilityLabel(p.eligibility_status)}</td>
                 <td className="px-4 py-3 hidden md:table-cell">{formatDate(p.paid_date)}</td>
-                {isOwner && (
-                  <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex flex-wrap gap-2">
-                      {(p.status === 'pending' || p.status === 'ready_for_payout') && (
-                        <button type="button" onClick={() => handleApprove(p.id)}
-                          className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
-                          Approve
-                        </button>
-                      )}
-                      {(p.status === 'approved' || p.status === 'ready_for_payout') && p.status !== 'paid' && (
-                        <button type="button" onClick={() => handleMarkPaid(p.id)}
-                          className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">
-                          Mark as Paid
-                        </button>
-                      )}
-                      <button type="button" onClick={() => setEditPayout(p)}
-                        className="text-xs px-3 py-1.5 border border-slate-300 text-slate-700 rounded-lg font-medium">
-                        Edit
-                      </button>
-                    </div>
-                  </td>
-                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      </>
+      )}
 
       {editPayout && (
         <PayoutEditModal payout={editPayout} onClose={() => setEditPayout(null)} onSuccess={refreshPayouts} />

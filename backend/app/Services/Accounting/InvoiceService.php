@@ -74,7 +74,7 @@ class InvoiceService
             ?? $job->company?->name
             ?? null;
 
-        return Invoice::create(array_merge([
+        $invoice = Invoice::create(array_merge([
             'job_id' => $job->id,
             'quote_id' => $quote?->id,
             'company_id' => $job->company_id,
@@ -92,6 +92,21 @@ class InvoiceService
             'status' => 'awaiting_payment',
             'due_date' => now()->addDays(30)->toDateString(),
         ], $overrides));
+
+        app(\App\Services\Finance\FinancialLedgerService::class)->recordEntry([
+            'entry_type' => \App\Models\FinancialLedgerEntry::TYPE_INVOICE_ISSUED,
+            'direction' => 'credit',
+            'amount' => $subtotal,
+            'gst_amount' => $gst,
+            'job_id' => $job->id,
+            'invoice_id' => $invoice->id,
+            'quote_id' => $quote?->id,
+            'actor_user_id' => auth()->id(),
+            'reference' => $invoice->invoice_number,
+            'is_test_data' => (bool) ($invoice->is_test_data ?? false),
+        ]);
+
+        return $invoice;
     }
 
     public function createFromQuote(Quote $quote): Invoice

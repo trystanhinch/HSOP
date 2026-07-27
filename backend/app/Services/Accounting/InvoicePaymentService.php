@@ -53,6 +53,26 @@ class InvoicePaymentService
 
             $invoice = $invoice->fresh(['job']);
 
+            $exGst = 0.0;
+            if ((float) $invoice->amount > 0) {
+                $exGst = round((float) $invoice->subtotal * ($amount / (float) $invoice->amount), 2);
+            }
+            $payment = Payment::where('invoice_id', $invoice->id)->latest('id')->first();
+            app(\App\Services\Finance\FinancialLedgerService::class)->recordEntry([
+                'entry_type' => $fullyPaid
+                    ? \App\Models\FinancialLedgerEntry::TYPE_PAYMENT_RECEIVED
+                    : \App\Models\FinancialLedgerEntry::TYPE_PAYMENT_PARTIAL,
+                'direction' => 'credit',
+                'amount' => $exGst,
+                'gst_amount' => round($amount - $exGst, 2),
+                'job_id' => $invoice->job_id,
+                'invoice_id' => $invoice->id,
+                'payment_id' => $payment?->id,
+                'actor_user_id' => auth()->id(),
+                'reference' => $data['reference_number'] ?? $txn,
+                'is_test_data' => (bool) ($invoice->is_test_data ?? false),
+            ]);
+
             if ($fullyPaid && $invoice->job) {
                 $invoice->job->update(['status' => 'paid']);
                 $this->eligibility->evaluateForJob($invoice->job->fresh([
