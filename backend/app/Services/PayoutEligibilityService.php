@@ -99,6 +99,7 @@ class PayoutEligibilityService
 
             $payout->fill([
                 'contractor_id' => $splitType === 'contractor' ? $row['user_id'] : ($splitType === 'pm' ? $row['user_id'] : null),
+                'contractor_profile_id' => $splitType === 'contractor' ? ($row['contractor_profile_id'] ?? null) : null,
                 'pm_id' => $splitType === 'pm' ? $row['user_id'] : null,
                 'payout_amount' => $row['amount'],
                 'split_type' => $splitType,
@@ -203,6 +204,7 @@ class PayoutEligibilityService
         return [
             'contractor' => [
                 'user_id' => $job->contractor_id,
+                'contractor_profile_id' => $job->contractor_profile_id,
                 'amount' => $contractorAmount,
                 'pct' => $split['contractor_pct'],
             ],

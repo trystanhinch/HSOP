@@ -20,10 +20,29 @@ class UserController extends Controller
 
     public function contractors(): JsonResponse
     {
+        // Assignment picker: only approved + compliant profiles (users.id for ACL payload)
+        $profiles = \App\Models\Contractor::productionOnly()
+            ->assignable()
+            ->with('user:id,name,email,status')
+            ->whereHas('user', fn ($q) => $q->where('role', 'contractor')->where('status', 'active'))
+            ->get();
+
         return response()->json(
-            User::where('role', 'contractor')->where('status', 'active')
-                ->with('contractor:id,user_id,legal_name,operating_name,approval_status')
-                ->get(['id', 'name', 'email'])
+            $profiles->map(fn ($p) => [
+                'id' => $p->user_id, // assignment APIs still expect users.id
+                'name' => $p->display_name,
+                'email' => $p->email ?: $p->user?->email,
+                'contractor_profile_id' => $p->id,
+                'state' => $p->state,
+                'contractor' => [
+                    'id' => $p->id,
+                    'user_id' => $p->user_id,
+                    'legal_name' => $p->legal_name,
+                    'operating_name' => $p->operating_name,
+                    'approval_status' => $p->approval_status,
+                    'state' => $p->state,
+                ],
+            ])->values()
         );
     }
 
@@ -67,7 +86,12 @@ class UserController extends Controller
                 'legal_name' => $data['name'],
                 'operating_name' => $data['name'],
                 'email' => $data['email'],
+                'wcb_status' => 'not_uploaded',
+                'liability_insurance_status' => 'not_uploaded',
                 'approval_status' => 'pending',
+                'state' => 'profile_incomplete',
+                'services' => [],
+                'cities' => [],
             ]);
         }
 

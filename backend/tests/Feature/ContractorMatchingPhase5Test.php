@@ -79,7 +79,11 @@ class ContractorMatchingPhase5Test extends TestCase
             'phone' => $user->phone,
             'email' => $user->email,
             'services' => $services,
+            'cities' => ['Vancouver'],
+            'wcb_status' => 'approved',
+            'liability_insurance_status' => 'approved',
             'approval_status' => 'approved',
+            'state' => 'approved',
         ]);
 
         return compact('user', 'contractor');

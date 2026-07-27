@@ -18,6 +18,7 @@ class Payout extends Model
         'split_type',
         'job_id',
         'contractor_id',
+        'contractor_profile_id',
         'pm_id',
         'payout_amount',
         'status',
@@ -50,6 +51,11 @@ class Payout extends Model
     public function contractor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'contractor_id');
+    }
+
+    public function contractorProfile(): BelongsTo
+    {
+        return $this->belongsTo(Contractor::class, 'contractor_profile_id');
     }
 
     public function pm(): BelongsTo

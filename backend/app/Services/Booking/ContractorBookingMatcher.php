@@ -123,7 +123,7 @@ class ContractorBookingMatcher
         return $users
             ->filter(function (User $user) use ($category, $catalog) {
                 $profile = $user->contractor;
-                if (! $profile || $profile->approval_status !== 'approved') {
+                if (! $profile || $profile->state !== 'approved') {
                     return false;
                 }
                 if ($category === '') {

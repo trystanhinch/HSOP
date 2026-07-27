@@ -252,7 +252,8 @@ class LeadController extends Controller
         }
 
         if ($request->has('assigned_contractor_id') && $request->assigned_contractor_id) {
-            User::where('id', $request->assigned_contractor_id)->where('role', 'contractor')->firstOrFail();
+            app(\App\Services\Contractors\ContractorAssignmentGuard::class)
+                ->assertAssignable((int) $request->assigned_contractor_id);
         }
 
         $lead->update($data);
@@ -433,7 +434,10 @@ class LeadController extends Controller
             ];
 
             if ($lead->site_visit_contractor_id || $lead->assigned_contractor_id) {
-                $jobPayload['contractor_id'] = $lead->site_visit_contractor_id ?? $lead->assigned_contractor_id;
+                $userContractorId = $lead->site_visit_contractor_id ?? $lead->assigned_contractor_id;
+                $profile = \App\Models\Contractor::withTestData()->where('user_id', $userContractorId)->first();
+                $jobPayload['contractor_id'] = $userContractorId;
+                $jobPayload['contractor_profile_id'] = $profile?->id;
                 $jobPayload['contractor_submitted_price'] = $lead->contractor_price;
                 $jobPayload['contractor_price_status'] = $lead->contractor_price ? 'submitted' : 'pending';
                 $jobPayload['contractor_price_submitted_at'] = $lead->contractor_price_submitted_at;
@@ -479,7 +483,7 @@ class LeadController extends Controller
         $request->validate([
             'site_visit_date' => 'required|date',
             'site_visit_time' => 'required|date_format:H:i',
-            'site_visit_contractor_id' => 'required|exists:users,id',
+            'site_visit_contractor_id' => 'required|integer',
             'site_visit_notes' => 'nullable|string',
             'address' => 'nullable|string|max:500',
         ]);
@@ -495,8 +499,9 @@ class LeadController extends Controller
             $lead->refresh();
         }
 
-        $contractor = User::where('id', $request->site_visit_contractor_id)
-            ->where('role', 'contractor')->firstOrFail();
+        $resolved = app(\App\Services\Contractors\ContractorAssignmentGuard::class)
+            ->assertAssignable((int) $request->site_visit_contractor_id);
+        $contractor = $resolved['user'];
 
         $resolver = app(LeadCustomerResolver::class);
         $customerId = $lead->customer_id;

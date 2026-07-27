@@ -116,6 +116,8 @@ class ContractorDocumentController extends Controller
             $contractor->update(['liability_insurance_status' => $request->status]);
         }
 
+        app(\App\Services\Contractors\ContractorProfileCompleteness::class)->refresh($contractor->fresh());
+
         return response()->json(['message' => 'Document reviewed', 'document' => $doc->fresh()]);
     }
 }

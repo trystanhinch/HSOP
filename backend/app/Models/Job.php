@@ -19,6 +19,7 @@ class Job extends Model
         'lead_id',
         'customer_id',
         'contractor_id',
+        'contractor_profile_id',
         'pm_id',
         'company_listing',
         'service_category',
@@ -98,6 +99,11 @@ class Job extends Model
     public function contractor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'contractor_id');
+    }
+
+    public function contractorProfile(): BelongsTo
+    {
+        return $this->belongsTo(Contractor::class, 'contractor_profile_id');
     }
 
     public function pm(): BelongsTo

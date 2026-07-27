@@ -192,6 +192,20 @@ class LearningCentreFlaggedItemsTest extends TestCase
             'password' => bcrypt('password'), 'role' => 'contractor', 'status' => 'active',
             'phone' => '6045550100',
         ]);
+        \App\Models\Contractor::create([
+            'user_id' => $contractor->id,
+            'legal_name' => 'Perf Contractor Ltd',
+            'operating_name' => 'Perf Contractor',
+            'contact_name' => 'Perf Contractor',
+            'phone' => $contractor->phone,
+            'email' => $contractor->email,
+            'services' => ['drywall'],
+            'cities' => ['Vancouver'],
+            'wcb_status' => 'approved',
+            'liability_insurance_status' => 'approved',
+            'approval_status' => 'approved',
+            'state' => 'approved',
+        ]);
         $customer = User::create([
             'name' => 'Perf Cust', 'email' => 'perf-cu-'.uniqid().'@test.local',
             'password' => bcrypt('password'), 'role' => 'customer', 'status' => 'active',
