@@ -4,7 +4,8 @@ namespace Tests\Unit;
 
 use App\Services\Gmail\GmailInboxFetcher;
 use App\Services\Gmail\GmailOAuthService;
-use App\Services\LeadIntake\LeadIntakePipeline;
+use App\Services\LeadIntake\LeadEmailParser;
+use App\Services\LeadIntake\LeadIntakeQuarantineService;
 use ReflectionMethod;
 use Tests\TestCase;
 
@@ -14,7 +15,8 @@ class GmailInboxFetcherTest extends TestCase
     {
         $fetcher = new GmailInboxFetcher(
             $this->createMock(GmailOAuthService::class),
-            $this->createMock(LeadIntakePipeline::class),
+            $this->createMock(LeadEmailParser::class),
+            $this->createMock(LeadIntakeQuarantineService::class),
         );
 
         $method = new ReflectionMethod(GmailInboxFetcher::class, 'extractBodyText');

@@ -44,21 +44,21 @@ class AiOpsReportService
     {
         return [
             'window' => ['from' => $from->toDateString(), 'to' => $to->toDateString()],
-            'new_leads' => Lead::whereBetween('created_at', [$from, $to])->count(),
-            'leads_needing_review' => Lead::where('needs_manual_review', true)->count(),
-            'quotes_sent' => Quote::whereIn('status', ['sent', 'viewed', 'follow_up', 'approved'])
+            'new_leads' => Lead::productionOnly()->whereBetween('created_at', [$from, $to])->count(),
+            'leads_needing_review' => Lead::productionOnly()->where('needs_manual_review', true)->count(),
+            'quotes_sent' => Quote::productionOnly()->whereIn('status', ['sent', 'viewed', 'follow_up', 'approved'])
                 ->whereBetween('sent_at', [$from, $to])->count(),
-            'quotes_approved' => Quote::where('status', 'approved')
+            'quotes_approved' => Quote::productionOnly()->where('status', 'approved')
                 ->whereBetween('updated_at', [$from, $to])->count(),
-            'jobs_in_progress' => Job::whereIn('status', ['in_progress', 'update_posted', 'progress_updated', 'scheduled'])->count(),
-            'jobs_completed_window' => Job::whereIn('status', ['paid', 'paid_completed', 'completed'])
+            'jobs_in_progress' => Job::productionOnly()->whereIn('status', ['in_progress', 'update_posted', 'progress_updated', 'scheduled'])->count(),
+            'jobs_completed_window' => Job::productionOnly()->whereIn('status', ['paid', 'paid_completed', 'completed'])
                 ->whereBetween('updated_at', [$from, $to])->count(),
-            'invoices_paid' => Invoice::where('status', 'paid')->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])->count(),
-            'revenue_paid_subtotal' => round((float) Invoice::where('status', 'paid')
+            'invoices_paid' => Invoice::productionOnly()->where('status', 'paid')->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])->count(),
+            'revenue_paid_subtotal' => round((float) Invoice::productionOnly()->where('status', 'paid')
                 ->whereBetween('payment_date', [$from->toDateString(), $to->toDateString()])
                 ->sum('subtotal'), 2),
-            'payouts_scheduled' => Payout::where('status', 'scheduled')->count(),
-            'payouts_paid' => Payout::where('status', 'paid')->whereBetween('paid_date', [$from->toDateString(), $to->toDateString()])->count(),
+            'payouts_scheduled' => Payout::productionOnly()->where('status', 'scheduled')->count(),
+            'payouts_paid' => Payout::productionOnly()->where('status', 'paid')->whereBetween('paid_date', [$from->toDateString(), $to->toDateString()])->count(),
             'reviews_submitted' => ReviewFeedback::whereBetween('submitted_at', [$from, $to])->count(),
             'reviews_needing_follow_up' => ReviewFeedback::where('star_rating', '<', 5)
                 ->whereIn('follow_up_status', ['new', 'pm_notified', 'customer_contacted', 'escalated'])

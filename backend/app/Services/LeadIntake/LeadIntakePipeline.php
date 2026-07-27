@@ -131,6 +131,181 @@ class LeadIntakePipeline
         );
     }
 
+    public function getParser(): LeadEmailParser
+    {
+        return $this->parser;
+    }
+
+    /**
+     * Create a lead from quarantine-sanitized fields (Gmail quarantine auto/manual approve).
+     * Does not re-run quarantine; phone/email already validated by the caller.
+     *
+     * @param  array<string, mixed>  $fields
+     * @param  list<array<string, mixed>>|array<string, mixed>  $fieldConfidence
+     */
+    public function createFromSanitizedFields(
+        string $rawEmail,
+        ParsedLeadEmail $parsed,
+        array $fields,
+        ?int $companySourceId,
+        array $fieldConfidence = [],
+        bool $sendNotifications = true,
+        bool $isTestData = false,
+        bool $forceManualReview = false,
+    ): LeadIntakeResult {
+        $phone = $fields['phone'] ?? null;
+        if (is_string($phone) && (str_contains($phone, '@') || ! $this->looksLikePhoneDigits($phone))) {
+            $phone = null;
+        }
+
+        $leadData = array_merge($parsed->toArray(), [
+            'first_name' => null,
+            'last_name' => null,
+            'contact_name' => $fields['contact_name'] ?? $parsed->contactName(),
+            'phone' => $phone,
+            'email' => $fields['email'] ?? $parsed->email,
+            'address' => $fields['address'] ?? $parsed->address,
+            'project_description' => $fields['project_description'] ?? $parsed->projectDescription,
+            'service_requested' => $fields['service_requested'] ?? $parsed->serviceRequested,
+            'source_website' => $fields['source_website'] ?? $parsed->sourceWebsite,
+            'source_label' => $fields['source_label'] ?? $parsed->sourceLabel,
+        ]);
+
+        $classification = $this->aiProvider->classifyLead($leadData);
+        $aiSummary = $this->aiProvider->summarizeLead(array_merge($leadData, [
+            'service_category' => $classification['service_category'],
+        ]));
+
+        $companySource = $companySourceId
+            ? \App\Models\CompanySource::query()->find($companySourceId)
+            : ($this->sourceMatcher->matchByCategory($classification['service_category'] ?? null)
+                ?? $this->sourceMatcher->match($fields['source_label'] ?? $parsed->sourceLabel ?? $parsed->sourceWebsite));
+
+        $aiUser = User::aiSuperAdmin();
+
+        $contactName = trim((string) ($fields['contact_name'] ?? $parsed->contactName() ?? ''));
+        if ($contactName === '') {
+            $contactName = $parsed->isVoicemail() ? 'Unknown caller' : 'Needs review';
+        }
+
+        $needsReview = $forceManualReview
+            || $parsed->needsManualReview
+            || $parsed->isVoicemail()
+            || ($classification['flags']['ambiguous_service'] ?? false)
+            || (($classification['service_category'] ?? null) === null)
+            || $phone === null;
+
+        $sourceLabel = $classification['source_label']
+            ?? ($fields['source_label'] ?? null)
+            ?? $parsed->sourceLabel
+            ?? $parsed->sourceWebsite;
+
+        $duplicateKey = null;
+        if ($parsed->isVoicemail() && $phone) {
+            $digits = preg_replace('/\D+/', '', $phone) ?: '';
+            if (strlen($digits) >= 10) {
+                $duplicateKey = 'vm:phone:'.substr($digits, -10);
+            }
+        }
+
+        $lead = Lead::create([
+            'contact_name' => $contactName,
+            'phone' => $phone,
+            'email' => $fields['email'] ?? $parsed->email,
+            'address' => $fields['address'] ?? $parsed->address,
+            'service_category' => $classification['service_category'],
+            'source' => $sourceLabel ?? $parsed->sourceWebsite,
+            'company_source_id' => $companySource?->id,
+            'project_description' => $fields['project_description']
+                ?? $parsed->projectDescription
+                ?? $fields['service_requested']
+                ?? $parsed->serviceRequested,
+            'notes' => $this->buildInternalNotes($parsed, $classification, $aiSummary),
+            'raw_email_copy' => $rawEmail,
+            'parse_metadata' => [
+                'field_confidence' => $fieldConfidence !== [] ? $fieldConfidence : $parsed->fieldConfidence,
+                'classification' => $classification,
+                'marketing_consent' => $fields['marketing_consent'] ?? $parsed->marketingConsent,
+                'submitted_at' => $fields['submitted_at'] ?? $parsed->submittedAt,
+                'email_format' => $fields['email_format'] ?? $parsed->emailFormat,
+                'subject' => $parsed->subject,
+                'source_label' => $sourceLabel,
+                'recording_url' => $fields['recording_url'] ?? $parsed->recordingUrl,
+                'call_duration' => $fields['call_duration'] ?? $parsed->callDuration,
+                'call_city' => $fields['call_city'] ?? $parsed->callCity,
+                'voicemail_duplicate_key' => $duplicateKey,
+                'intake_channel' => 'gmail_quarantine',
+                'ai_usage' => $classification['usage'] ?? null,
+            ],
+            'needs_manual_review' => $needsReview,
+            'assigned_pm_id' => $companySource?->default_pm_id,
+            'status' => 'new',
+            'is_test_data' => $isTestData,
+        ]);
+
+        $this->customerResolver->resolveForLead($lead->fresh());
+        $lead->refresh();
+
+        $this->createNextAction($lead, $aiUser);
+        $this->recordAiLog($aiUser, $lead, 'create_lead', $parsed, $classification, $aiSummary);
+
+        $this->timeline->record(
+            $lead,
+            'lead_intake',
+            'Lead created from Gmail intake quarantine.',
+            $aiUser,
+            [
+                'source' => $sourceLabel,
+                'duplicate' => false,
+                'needs_manual_review' => $needsReview,
+                'quarantine_sanitized' => true,
+            ],
+        );
+
+        $notifications = [];
+        $aiLogs = AiActionLog::where('trigger_event', 'lead_intake')
+            ->where('data_viewed->lead_id', $lead->id)
+            ->get()
+            ->all();
+
+        if ($sendNotifications) {
+            $aiEnabled = $this->authorizer->isAiEnabled();
+            $lead->load('companySource', 'assignedPm');
+            $notifications = $this->messaging->handle($lead, $parsed, $aiSummary, $aiEnabled);
+            $aiLogs = AiActionLog::where('trigger_event', 'lead_intake')
+                ->latest()
+                ->take(5)
+                ->get()
+                ->all();
+        }
+
+        return new LeadIntakeResult(
+            parsed: $parsed,
+            duplicate: false,
+            duplicateMatchType: null,
+            lead: $lead->fresh(['companySource', 'assignedPm']),
+            classification: $classification,
+            aiSummary: $aiSummary,
+            companySourceId: $companySource?->id,
+            notifications: $notifications,
+            aiActionLogs: array_map(fn ($l) => ['id' => $l->id], $aiLogs),
+            outcome: 'created',
+        );
+    }
+
+    private function looksLikePhoneDigits(?string $phone): bool
+    {
+        if ($phone === null || $phone === '') {
+            return false;
+        }
+        if (str_contains($phone, '@')) {
+            return false;
+        }
+        $digits = preg_replace('/\D+/', '', $phone) ?: '';
+
+        return strlen($digits) >= 10 && strlen($digits) <= 15;
+    }
+
     /**
      * @param  array{is_duplicate: bool, match_type: ?string, lead: ?Lead, customer: ?Customer}  $duplicate
      */
