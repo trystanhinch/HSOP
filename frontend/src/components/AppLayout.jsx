@@ -3,9 +3,11 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import EnvironmentBadge from './EnvironmentBadge';
 
 function getPageTitle(pathname, search) {
   if (search.includes('tab=database')) return 'Database Structure';
+  if (search.includes('tab=test-data')) return 'Test Data';
   if (pathname.includes('/dashboard/admin')) return 'Admin Dashboard';
   if (pathname.includes('/dashboard/pm')) return 'PM Dashboard';
   if (pathname.includes('/dashboard/contractor')) return 'Contractor Dashboard';
@@ -41,6 +43,9 @@ export default function AppLayout() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+            <div className="px-4 pb-2">
+              <EnvironmentBadge />
+            </div>
             <Sidebar onNavClick={() => setSidebarOpen(false)} />
           </div>
         </div>
@@ -50,6 +55,9 @@ export default function AppLayout() {
         <div className="flex flex-col w-64 bg-slate-800">
           <div className="px-6 py-5 border-b border-slate-700">
             <h1 className="text-white text-lg font-bold tracking-tight">ServiceOP</h1>
+            <div className="mt-2">
+              <EnvironmentBadge />
+            </div>
           </div>
           <Sidebar />
         </div>

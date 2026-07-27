@@ -9,13 +9,13 @@ class LeadEmailParser
         'first_name' => ['first name', 'firstname', 'given name'],
         'last_name' => ['last name', 'lastname', 'surname', 'family name'],
         'name' => ['name', 'full name', 'customer name', 'contact name'],
-        'phone' => ['phone', 'telephone', 'mobile', 'cell', 'phone number', 'tel', 'caller', 'caller number', 'from'],
+        'phone' => ['phone', 'telephone', 'mobile', 'cell', 'phone number', 'tel', 'caller', 'caller number', 'caller id'],
         'email' => ['email', 'e-mail', 'email address'],
         'service' => ['service', 'service required', 'service requested', 'service type', 'trade', 'work type'],
         'message' => ['message', 'text area', 'textarea', 'project description', 'description', 'details', 'project details', 'notes'],
         'address' => ['address', 'location', 'city', 'area', 'city/area'],
-        'source' => ['source', 'source website', 'website', 'company', 'referral source', 'how did you hear', 'to'],
-        'submitted' => ['submitted', 'date submitted', 'submitted at', 'date', 'timestamp', 'date of message creation', 'date/time', 'received'],
+        'source' => ['source', 'source website', 'website', 'company', 'referral source', 'how did you hear'],
+        'submitted' => ['submitted', 'date submitted', 'submitted at', 'date of message creation', 'date/time', 'received'],
         'marketing_consent' => [
             'marketing consent', 'consent', 'email consent', 'sms consent', 'opt in', 'opt-in',
             'marketing solicitations prohibited',
@@ -167,7 +167,7 @@ class LeadEmailParser
             ?? $this->scrapePhone($text)
         );
         if ($phone) {
-            $confidence['phone'] = 0.95;
+            $confidence['phone'] = $this->looksLikePhone($phone) ? 0.95 : 0.4;
         }
 
         $duration = $this->getValue($pairs, 'duration');
@@ -303,8 +303,9 @@ class LeadEmailParser
                 continue;
             }
 
-            // Skip subject line — handled separately
-            if (preg_match('/^Subject:\s*/i', $line)) {
+            // Skip envelope headers — never treat From/To/Date as lead field labels.
+            // (Historically "from" was aliased to phone and poisoned voicemail intake.)
+            if (preg_match('/^(Subject|From|To|Date|Cc|Bcc|Reply-To):\s*/i', $line)) {
                 continue;
             }
 
@@ -383,9 +384,14 @@ class LeadEmailParser
             return null;
         }
 
+        // Never accept an email address (or Google sender string) as a phone number.
+        if (str_contains($phone, '@') || preg_match('/[a-zA-Z]{3,}/', $phone)) {
+            return null;
+        }
+
         $digits = preg_replace('/\D+/', '', $phone);
         if ($digits === null || strlen($digits) < 10) {
-            return trim($phone);
+            return null;
         }
 
         if (strlen($digits) === 11 && str_starts_with($digits, '1')) {
@@ -396,7 +402,7 @@ class LeadEmailParser
             return sprintf('(%s) %s-%s', substr($digits, 0, 3), substr($digits, 3, 3), substr($digits, 6));
         }
 
-        return trim($phone);
+        return null;
     }
 
     private function looksLikePhone(string $phone): bool

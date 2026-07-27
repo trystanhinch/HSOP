@@ -6,17 +6,20 @@ import PageHeader from '../components/PageHeader';
 import { formatDate } from '../utils/formatDate';
 import AddUserModal from '../components/AddUserModal';
 import DatabaseStructure from './DatabaseStructure';
+import TestDataPanel from '../components/TestDataPanel';
 import AiActivityLogViewer from '../components/AiActivityLogViewer';
 import { confirmAction, confirmDanger, showError, showSuccess } from '../utils/swal';
 
-const tabs = ['Company', 'Users & Roles', 'Lead Inbox', 'Workflow', 'Message Templates', 'AI Settings', 'AI Activity Log', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure'];
+const tabs = ['Company', 'Users & Roles', 'Lead Inbox', 'Workflow', 'Message Templates', 'AI Settings', 'AI Activity Log', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure', 'Test Data'];
 
 const smsStatusColor = { sent: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-700', disabled: 'bg-slate-100 text-slate-600' };
 
 export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState(tabParam === 'database' ? 'Database Structure' : 'Company');
+  const [activeTab, setActiveTab] = useState(
+    tabParam === 'database' ? 'Database Structure' : tabParam === 'test-data' ? 'Test Data' : 'Company'
+  );
   const [settings, setSettings] = useState(null);
   const [companyForm, setCompanyForm] = useState({});
   const [notifForm, setNotifForm] = useState({ sms_globally_enabled: false, email_globally_enabled: false });
@@ -118,6 +121,7 @@ export default function Settings() {
 
   useEffect(() => {
     if (tabParam === 'database') setActiveTab('Database Structure');
+    if (tabParam === 'test-data') setActiveTab('Test Data');
     if (tabParam === 'lead-inbox') setActiveTab('Lead Inbox');
     const gmail = searchParams.get('gmail');
     if (gmail === 'connected') {
@@ -183,6 +187,7 @@ export default function Settings() {
   const handleTab = (tab) => {
     setActiveTab(tab);
     if (tab === 'Database Structure') setSearchParams({ tab: 'database' });
+    else if (tab === 'Test Data') setSearchParams({ tab: 'test-data' });
     else if (tab === 'Lead Inbox') setSearchParams({ tab: 'lead-inbox' });
     else if (tab === 'Workflow') setSearchParams({ tab: 'workflow' });
     else if (tab === 'Message Templates') setSearchParams({ tab: 'message-templates' });
@@ -353,6 +358,7 @@ export default function Settings() {
       </div>
 
       {activeTab === 'Database Structure' && <DatabaseStructure />}
+      {activeTab === 'Test Data' && <TestDataPanel />}
 
       {activeTab === 'Company' && (
         <form onSubmit={saveCompany} className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">

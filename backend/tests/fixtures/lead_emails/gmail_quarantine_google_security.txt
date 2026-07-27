@@ -1,0 +1,9 @@
+Subject: Security alert for your Google Workspace account
+From: The Google Workspace Team <workspace-noreply@google.com>
+
+Hi Admin,
+
+We detected a new sign-in on your Google Workspace account.
+If this was you, you can ignore this message. OAuth app access was also reviewed.
+
+The Google Workspace Team

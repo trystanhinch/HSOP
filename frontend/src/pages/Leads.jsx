@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
@@ -15,19 +15,49 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
+function ConfidenceList({ items }) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return <p className="text-xs text-slate-500">No field confidence recorded.</p>;
+  }
+  return (
+    <ul className="space-y-2">
+      {items.map((row) => (
+        <li key={row.field} className="text-xs border border-slate-100 rounded-lg p-2 bg-slate-50">
+          <div className="flex justify-between gap-2 font-medium text-slate-700">
+            <span>{row.field}</span>
+            <span className={row.valid ? 'text-emerald-700' : 'text-amber-700'}>
+              {row.score ?? 0}%{row.valid ? '' : ' · invalid'}
+            </span>
+          </div>
+          {row.source_text ? (
+            <p className="mt-1 text-slate-500 break-words whitespace-pre-wrap">{row.source_text}</p>
+          ) : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default function Leads() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [leads, setLeads] = useState([]);
+  const [quarantine, setQuarantine] = useState([]);
   const [meta, setMeta] = useState({});
+  const [qMeta, setQMeta] = useState({});
   const [panelOpen, setPanelOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [selectedQ, setSelectedQ] = useState(null);
+  const [editFields, setEditFields] = useState({});
+  const [acting, setActing] = useState(false);
 
   const status = searchParams.get('status') || '';
   const category = searchParams.get('category') || '';
   const search = searchParams.get('search') || '';
   const page = searchParams.get('page') || '1';
+  const isOwner = user?.role === 'owner';
+  const showQuarantine = isOwner && status === 'needs_review';
 
   const fetchLeads = () => {
     const params = { page };
@@ -45,7 +75,23 @@ export default function Leads() {
     }).catch(() => setLeads([]));
   };
 
-  useEffect(() => { fetchLeads(); }, [status, category, search, page]);
+  const fetchQuarantine = () => {
+    if (!showQuarantine) {
+      setQuarantine([]);
+      return;
+    }
+    const params = { page, status: 'pending' };
+    if (search) params.search = search;
+    api.get('/intake-quarantine', { params }).then(({ data }) => {
+      setQuarantine(data.data || []);
+      setQMeta({ current: data.current_page, last: data.last_page, total: data.total });
+    }).catch(() => setQuarantine([]));
+  };
+
+  useEffect(() => {
+    fetchLeads();
+    fetchQuarantine();
+  }, [status, category, search, page, showQuarantine]);
 
   const goToPage = (p) => {
     const next = new URLSearchParams(searchParams);
@@ -58,6 +104,65 @@ export default function Leads() {
     if (value) next.set(key, value); else next.delete(key);
     next.delete('page');
     setSearchParams(next);
+  };
+
+  const openQuarantine = async (item) => {
+    try {
+      const { data } = await api.get(`/intake-quarantine/${item.id}`);
+      setSelectedQ(data);
+      setEditFields({
+        contact_name: data.parsed_fields?.contact_name || '',
+        phone: data.parsed_fields?.phone || '',
+        email: data.parsed_fields?.email || '',
+        address: data.parsed_fields?.address || '',
+        project_description: data.parsed_fields?.project_description || '',
+      });
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Failed to load quarantine item.');
+    }
+  };
+
+  const approveQuarantine = async () => {
+    if (!selectedQ) return;
+    const ok = await confirmAction({
+      title: 'Approve and create lead?',
+      text: 'This creates a customer/lead and triggers the normal PM notification flow once.',
+      confirmText: 'Approve',
+    });
+    if (!ok) return;
+    setActing(true);
+    try {
+      const { data } = await api.post(`/intake-quarantine/${selectedQ.id}/approve`, {
+        ...editFields,
+        send_notifications: true,
+      });
+      await showSuccess(data.message || 'Lead created.');
+      setSelectedQ(null);
+      fetchQuarantine();
+      fetchLeads();
+      if (data.lead?.id) navigate(`/leads/${data.lead.id}`);
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Approve failed.');
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const ignoreQuarantine = async () => {
+    if (!selectedQ) return;
+    const reason = window.prompt('Reason for permanently ignoring this message:');
+    if (!reason || !reason.trim()) return;
+    setActing(true);
+    try {
+      await api.post(`/intake-quarantine/${selectedQ.id}/ignore`, { reason: reason.trim() });
+      await showSuccess('Marked as permanently ignored (audit trail kept).');
+      setSelectedQ(null);
+      fetchQuarantine();
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Ignore failed.');
+    } finally {
+      setActing(false);
+    }
   };
 
   const handleCreate = async (form) => {
@@ -135,7 +240,74 @@ export default function Leads() {
         </div>
       </div>
 
+      {showQuarantine && (
+        <div className="bg-white rounded-xl border border-amber-200 overflow-hidden mb-4">
+          <div className="px-4 py-3 border-b border-amber-100 bg-amber-50 flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-amber-900">Gmail intake quarantine</h2>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Low-confidence or unmatched Gmail messages — no customer/lead/notification until approved.
+              </p>
+            </div>
+            <span className="text-xs font-medium text-amber-900 bg-amber-100 px-2 py-1 rounded">
+              {qMeta.total ?? quarantine.length} pending
+            </span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[720px] text-sm divide-y divide-slate-200">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Subject / From</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Parsed</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Reason</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Dup</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Date</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {quarantine.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
+                      No quarantined Gmail messages pending review.
+                    </td>
+                  </tr>
+                ) : quarantine.map((item) => (
+                  <tr
+                    key={item.id}
+                    className="hover:bg-amber-50/40 cursor-pointer"
+                    onClick={() => openQuarantine(item)}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-slate-800 line-clamp-1">{item.subject || '(no subject)'}</div>
+                      <div className="text-xs text-slate-500 line-clamp-1">{item.from_header || '—'}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-600">
+                      <div>{item.parsed_fields?.contact_name || '—'}</div>
+                      <div>{item.parsed_fields?.phone || 'no phone'}</div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-amber-800">{item.quarantine_reason || '—'}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {item.duplicate_group_key ? (
+                        <span className="bg-slate-100 text-slate-700 px-2 py-0.5 rounded" title={item.duplicate_group_key}>
+                          group
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">{formatDate(item.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {showQuarantine && (
+          <div className="px-4 py-2 border-b border-slate-100 text-xs font-medium text-slate-500 uppercase tracking-wide">
+            Leads flagged needs_manual_review
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full min-w-[640px] text-sm divide-y divide-slate-200">
             <thead className="bg-slate-50">
@@ -201,6 +373,92 @@ export default function Leads() {
 
       <SlideOverPanel isOpen={panelOpen} onClose={() => setPanelOpen(false)} title="Create Lead">
         <LeadForm onSubmit={handleCreate} onCancel={() => setPanelOpen(false)} saving={saving} />
+      </SlideOverPanel>
+
+      <SlideOverPanel
+        isOpen={!!selectedQ}
+        onClose={() => setSelectedQ(null)}
+        title="Review quarantined intake"
+      >
+        {selectedQ && (
+          <div className="space-y-4 text-sm">
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-amber-900 text-xs">
+              <div className="font-semibold">{selectedQ.quarantine_reason || 'Needs review'}</div>
+              {selectedQ.duplicate_group_key && (
+                <div className="mt-1">Duplicate group: {selectedQ.duplicate_group_key}</div>
+              )}
+              {Array.isArray(selectedQ.validation_errors) && selectedQ.validation_errors.length > 0 && (
+                <ul className="mt-2 list-disc pl-4">
+                  {selectedQ.validation_errors.map((err) => <li key={err}>{err}</li>)}
+                </ul>
+              )}
+            </div>
+
+            <div>
+              <h3 className="text-xs font-semibold text-slate-500 uppercase mb-2">Correct fields</h3>
+              <div className="space-y-2">
+                {['contact_name', 'phone', 'email', 'address', 'project_description'].map((key) => (
+                  <label key={key} className="block">
+                    <span className="text-xs text-slate-500 capitalize">{key.replace(/_/g, ' ')}</span>
+                    {key === 'project_description' ? (
+                      <textarea
+                        rows={3}
+                        value={editFields[key] || ''}
+                        onChange={(e) => setEditFields((f) => ({ ...f, [key]: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={editFields[key] || ''}
+                        onChange={(e) => setEditFields((f) => ({ ...f, [key]: e.target.value }))}
+                        className="mt-1 w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-xs font-semibold text-slate-500 uppercase mb-2">Field confidence</h3>
+              <ConfidenceList items={selectedQ.field_confidence} />
+            </div>
+
+            <div>
+              <h3 className="text-xs font-semibold text-slate-500 uppercase mb-2">Raw source</h3>
+              <pre className="text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 max-h-56 overflow-auto whitespace-pre-wrap break-words">
+                {selectedQ.raw_email}
+              </pre>
+            </div>
+
+            <div className="flex flex-col gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={acting}
+                onClick={approveQuarantine}
+                className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+              >
+                Approve (create lead + notify)
+              </button>
+              <button
+                type="button"
+                disabled={acting}
+                onClick={ignoreQuarantine}
+                className="w-full px-4 py-2 bg-slate-100 text-slate-800 rounded-lg text-sm font-medium hover:bg-slate-200 disabled:opacity-50"
+              >
+                Permanently ignore
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedQ(null)}
+                className="w-full px-4 py-2 text-slate-500 text-sm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </SlideOverPanel>
     </div>
   );
