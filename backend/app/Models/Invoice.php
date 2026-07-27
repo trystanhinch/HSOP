@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTestData;
 use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -9,6 +10,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Invoice extends Model
 {
+    use HasTestData;
+
     protected $appends = ['is_overdue', 'gst_amount', 'balance_due', 'total'];
 
     protected $fillable = [

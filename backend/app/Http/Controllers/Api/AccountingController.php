@@ -20,7 +20,7 @@ class AccountingController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $invoiceQuery = Invoice::with('job:id,service_category');
+        $invoiceQuery = Invoice::productionOnly()->with('job:id,service_category');
         $this->applyInvoiceFilters($invoiceQuery, $request);
         $all = $invoiceQuery->get();
 
@@ -32,7 +32,7 @@ class AccountingController extends Controller
         $grossRevenue = round((float) $paid->sum('subtotal'), 2);
         $gstCollected = round((float) $paid->sum('gst'), 2);
 
-        $payoutQuery = Payout::query();
+        $payoutQuery = Payout::productionOnly();
         $this->applyPayoutFilters($payoutQuery, $request);
         $payoutRows = $payoutQuery->get();
 

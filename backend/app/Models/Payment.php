@@ -2,12 +2,15 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTestData;
 use App\Casts\DateOnly;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Payment extends Model
 {
+    use HasTestData;
+
     protected $fillable = [
         'invoice_id',
         'amount',

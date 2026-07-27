@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTestData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\Schema;
 
 class Quote extends Model
 {
+    use HasTestData;
+
     protected static ?bool $hasLeadIdColumn = null;
 
     protected $fillable = [
