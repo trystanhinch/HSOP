@@ -10,7 +10,7 @@ class ProfitReportController extends Controller
 {
     public function profitBreakdown(): JsonResponse
     {
-        $quotes = Quote::where('status', 'approved')
+        $quotes = Quote::productionOnly()->where('status', 'approved')
             ->with([
                 'job:id,address,job_title,contractor_id',
                 'job.contractor:id,name',
