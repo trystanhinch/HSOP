@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasTestData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SmsLog extends Model
 {
+    use HasTestData;
+
     protected $fillable = [
         'to_phone', 'user_id', 'trigger_event', 'related_job_id',
         'message_body', 'status', 'provider_message_id', 'error_message',
