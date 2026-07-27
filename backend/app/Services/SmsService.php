@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Setting;
 use App\Models\SmsLog;
 use App\Models\User;
+use App\Services\TestData\TestDataGuard;
 use Illuminate\Support\Facades\Log;
 
 class SmsService
@@ -46,6 +47,25 @@ class SmsService
     public function send(?string $toPhone, string $message, string $triggerEvent, $userId = null, $jobId = null): array
     {
         $toPhone = $this->formatPhone($toPhone);
+
+        $guard = app(TestDataGuard::class)->checkOutbound(
+            userId: $userId ? (int) $userId : null,
+            jobId: $jobId ? (int) $jobId : null,
+            phone: $toPhone,
+        );
+        if ($guard['blocked']) {
+            $this->writeLog([
+                'to_phone' => $toPhone ?: 'MISSING_OR_INVALID',
+                'user_id' => $userId,
+                'trigger_event' => $triggerEvent,
+                'related_job_id' => $jobId,
+                'message_body' => $message,
+                'status' => 'blocked_test_data',
+                'error_message' => 'Blocked: '.$guard['reason'],
+            ]);
+
+            return ['success' => false, 'reason' => 'test_data', 'detail' => $guard['reason']];
+        }
 
         if (! Setting::isGloballyEnabled('sms')) {
             $this->writeLog([
@@ -189,6 +209,9 @@ class SmsService
     private function writeLog(array $data): void
     {
         try {
+            if (($data['status'] ?? null) === 'blocked_test_data') {
+                $data['is_test_data'] = true;
+            }
             SmsLog::create($data);
         } catch (\Exception $e) {
             Log::warning('SmsLog write failed', [

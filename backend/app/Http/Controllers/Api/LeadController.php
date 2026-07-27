@@ -85,6 +85,7 @@ class LeadController extends Controller
 
         return response()->json([
             'count' => Lead::where('needs_manual_review', true)->count(),
+            'quarantine_pending' => \App\Models\IntakeQuarantine::query()->where('status', 'pending')->count(),
         ]);
     }
 

@@ -4,7 +4,8 @@ namespace App\Services\Gmail;
 
 use App\Models\GmailOauthToken;
 use App\Models\GmailProcessedMessage;
-use App\Services\LeadIntake\LeadIntakePipeline;
+use App\Services\LeadIntake\LeadEmailParser;
+use App\Services\LeadIntake\LeadIntakeQuarantineService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -13,11 +14,12 @@ class GmailInboxFetcher
 {
     public function __construct(
         private GmailOAuthService $oauth,
-        private LeadIntakePipeline $pipeline,
+        private LeadEmailParser $parser,
+        private LeadIntakeQuarantineService $quarantine,
     ) {}
 
     /**
-     * @return array{fetched: int, processed: int, skipped: int, failed: int, leads: list<int>}
+     * @return array{fetched: int, processed: int, skipped: int, failed: int, quarantined: int, ignored: int, leads: list<int>}
      */
     public function fetchAndProcess(?string $mailbox = null): array
     {
@@ -26,6 +28,8 @@ class GmailInboxFetcher
             'processed' => 0,
             'skipped' => 0,
             'failed' => 0,
+            'quarantined' => 0,
+            'ignored' => 0,
             'leads' => [],
         ];
 
@@ -65,20 +69,39 @@ class GmailInboxFetcher
 
             try {
                 $rawEmail = $this->fetchMessageAsRawEmail($accessToken, $messageId);
-                $result = $this->pipeline->process($rawEmail, sendNotifications: true);
+                $parsed = $this->parser->parse($rawEmail);
+                $result = $this->quarantine->ingest($rawEmail, $parsed, [
+                    'channel' => 'gmail',
+                    'mailbox_email' => $mailboxEmail,
+                    'gmail_message_id' => $messageId,
+                    'gmail_thread_id' => $messageRef['threadId'] ?? null,
+                    'send_notifications' => true,
+                ]);
+
+                $status = match ($result->outcome) {
+                    'quarantined' => 'quarantined',
+                    'ignored' => 'ignored',
+                    'duplicate' => 'skipped_duplicate',
+                    default => 'processed',
+                };
 
                 GmailProcessedMessage::create([
                     'gmail_message_id' => $messageId,
                     'gmail_thread_id' => $messageRef['threadId'] ?? null,
                     'mailbox_email' => $mailboxEmail,
                     'lead_id' => $result->lead?->id,
-                    'status' => $result->duplicate ? 'skipped_duplicate' : 'processed',
-                    'error' => null,
+                    'status' => $status,
+                    'error' => $result->quarantine?->quarantine_reason,
                     'processed_at' => now(),
                 ]);
 
                 if ($result->lead?->id) {
                     $stats['leads'][] = $result->lead->id;
+                }
+                if ($result->outcome === 'quarantined') {
+                    $stats['quarantined']++;
+                } elseif ($result->outcome === 'ignored') {
+                    $stats['ignored']++;
                 }
                 $stats['processed']++;
             } catch (Throwable $e) {
@@ -131,6 +154,7 @@ class GmailInboxFetcher
         $body = $this->extractBodyText($payload['payload'] ?? []);
 
         // LeadEmailParser expects a Subject: line + labeled body (Format A/B fixtures).
+        // From/Date are kept for quarantine allow-list / ignore rules but are NOT mapped to phone.
         $parts = array_filter([
             $subject !== '' ? 'Subject: '.$subject : null,
             $from !== '' ? 'From: '.$from : null,

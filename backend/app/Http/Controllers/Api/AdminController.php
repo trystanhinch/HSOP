@@ -25,9 +25,9 @@ class AdminController extends Controller
                 [
                     'name' => 'companies',
                     'purpose' => 'Stores each service company (Drywall, Insulation, Flooring etc.) — multi-company ready',
-                    'count' => Company::count(),
+                    'count' => Company::withTestData()->count(),
                     'columns' => ['id', 'name', 'slug', 'service_type', 'email', 'phone', 'gst_number', 'is_active', 'created_at'],
-                    'sample' => Company::first(),
+                    'sample' => Company::withTestData()->first(),
                 ],
                 [
                     'name' => 'users',

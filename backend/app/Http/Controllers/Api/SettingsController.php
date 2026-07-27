@@ -12,7 +12,7 @@ class SettingsController extends Controller
 {
     public function index(): JsonResponse
     {
-        $company = Company::first();
+        $company = Company::withTestData()->orderBy('id')->first();
         $settings = Setting::all()->pluck('value', 'key');
 
         return response()->json([
@@ -77,7 +77,7 @@ class SettingsController extends Controller
             }
         }
 
-        $company = Company::first();
+        $company = Company::withTestData()->orderBy('id')->first();
         if ($company) {
             $companyData = array_filter($request->only(['name', 'email', 'phone', 'address', 'gst_number']), fn ($v) => $v !== null);
             if ($companyData) {
