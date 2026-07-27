@@ -28,6 +28,7 @@ use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use App\Services\UploadStorage;
 use App\Services\ActivityTimelineService;
+use App\Services\Authorization\PmAuthorizationService;
 use App\Services\Learning\ContractorPerformanceRecorder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -49,6 +50,7 @@ class JobController extends Controller
         protected UploadStorage $uploads,
         protected ActivityTimelineService $timeline,
         protected ContractorPerformanceRecorder $performance,
+        protected PmAuthorizationService $authz,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -84,7 +86,7 @@ class JobController extends Controller
         $query = Job::with(['customer:id,name', 'contractor:id,name', 'pm:id,name', 'company:id,name', 'invoice', 'payout']);
 
         if ($user->role === 'pm') {
-            $query->where('pm_id', $user->id);
+            $this->authz->scopeJobsForPm($query, $user);
         } elseif ($user->role === 'customer') {
             $query->where('customer_id', $user->id);
         }
@@ -133,7 +135,7 @@ class JobController extends Controller
         $query = Job::with(['customer:id,name', 'contractor:id,name', 'pm:id,name', 'invoice', 'payout']);
 
         if ($request->user()->role === 'pm') {
-            $query->where('pm_id', $request->user()->id);
+            $this->authz->scopeJobsForPm($query, $request->user());
         }
 
         if ($request->q) {
@@ -215,9 +217,7 @@ class JobController extends Controller
             'updates.postedBy:id,name,role',
         ])->findOrFail($id);
 
-        if ($user->role === 'pm' && $job->pm_id !== $user->id) {
-            abort(403, 'You do not have permission to view this job.');
-        }
+        $this->authz->assertJobAccess($user, $job);
         if ($user->role === 'contractor' && $job->contractor_id !== $user->id) {
             abort(403, 'You do not have permission to view this job.');
         }
@@ -244,10 +244,7 @@ class JobController extends Controller
         }
 
         $job = Job::findOrFail($id);
-
-        if ($request->user()->role === 'pm' && $job->pm_id !== $request->user()->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        $this->authz->assertJobAccess($request->user(), $job);
 
         $data = $request->validate([
             'job_title' => 'nullable|string',
@@ -376,10 +373,7 @@ class JobController extends Controller
         $contractor = $resolved['user'];
         $profile = $resolved['profile'];
         $job = Job::findOrFail($id);
-
-        if ($request->user()->role === 'pm' && $job->pm_id !== $request->user()->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        $this->authz->assertJobAccess($request->user(), $job);
 
         $job->update([
             'contractor_id' => $contractor->id,
@@ -415,6 +409,7 @@ class JobController extends Controller
         ]);
 
         $job = Job::findOrFail($id);
+        $this->authz->assertJobAccess($request->user(), $job);
         $wasScheduled = $job->status === 'scheduled';
 
         $job->update([
@@ -493,10 +488,7 @@ class JobController extends Controller
         }
 
         $job = Job::findOrFail($id);
-
-        if ($user->role === 'pm' && $job->pm_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        $this->authz->assertJobAccess($user, $job);
 
         if (! $job->contractor_submitted_price) {
             return response()->json(['message' => 'No price submitted yet.'], 422);
@@ -943,6 +935,8 @@ class JobController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        $this->authz->assertJobAccess(auth()->user(), $job);
+
         $job->update(['status' => 'completed', 'completed_at' => now()]);
         $this->notifications->audit('marked_complete', 'job', $job->id);
         $this->notifications->jobComplete($job->fresh());
@@ -956,6 +950,8 @@ class JobController extends Controller
         if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $this->authz->assertJobAccess(auth()->user(), $job);
 
         $request->validate(['corrections_notes' => 'required|string|max:2000']);
         $job->update([
@@ -972,9 +968,7 @@ class JobController extends Controller
     public function activityLog(Job $job): JsonResponse
     {
         $user = auth()->user();
-        if ($user->role === 'pm' && $job->pm_id !== $user->id) {
-            abort(403);
-        }
+        $this->authz->assertJobAccess($user, $job);
         if ($user->role === 'contractor' && $job->contractor_id !== $user->id) {
             abort(403);
         }

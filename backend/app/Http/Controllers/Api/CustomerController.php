@@ -12,6 +12,7 @@ use App\Models\Lead;
 use App\Models\Quote;
 use App\Models\SmsLog;
 use App\Models\User;
+use App\Services\Authorization\PmAuthorizationService;
 use App\Services\Customers\CustomerMergeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -22,6 +23,7 @@ class CustomerController extends Controller
 {
     public function __construct(
         private CustomerMergeService $mergeService,
+        private PmAuthorizationService $authz,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -33,7 +35,12 @@ class CustomerController extends Controller
         $view = $request->get('view', 'primary');
         $query = Customer::with('user:id,name,email,phone')->latest('id');
 
-        if ($view === 'needs_review') {
+        if ($request->user()->role === 'pm') {
+            // 4A: only customers tied to this PM's own leads/jobs
+            $this->authz->scopeCustomersForPm($query, $request->user());
+            // PMs do not use duplicate/review admin views
+            $query->whereNull('merged_into_customer_id');
+        } elseif ($view === 'needs_review') {
             $query->needsReview();
         } elseif ($view === 'duplicates') {
             $query->possibleDuplicates();
@@ -106,6 +113,7 @@ class CustomerController extends Controller
         }
 
         $customer = Customer::with('user:id,name,email,phone,role,status')->findOrFail($id);
+        $this->authz->assertCustomerAccess($request->user(), $customer);
 
         return response()->json($this->enrichCustomer($customer, true));
     }

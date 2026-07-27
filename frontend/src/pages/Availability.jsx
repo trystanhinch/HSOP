@@ -4,6 +4,7 @@ import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
 import SlideOverPanel from '../components/SlideOverPanel';
+import { useAuth } from '../context/AuthContext';
 import { showError, showSuccess } from '../utils/swal';
 
 const emptyForm = {
@@ -21,6 +22,8 @@ const emptyForm = {
 const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function Availability() {
+  const { user } = useAuth();
+  const isPm = user?.role === 'pm';
   const [windows, setWindows] = useState([]);
   const [brands, setBrands] = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -115,7 +118,7 @@ export default function Availability() {
           onChange={(e) => setBrandFilter(e.target.value)}
           className="border border-slate-300 rounded-lg px-3 py-2 text-sm"
         >
-          <option value="">All brands</option>
+          <option value="">{isPm ? 'My brands' : 'All brands'}</option>
           {brands.map((b) => (
             <option key={b.id} value={b.id}>{b.company_name} ({b.domain})</option>
           ))}

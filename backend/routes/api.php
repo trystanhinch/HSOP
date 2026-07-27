@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\QuoteController;
 use App\Http\Controllers\Api\ScheduleController;
 use App\Http\Controllers\Api\SettingsController;
 use App\Http\Controllers\Api\PaymentDestinationController;
+use App\Http\Controllers\Api\PmBrandAssignmentController;
 use App\Http\Controllers\Api\EmailLogController;
 use App\Http\Controllers\Api\FinancialLedgerController;
 use App\Http\Controllers\Api\FileController;
@@ -327,6 +328,8 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     });
 
     Route::middleware('role:owner,pm')->group(function () {
+        Route::get('/me/pm-brands', [PmBrandAssignmentController::class, 'mine']);
+
         Route::get('/availability/brands', [AvailabilityAdminController::class, 'brands']);
         Route::get('/availability/windows', [AvailabilityAdminController::class, 'windows']);
         Route::post('/availability/windows', [AvailabilityAdminController::class, 'storeWindow']);
@@ -348,5 +351,9 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
         Route::post('/users', [AdminUserController::class, 'store']);
         Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
         Route::post('/users/{user}/reset-password', [AdminUserController::class, 'resetPassword']);
+
+        Route::get('/pm-brand-assignments', [PmBrandAssignmentController::class, 'index']);
+        Route::get('/pm-brand-assignments/{user}', [PmBrandAssignmentController::class, 'show']);
+        Route::put('/pm-brand-assignments/{user}', [PmBrandAssignmentController::class, 'sync']);
     });
 });

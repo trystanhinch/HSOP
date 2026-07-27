@@ -25,6 +25,8 @@ export default function Customers() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isOwner = user?.role === 'owner';
+  const isPm = user?.role === 'pm';
+  const customerViews = isOwner ? VIEWS : [{ id: 'primary', label: 'My customers' }];
   const [customers, setCustomers] = useState([]);
   const [view, setView] = useState('primary');
   const [search, setSearch] = useState('');
@@ -114,11 +116,11 @@ export default function Customers() {
 
   return (
     <div>
-      <PageHeader title="Customers" />
+      <PageHeader title={isPm ? 'My Customers' : 'Customers'} />
 
       <div className="bg-white rounded-lg border border-[#E2E8F0] p-4 mb-4 flex flex-col sm:flex-row gap-3">
         <div className="flex flex-wrap gap-2">
-          {VIEWS.map((v) => (
+          {customerViews.map((v) => (
             <button
               key={v.id}
               type="button"

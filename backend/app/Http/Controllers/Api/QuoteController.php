@@ -8,6 +8,7 @@ use App\Models\Job;
 use App\Models\Quote;
 use App\Models\QuoteItem;
 use App\Services\JobNotificationService;
+use App\Services\Authorization\PmAuthorizationService;
 use App\Services\LeadQuoteWorkflowService;
 use App\Services\PayoutWorkflowService;
 use App\Services\PricingService;
@@ -22,6 +23,7 @@ class QuoteController extends Controller
         protected JobNotificationService $notifications,
         protected PayoutWorkflowService $payouts,
         protected LeadQuoteWorkflowService $leadQuotes,
+        protected PmAuthorizationService $authz,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -30,7 +32,7 @@ class QuoteController extends Controller
         $query = Quote::with(['job:id,address,job_title', 'customer:id,name']);
 
         if ($user->role === 'pm') {
-            $query->whereHas('job', fn ($q) => $q->where('pm_id', $user->id));
+            $this->authz->scopeQuotesForPm($query, $user);
         } elseif ($user->role === 'customer') {
             $query->where('customer_id', $user->id);
         } elseif ($user->role !== 'owner') {
@@ -67,10 +69,7 @@ class QuoteController extends Controller
         ]);
 
         $job = Job::findOrFail($request->job_id);
-
-        if ($request->user()->role === 'pm' && $job->pm_id !== $request->user()->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        $this->authz->assertJobAccess($request->user(), $job);
 
         if (! $job->customer_id) {
             return response()->json(['message' => 'Cannot create estimate: no customer attached to this job.'], 422);
@@ -163,6 +162,7 @@ class QuoteController extends Controller
         if ($user->role === 'customer' && $quote->customer_id !== $user->id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+        $this->authz->assertQuoteAccess($user, $quote);
 
         return response()->json(new QuoteResource($quote));
     }
@@ -174,6 +174,7 @@ class QuoteController extends Controller
         }
 
         $quote = Quote::findOrFail($id);
+        $this->authz->assertQuoteAccess($request->user(), $quote);
 
         if (! in_array($quote->status, ['draft', 'revised'])) {
             return response()->json(['message' => 'Quote cannot be edited in current status'], 422);
@@ -213,6 +214,8 @@ class QuoteController extends Controller
         if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $this->authz->assertQuoteAccess(auth()->user(), $quote);
 
         if (! $quote->customer?->email) {
             return response()->json(['message' => 'Cannot send quote: customer has no email on file. Please add one first.'], 422);

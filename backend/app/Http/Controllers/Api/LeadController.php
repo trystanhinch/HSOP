@@ -14,6 +14,7 @@ use App\Mail\SiteVisitScheduledCustomerMail;
 use App\Services\EmailService;
 use App\Services\LeadCustomerResolver;
 use App\Services\LeadQuoteWorkflowService;
+use App\Services\Authorization\PmAuthorizationService;
 use App\Services\PricingService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
@@ -29,6 +30,7 @@ class LeadController extends Controller
         protected EmailService $email,
         protected PricingService $pricing,
         protected LeadQuoteWorkflowService $leadQuotes,
+        protected PmAuthorizationService $authz,
     ) {}
     public function index(Request $request): JsonResponse
     {
@@ -41,7 +43,7 @@ class LeadController extends Controller
         $query = Lead::with(['assignedPm:id,name', 'customer:id,name', 'company:id,name', 'companySource:id,company_name']);
 
         if ($user->role === 'pm') {
-            $query->where('assigned_pm_id', $user->id);
+            $this->authz->scopeLeadsForPm($query, $user);
         }
 
         if ($request->show_converted !== 'true') {
@@ -154,9 +156,7 @@ class LeadController extends Controller
         ])->findOrFail($id);
 
         if (in_array($user->role, ['owner', 'pm'], true)) {
-            if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
-                return response()->json(['message' => 'Unauthorized'], 403);
-            }
+            $this->authz->assertLeadAccess($user, $lead);
 
             $activity = AuditLog::where('object_type', 'lead')
                 ->where('object_id', $lead->id)
@@ -224,9 +224,7 @@ class LeadController extends Controller
 
         $lead = Lead::findOrFail($id);
 
-        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
+        $this->authz->assertLeadAccess($user, $lead);
 
         $this->normalizeNullableFields($request, ['address', 'phone', 'email', 'project_description', 'internal_notes']);
 
@@ -368,9 +366,7 @@ class LeadController extends Controller
 
         $lead = Lead::with('job')->findOrFail($id);
 
-        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
-            return response()->json(['message' => 'You can only delete leads assigned to you.'], 403);
-        }
+        $this->authz->assertLeadAccess($user, $lead);
 
         if ($lead->job && ! in_array($lead->job->status, ['cancelled'], true)) {
             return response()->json([
@@ -401,8 +397,8 @@ class LeadController extends Controller
 
         $lead = Lead::findOrFail($id);
 
-        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        if ($user->role === 'pm') {
+            $this->authz->assertLeadAccess($user, $lead);
         }
 
         if ($lead->status === 'converted') {
@@ -476,8 +472,8 @@ class LeadController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        if ($user->role === 'pm') {
+            $this->authz->assertLeadAccess($user, $lead);
         }
 
         $request->validate([
@@ -674,8 +670,8 @@ class LeadController extends Controller
 
         $lead = Lead::findOrFail($id);
 
-        if ($user->role === 'pm' && $lead->assigned_pm_id !== $user->id) {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        if ($user->role === 'pm') {
+            $this->authz->assertLeadAccess($user, $lead);
         }
 
         $request->validate([

@@ -9,6 +9,7 @@ use App\Models\Job;
 use App\Models\Quote;
 use App\Services\Accounting\InvoicePdfService;
 use App\Services\Accounting\InvoiceService;
+use App\Services\Authorization\PmAuthorizationService;
 use App\Services\JobNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -21,6 +22,7 @@ class InvoiceController extends Controller
         protected InvoiceService $invoices,
         protected InvoicePdfService $pdf,
         protected PaymentProviderInterface $payments,
+        protected PmAuthorizationService $authz,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -30,7 +32,9 @@ class InvoiceController extends Controller
 
         if ($user->role === 'customer') {
             $query->where('customer_id', $user->id);
-        } elseif (! in_array($user->role, ['owner', 'pm'])) {
+        } elseif ($user->role === 'pm') {
+            $this->authz->scopeInvoicesForPm($query, $user);
+        } elseif ($user->role !== 'owner') {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -55,6 +59,7 @@ class InvoiceController extends Controller
         ]);
 
         $job = Job::with(['quote', 'lead.companySource', 'invoice'])->findOrFail($data['job_id']);
+        $this->authz->assertJobAccess($request->user(), $job);
         if ($job->invoice) {
             return response()->json(['message' => 'Invoice already exists for this job', 'invoice' => $job->invoice], 422);
         }
@@ -68,6 +73,11 @@ class InvoiceController extends Controller
     public function show(Request $request, string $id): JsonResponse
     {
         $invoice = Invoice::with(['job', 'customer:id,name', 'quote', 'companySource'])->findOrFail($id);
+        $user = $request->user();
+        if ($user->role === 'customer' && (int) $invoice->customer_id !== (int) $user->id) {
+            abort(403);
+        }
+        $this->authz->assertInvoiceAccess($user, $invoice);
         $invoice->is_overdue = $invoice->is_overdue;
 
         return response()->json($invoice);
@@ -80,6 +90,7 @@ class InvoiceController extends Controller
         }
 
         $invoice = Invoice::findOrFail($id);
+        $this->authz->assertInvoiceAccess($request->user(), $invoice);
         $data = $request->validate([
             'status' => 'sometimes|in:draft,invoice_sent,awaiting_payment,payment_pending,payment_failed,sent,partially_paid,paid,refunded,disputed,overdue,cancelled',
             'notes' => 'nullable|string',
@@ -102,6 +113,7 @@ class InvoiceController extends Controller
         }
 
         $quote = Quote::with('job.invoice')->findOrFail($quoteId);
+        $this->authz->assertQuoteAccess(auth()->user(), $quote);
 
         if ($quote->status !== 'approved') {
             return response()->json(['message' => 'Only approved quotes can be converted to invoices'], 422);
@@ -124,6 +136,8 @@ class InvoiceController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        $this->authz->assertJobAccess(auth()->user(), $job);
+
         $job->loadMissing('invoice');
         if ($job->invoice) {
             return response()->json(['message' => 'Invoice already exists', 'invoice' => $job->invoice], 422);
@@ -140,6 +154,8 @@ class InvoiceController extends Controller
         if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
+
+        $this->authz->assertInvoiceAccess(auth()->user(), $invoice);
 
         $link = $this->payments->createPaymentLink($invoice);
         $invoice->update([
@@ -164,6 +180,7 @@ class InvoiceController extends Controller
         if (! in_array($user->role, ['owner', 'pm', 'customer'], true)) {
             abort(403);
         }
+        $this->authz->assertInvoiceAccess($user, $invoice);
 
         $binary = $this->pdf->pdfBinary($invoice);
         $filename = ($invoice->invoice_number ?: 'invoice-'.$invoice->id).'.pdf';

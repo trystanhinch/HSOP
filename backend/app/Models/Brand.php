@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\HasTestData;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Brand extends Model
@@ -55,6 +56,13 @@ class Brand extends Model
     public function contentEditors(): HasMany
     {
         return $this->hasMany(User::class);
+    }
+
+    public function assignedPms(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'pm_brand_assignments', 'brand_id', 'user_id')
+            ->withTimestamps()
+            ->withPivot(['assigned_by', 'assigned_at']);
     }
 
     public function pricingRules(): HasMany

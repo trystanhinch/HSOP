@@ -39,6 +39,11 @@ export default function Settings() {
   const [smsLogs, setSmsLogs] = useState([]);
   const [emailLogs, setEmailLogs] = useState([]);
   const [users, setUsers] = useState([]);
+  const [pmBrandAssignments, setPmBrandAssignments] = useState([]);
+  const [assignableBrands, setAssignableBrands] = useState([]);
+  const [brandEditUserId, setBrandEditUserId] = useState(null);
+  const [brandEditIds, setBrandEditIds] = useState([]);
+  const [brandSaving, setBrandSaving] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [roleFilter, setRoleFilter] = useState('all');
   const [saving, setSaving] = useState(false);
@@ -60,6 +65,41 @@ export default function Settings() {
 
   const loadAdminUsers = () => {
     api.get('/admin/users').then(({ data }) => setUsers(data)).catch(() => setUsers([]));
+    api.get('/admin/pm-brand-assignments').then(({ data }) => {
+      setPmBrandAssignments(data.assignments || []);
+      setAssignableBrands(data.brands || []);
+    }).catch(() => {
+      setPmBrandAssignments([]);
+      setAssignableBrands([]);
+    });
+  };
+
+  const openBrandEditor = (pmUser) => {
+    const row = pmBrandAssignments.find((a) => a.user_id === pmUser.id);
+    setBrandEditUserId(pmUser.id);
+    setBrandEditIds([...(row?.brand_ids || [])]);
+  };
+
+  const toggleBrandId = (brandId) => {
+    const id = Number(brandId);
+    setBrandEditIds((prev) => (
+      prev.map(Number).includes(id) ? prev.filter((x) => Number(x) !== id) : [...prev.map(Number), id]
+    ));
+  };
+
+  const savePmBrands = async () => {
+    if (!brandEditUserId) return;
+    setBrandSaving(true);
+    try {
+      await api.put(`/admin/pm-brand-assignments/${brandEditUserId}`, { brand_ids: brandEditIds });
+      await showSuccess('PM brand assignments updated.');
+      setBrandEditUserId(null);
+      loadAdminUsers();
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to update brand assignments.');
+    } finally {
+      setBrandSaving(false);
+    }
   };
 
   const loadSettings = () => {
@@ -507,6 +547,7 @@ export default function Settings() {
                     <th className="px-4 py-3 text-left font-medium text-slate-500">Email</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-500">Phone</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-500">Role</th>
+                    <th className="px-4 py-3 text-left font-medium text-slate-500">Brands</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-500">Status</th>
                     <th className="px-4 py-3 text-left font-medium text-slate-500">Action</th>
                   </tr>
@@ -514,7 +555,7 @@ export default function Settings() {
                 <tbody className="divide-y divide-slate-100">
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-4 py-12 text-center text-slate-500">No users found.</td>
+                      <td colSpan={7} className="px-4 py-12 text-center text-slate-500">No users found.</td>
                     </tr>
                   ) : filteredUsers.map((user) => (
                     <tr key={user.id} className="hover:bg-slate-50">
@@ -530,6 +571,21 @@ export default function Settings() {
                         >
                           {user.role === 'pm' ? 'Project Manager' : 'Contractor'}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 text-xs max-w-[180px]">
+                        {user.role === 'pm' ? (
+                          <button
+                            type="button"
+                            onClick={() => openBrandEditor(user)}
+                            className="text-left text-blue-600 hover:text-blue-800"
+                          >
+                            {(() => {
+                              const row = pmBrandAssignments.find((a) => a.user_id === user.id);
+                              const names = (row?.brands || []).map((b) => b.company_name);
+                              return names.length ? names.join(', ') : 'No brands (no access)';
+                            })()}
+                          </button>
+                        ) : '—'}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`text-xs px-2 py-1 rounded-full ${
@@ -558,6 +614,46 @@ export default function Settings() {
               </table>
             </div>
           </div>
+
+          {brandEditUserId && (
+            <div className="bg-white rounded-xl border border-slate-200 p-4 max-w-xl space-y-3">
+              <h3 className="font-semibold text-slate-800">Assign brands</h3>
+              <p className="text-xs text-slate-500">Empty selection = no brand access for this PM.</p>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {assignableBrands.map((b) => (
+                  <label key={b.id} className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={brandEditIds.map(Number).includes(Number(b.id))}
+                      onChange={() => toggleBrandId(b.id)}
+                      className="rounded"
+                    />
+                    {b.company_name}
+                  </label>
+                ))}
+                {assignableBrands.length === 0 && (
+                  <p className="text-sm text-slate-500">No active brands found.</p>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={brandSaving}
+                  onClick={savePmBrands}
+                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-60"
+                >
+                  {brandSaving ? 'Saving…' : 'Save brands'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBrandEditUserId(null)}
+                  className="px-4 py-2 border border-slate-200 text-sm rounded-lg"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {showAddModal && (
             <AddUserModal

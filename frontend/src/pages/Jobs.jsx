@@ -41,6 +41,8 @@ export default function Jobs() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isContractor = user?.role === 'contractor';
+  const isPm = user?.role === 'pm';
+  const isOwner = user?.role === 'owner';
 
   const [jobs, setJobs] = useState([]);
   const [allContractorJobs, setAllContractorJobs] = useState([]);
@@ -228,7 +230,7 @@ export default function Jobs() {
 
   return (
     <div>
-      <PageHeader title="Jobs" />
+      <PageHeader title={isPm ? 'My Jobs' : 'Jobs'} />
       <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 space-y-3">
         <div className="flex flex-col sm:flex-row gap-2">
           <input type="text" placeholder="Search customer or address..." value={search} onChange={(e) => setSearch(e.target.value)}
@@ -248,10 +250,12 @@ export default function Jobs() {
             <option value="">All contractors</option>
             {contractors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <select value={pmId} onChange={(e) => setPmId(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
-            <option value="">All PMs</option>
-            {pms.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          {isOwner && (
+            <select value={pmId} onChange={(e) => setPmId(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
+              <option value="">All PMs</option>
+              {pms.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          )}
           <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2 text-sm">
             <option value="">Payment status</option>
             {PAYMENT_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}

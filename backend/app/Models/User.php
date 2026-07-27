@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -73,6 +74,18 @@ class User extends Authenticatable
     public function brand(): BelongsTo
     {
         return $this->belongsTo(Brand::class);
+    }
+
+    public function pmBrandAssignments(): HasMany
+    {
+        return $this->hasMany(PmBrandAssignment::class, 'user_id');
+    }
+
+    public function assignedBrands(): BelongsToMany
+    {
+        return $this->belongsToMany(Brand::class, 'pm_brand_assignments', 'user_id', 'brand_id')
+            ->withTimestamps()
+            ->withPivot(['assigned_by', 'assigned_at']);
     }
 
     public function isOwner(): bool
