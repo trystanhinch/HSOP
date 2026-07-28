@@ -118,7 +118,8 @@ class LeadQuoteWorkflowService
 
         return [
             'quote' => $quote->fresh(),
-            'portal_url' => $portalUrl,
+            'quote_url' => $quoteUrl,
+            'portal_url' => $quoteUrl,
             'sent_via' => [
                 'sms' => (bool) $lead->phone,
                 'email' => (bool) $lead->email,
