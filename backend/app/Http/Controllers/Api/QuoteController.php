@@ -279,13 +279,14 @@ class QuoteController extends Controller
 
     public function viewByToken(string $token): JsonResponse
     {
-        $quote = Quote::where('customer_token', $token)
+        $quote = Quote::withTestData()
+            ->where('customer_token', $token)
             ->with([
                 'customer:id,name,email,phone',
-                'lead:id,contact_name,address,service_category,company_id,assigned_pm_id',
+                'lead' => fn ($q) => $q->withTestData()->select('id', 'contact_name', 'address', 'service_category', 'company_id', 'assigned_pm_id'),
                 'lead.company:id,name,phone,email',
                 'lead.assignedPm:id,name,email,phone',
-                'job:id,address,service_category,status,scope_of_work,scheduled_start_date,estimated_completion_date,scheduled_end_date,company_id,pm_id',
+                'job' => fn ($q) => $q->withTestData()->select('id', 'address', 'service_category', 'status', 'scope_of_work', 'scheduled_start_date', 'estimated_completion_date', 'scheduled_end_date', 'company_id', 'pm_id'),
                 'job.company:id,name,phone,email',
                 'job.pm:id,name,email,phone',
                 'items',
@@ -300,10 +301,10 @@ class QuoteController extends Controller
             $quote->update(['status' => 'viewed', 'viewed_at' => now()]);
         }
 
-        $address = $quote->job->address ?? $quote->lead?->address ?? '';
-        $serviceCategory = $quote->job->service_category ?? $quote->lead?->service_category ?? '';
-        $jobStatus = $quote->job->status ?? '';
-        $scopeOfWork = $quote->scope_of_work ?: ($quote->job->scope_of_work ?? $quote->lead?->project_description ?? '');
+        $address = $quote->job?->address ?? $quote->lead?->address ?? '';
+        $serviceCategory = $quote->job?->service_category ?? $quote->lead?->service_category ?? '';
+        $jobStatus = $quote->job?->status ?? '';
+        $scopeOfWork = $quote->scope_of_work ?: ($quote->job?->scope_of_work ?? $quote->lead?->project_description ?? '');
         $companyName = optional($quote->job?->company)->name ?? optional($quote->lead?->company)->name ?? 'ServiceOP';
         $pm = $quote->job?->pm ?? $quote->lead?->assignedPm;
 
@@ -338,7 +339,7 @@ class QuoteController extends Controller
 
     public function approveByToken(string $token): JsonResponse
     {
-        $quote = Quote::with(['job', 'lead'])->where('customer_token', $token)->first();
+        $quote = Quote::withTestData()->with(['job', 'lead'])->where('customer_token', $token)->first();
 
         if (! $quote) {
             return response()->json(['message' => 'This link is invalid or has expired.'], 404);
@@ -358,7 +359,7 @@ class QuoteController extends Controller
     public function rejectByToken(Request $request, string $token): JsonResponse
     {
         $request->validate(['rejection_reason' => 'required|string']);
-        $quote = Quote::with('job')->where('customer_token', $token)->first();
+        $quote = Quote::withTestData()->with('job')->where('customer_token', $token)->first();
 
         if (! $quote) {
             return response()->json(['message' => 'This link is invalid or has expired.'], 404);

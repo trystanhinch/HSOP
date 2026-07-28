@@ -103,9 +103,9 @@ class LeadQuoteWorkflowService
 
         $lead->update(['status' => 'quote_needed']);
 
-        $portalUrl = SmsMessageTemplates::customerPortalUrl($lead->customer_portal_token);
+        $quoteUrl = SmsMessageTemplates::frontendUrl('quote/view/'.$quote->customer_token);
 
-        $this->notifications->quoteSent($quote->fresh(['customer']), $portalUrl);
+        $this->notifications->quoteSent($quote->fresh(['customer']), $quoteUrl);
 
         AuditLog::create([
             'user_id' => auth()->id(),

@@ -38,19 +38,18 @@ class JobNotificationService
         $quote->loadMissing(['customer', 'job.pm', 'job.lead', 'lead.assignedPm']);
         $customer = $quote->customer;
 
-        $portalUrl = $quoteUrl;
-        if ($quote->lead?->customer_portal_token) {
-            $portalUrl = SmsMessageTemplates::customerPortalUrl($quote->lead->customer_portal_token);
-        } elseif ($quote->job?->lead?->customer_portal_token) {
-            $portalUrl = SmsMessageTemplates::customerPortalUrl($quote->job->lead->customer_portal_token);
-        }
+        // Always use the dedicated quote view URL. Do not substitute the customer
+        // portal path — /portal/{token} can 404 when ExcludeTestDataScope hides the lead.
+        $actionUrl = $quote->customer_token
+            ? $this->frontendUrl('quote/view/'.$quote->customer_token)
+            : $quoteUrl;
 
         $location = $quote->job?->address ?? $quote->lead?->address ?? $quote->lead?->contact_name ?? 'your project';
 
         if ($customer) {
             $this->sms->sendToUser(
                 $customer,
-                SmsMessageTemplates::quoteSent($customer, $quote, $portalUrl),
+                SmsMessageTemplates::quoteSent($customer, $quote, $actionUrl),
                 'quote_sent',
                 $quote->job_id
             );
@@ -65,7 +64,7 @@ class JobNotificationService
                 [
                     'heading' => 'Your Quote Is Ready',
                     'body' => "Your quote for {$location} is ready.\n\nQuote Total: \${$quote->customer_total} (includes GST)",
-                    'actionUrl' => $portalUrl,
+                    'actionUrl' => $actionUrl,
                     'actionLabel' => 'View Quote',
                 ],
                 'quote_sent',
@@ -74,7 +73,7 @@ class JobNotificationService
             );
         }
 
-        $this->audit('quote_sent', 'quote', $quote->id, null, null, ['quote_url' => $portalUrl]);
+        $this->audit('quote_sent', 'quote', $quote->id, null, null, ['quote_url' => $actionUrl]);
     }
 
     public function quoteApproved(Quote $quote): void

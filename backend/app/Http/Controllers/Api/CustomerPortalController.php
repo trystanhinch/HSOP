@@ -42,7 +42,15 @@ class CustomerPortalController extends Controller
 
     protected function leadFromToken(string $token): Lead
     {
-        $lead = Lead::where('customer_portal_token', $token)->first();
+        $token = trim($token);
+        if ($token === '') {
+            abort(404, 'This link is invalid or has expired.');
+        }
+
+        // Opaque portal token is the credential. Bypass ExcludeTestDataScope so links
+        // still resolve when a lead was incorrectly flagged (or is_test_data is NULL).
+        // There is no status/expiry check beyond token match.
+        $lead = Lead::withTestData()->where('customer_portal_token', $token)->first();
 
         if (! $lead) {
             abort(404, 'This link is invalid or has expired.');
@@ -60,11 +68,18 @@ class CustomerPortalController extends Controller
     {
         $lead = $this->leadFromToken($token);
         $lead->load('assignedPm:id,name,email,phone');
-        $job = Job::with(['quote', 'invoice', 'updates.photos', 'updates.postedBy:id,name', 'pm:id,name,email,phone'])
+        $job = Job::withTestData()
+            ->with(['quote' => fn ($q) => $q->withTestData(), 'invoice', 'updates.photos', 'updates.postedBy:id,name', 'pm:id,name,email,phone'])
             ->where('lead_id', $lead->id)
             ->first();
 
-        $leadQuote = Quote::leadLevelFor($lead);
+        $leadQuote = Quote::hasLeadIdColumn()
+            ? Quote::withTestData()
+                ->where('lead_id', $lead->id)
+                ->whereNull('job_id')
+                ->latest()
+                ->first()
+            : null;
         $activeQuote = $job?->quote ?? $leadQuote;
 
         $mapper = app(\App\Services\Workflow\WorkflowStatusMapper::class);
@@ -177,7 +192,7 @@ class CustomerPortalController extends Controller
     public function acceptCompletion(string $token): JsonResponse
     {
         $lead = $this->leadFromToken($token);
-        $job = Job::where('lead_id', $lead->id)->firstOrFail();
+        $job = Job::withTestData()->where('lead_id', $lead->id)->firstOrFail();
 
         if ($job->status !== 'pending_customer_approval') {
             return response()->json(['message' => 'Job is not awaiting customer approval'], 422);
@@ -222,7 +237,7 @@ class CustomerPortalController extends Controller
     {
         $request->validate(['description' => 'required|string|max:2000']);
         $lead = $this->leadFromToken($token);
-        $job = Job::with(['contractor', 'pm', 'lead'])->where('lead_id', $lead->id)->firstOrFail();
+        $job = Job::withTestData()->with(['contractor', 'pm', 'lead'])->where('lead_id', $lead->id)->firstOrFail();
 
         $revision = RevisionRequest::create([
             'job_id' => $job->id,
@@ -294,7 +309,7 @@ class CustomerPortalController extends Controller
     public function notifyPayment(string $token): JsonResponse
     {
         $lead = $this->leadFromToken($token);
-        $job = Job::where('lead_id', $lead->id)->firstOrFail();
+        $job = Job::withTestData()->where('lead_id', $lead->id)->firstOrFail();
 
         if (! in_array($job->status, ['payment_pending', 'etransfer_pending_confirmation'], true)) {
             return response()->json(['message' => 'Job is not awaiting payment'], 422);
@@ -326,7 +341,7 @@ class CustomerPortalController extends Controller
     public function paymentDetails(string $token): JsonResponse
     {
         $lead = $this->leadFromToken($token);
-        $job = Job::with(['quote', 'invoice', 'lead'])->where('lead_id', $lead->id)->firstOrFail();
+        $job = Job::withTestData()->with(['quote', 'invoice', 'lead'])->where('lead_id', $lead->id)->firstOrFail();
 
         if (! in_array($job->status, ['payment_pending', 'etransfer_pending_confirmation'], true)) {
             return response()->json(['message' => 'Job is not awaiting payment'], 422);
