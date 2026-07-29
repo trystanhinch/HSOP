@@ -12,6 +12,7 @@ use Illuminate\Http\Request;
 class ContractorDocumentController extends Controller
 {
     public function __construct(protected UploadStorage $uploads) {}
+
     public function index(string $id): JsonResponse
     {
         $contractor = Contractor::findOrFail($id);
@@ -25,9 +26,45 @@ class ContractorDocumentController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        return response()->json(
-            ContractorDocument::where('contractor_id', $contractor->id)->latest()->get()
-        );
+        $docs = ContractorDocument::where('contractor_id', $contractor->id)->latest()->get()
+            ->map(fn ($d) => array_merge($d->toArray(), ['computed_status' => self::computeStatus($d)]));
+
+        return response()->json($docs);
+    }
+
+    /**
+     * CT-03: Owner review queue — all pending documents across contractors.
+     */
+    public function pendingReview(): JsonResponse
+    {
+        $docs = ContractorDocument::where('status', 'pending_review')
+            ->with(['contractor:id,legal_name,operating_name,contact_name,user_id', 'contractor.user:id,name,email', 'uploader:id,name'])
+            ->latest()
+            ->get()
+            ->map(fn ($d) => array_merge($d->toArray(), ['computed_status' => self::computeStatus($d)]));
+
+        return response()->json($docs);
+    }
+
+    public static function computeStatus(ContractorDocument $doc): string
+    {
+        if ($doc->status === 'rejected') {
+            return 'rejected';
+        }
+        if ($doc->status === 'pending_review') {
+            return 'pending_review';
+        }
+        if ($doc->status === 'approved' && $doc->expiry_date) {
+            $expiry = \Carbon\Carbon::parse($doc->expiry_date);
+            if ($expiry->isPast()) {
+                return 'expired';
+            }
+            if ($expiry->diffInDays(now(), absolute: true) <= 30 && $expiry->isFuture()) {
+                return 'expiring_soon';
+            }
+        }
+
+        return $doc->status ?: 'not_uploaded';
     }
 
     public function upload(Request $request, string $id): JsonResponse

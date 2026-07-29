@@ -453,6 +453,11 @@ class LeadController extends Controller
             app(\App\Services\Messaging\AssignmentMessageService::class)
                 ->carryForwardOnConvert($lead->fresh(), $job);
 
+            // CT-04: carry site-visit photos forward to the job.
+            \App\Models\SiteVisitPhoto::where('lead_id', $lead->id)
+                ->whereNull('job_id')
+                ->update(['job_id' => $job->id]);
+
             AuditLog::create([
                 'user_id' => $user->id,
                 'user_role' => $user->role,

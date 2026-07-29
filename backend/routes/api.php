@@ -251,6 +251,18 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     Route::get('/contractors/{id}/documents', [ContractorDocumentController::class, 'index']);
     Route::post('/contractors/{id}/documents', [ContractorDocumentController::class, 'upload']);
     Route::put('/contractors/{id}/documents/{doc}/review', [ContractorDocumentController::class, 'review'])->middleware('role:owner,pm');
+    Route::get('/compliance/pending-review', [ContractorDocumentController::class, 'pendingReview'])->middleware('role:owner,pm');
+
+    // CT-04: Site visit workflow
+    Route::get('/site-visits/{siteVisit}', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'show']);
+    Route::post('/site-visits/{siteVisit}/accept', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'accept'])->middleware('role:contractor');
+    Route::post('/site-visits/{siteVisit}/decline', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'decline'])->middleware('role:contractor');
+    Route::post('/site-visits/{siteVisit}/draft', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'saveDraft'])->middleware('role:contractor');
+    Route::post('/site-visits/{siteVisit}/submit-price', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'submitPrice'])->middleware('role:contractor');
+    Route::post('/site-visits/{siteVisit}/request-revision', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'requestRevision'])->middleware('role:owner,pm');
+    Route::post('/site-visits/{siteVisit}/revise', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'revise'])->middleware('role:contractor');
+    Route::post('/site-visits/{siteVisit}/complete', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'markComplete'])->middleware('role:contractor');
+    Route::post('/site-visits/{siteVisit}/photos', [\App\Http\Controllers\Api\SiteVisitWorkflowController::class, 'uploadPhoto'])->middleware('role:contractor');
 
     Route::get('/customers', [CustomerController::class, 'index'])->middleware('role:owner,pm');
     Route::get('/customers/duplicate-groups/{groupId}', [CustomerController::class, 'duplicateGroup'])->middleware('role:owner');

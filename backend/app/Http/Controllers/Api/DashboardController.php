@@ -33,6 +33,7 @@ class DashboardController extends Controller
             'revision_requested' => Job::productionOnly()->where('status', 'revision_requested')->count(),
             'payment_pending' => Job::productionOnly()->where('status', 'payment_pending')->count(),
             'etransfer_to_confirm' => Job::productionOnly()->where('status', 'etransfer_pending_confirmation')->count(),
+            'compliance_pending_review' => \App\Models\ContractorDocument::where('status', 'pending_review')->count(),
             'site_visits_today' => \App\Models\SiteVisit::productionOnly()->where('visit_date', today())->count(),
             'site_visits_this_week' => \App\Models\SiteVisit::productionOnly()->whereBetween('visit_date', [now()->startOfWeek(), now()->endOfWeek()])->count(),
             'completed_jobs' => Job::productionOnly()->whereIn('status', ['completed', 'paid_completed'])->count(),
@@ -226,10 +227,11 @@ class DashboardController extends Controller
             'jobs_list' => $jobs,
             'site_visits' => $siteVisits,
             'work_items' => $assignments->workItemsFor($user),
-            'document_status' => [
-                'wcb' => $contractor->wcb_status ?? 'not_uploaded',
-                'insurance' => $contractor->liability_insurance_status ?? 'not_uploaded',
-            ],
+            'document_status' => $contractor ? [
+                'wcb' => $this->resolveDocStatus($contractor, 'wcb'),
+                'insurance' => $this->resolveDocStatus($contractor, 'liability_insurance'),
+            ] : ['wcb' => 'not_uploaded', 'insurance' => 'not_uploaded'],
+            'contractor_id' => $contractor?->id,
             'contractor_profile' => $contractor ? $contractor->only(['wcb_status', 'liability_insurance_status', 'approval_status']) : null,
             'recent_messages' => \App\Models\Message::where('sender_id', '!=', $id)
                 ->where(function ($q) use ($id) {
@@ -270,6 +272,25 @@ class DashboardController extends Controller
                 ->where('is_read', false)
                 ->count(),
         ]);
+    }
+
+    private function resolveDocStatus(\App\Models\Contractor $contractor, string $type): string
+    {
+        $statusField = $type === 'wcb' ? 'wcb_status' : 'liability_insurance_status';
+        $expiryField = $type === 'wcb' ? 'wcb_expiry_date' : 'insurance_expiry_date';
+        $status = $contractor->$statusField ?? 'not_uploaded';
+
+        if ($status === 'approved' && $contractor->$expiryField) {
+            $expiry = \Carbon\Carbon::parse($contractor->$expiryField);
+            if ($expiry->isPast()) {
+                return 'expired';
+            }
+            if ($expiry->isFuture() && $expiry->diffInDays(now(), absolute: true) <= 30) {
+                return 'expiring_soon';
+            }
+        }
+
+        return $status;
     }
 
     public function kpis(): JsonResponse

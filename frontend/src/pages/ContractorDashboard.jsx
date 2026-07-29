@@ -14,25 +14,31 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
-function DocStatus({ label, status }) {
-  const approved = status === 'approved';
-  const pending = status === 'pending_review';
-  return (
-    <div className="flex justify-between items-center p-3 bg-slate-50 rounded-md">
+const docStatusConfig = {
+  approved: { label: 'Approved', cls: 'text-green-700 bg-green-100', Icon: CheckCircle },
+  pending_review: { label: 'Pending Review', cls: 'text-yellow-700 bg-yellow-100', Icon: null },
+  rejected: { label: 'Rejected', cls: 'text-red-700 bg-red-100', Icon: AlertTriangle },
+  expired: { label: 'Expired', cls: 'text-red-700 bg-red-100', Icon: AlertTriangle },
+  expiring_soon: { label: 'Expiring Soon', cls: 'text-orange-700 bg-orange-100', Icon: AlertTriangle },
+  not_uploaded: { label: 'Upload Required', cls: 'text-yellow-700 bg-yellow-100', Icon: AlertTriangle },
+};
+
+function DocStatus({ label, status, contractorId }) {
+  const cfg = docStatusConfig[status] || docStatusConfig.not_uploaded;
+  const needsAction = ['not_uploaded', 'rejected', 'expired', 'expiring_soon'].includes(status);
+  const content = (
+    <div className={`flex justify-between items-center p-3 rounded-md ${needsAction ? 'bg-orange-50 border border-orange-200' : 'bg-slate-50'}`}>
       <span className="text-sm text-slate-900">{label}</span>
-      {approved ? (
-        <span className="flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-1 rounded">
-          <CheckCircle size={14} /> Approved
-        </span>
-      ) : pending ? (
-        <span className="text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-1 rounded">Pending Review</span>
-      ) : (
-        <span className="flex items-center gap-1 text-xs font-medium text-yellow-700 bg-yellow-100 px-2 py-1 rounded">
-          <AlertTriangle size={14} /> Upload Required
-        </span>
-      )}
+      <span className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded ${cfg.cls}`}>
+        {cfg.Icon && <cfg.Icon size={14} />} {cfg.label}
+      </span>
     </div>
   );
+
+  if (needsAction && contractorId) {
+    return <Link to={`/contractors/${contractorId}`} className="block hover:ring-2 hover:ring-blue-300 rounded-md">{content}</Link>;
+  }
+  return content;
 }
 
 export default function ContractorDashboard() {
@@ -138,7 +144,7 @@ export default function ContractorDashboard() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => navigate(sv.url)}
+                  onClick={() => navigate(sv.id && sv.type === 'site_visit' ? `/site-visits/${sv.id}` : sv.url)}
                   className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs rounded-lg px-4 py-2 font-medium whitespace-nowrap"
                 >
                   View Details
@@ -152,8 +158,8 @@ export default function ContractorDashboard() {
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <h3 className="text-sm font-semibold text-slate-900 mb-3">Document Status</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl">
-          <DocStatus label="WCB Certificate" status={profile.wcb || profile.wcb_status} />
-          <DocStatus label="Liability Insurance" status={profile.insurance || profile.liability_insurance_status} />
+          <DocStatus label="WCB Certificate" status={data.document_status?.wcb || profile.wcb_status || 'not_uploaded'} contractorId={data.contractor_id} />
+          <DocStatus label="Liability Insurance" status={data.document_status?.insurance || profile.liability_insurance_status || 'not_uploaded'} contractorId={data.contractor_id} />
         </div>
       </div>
 

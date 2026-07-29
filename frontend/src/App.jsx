@@ -37,6 +37,7 @@ import Unauthorized from './pages/Unauthorized';
 import CustomerQuoteView from './pages/CustomerQuoteView';
 import CustomerPortal from './pages/CustomerPortal';
 import PaymentPage from './pages/PaymentPage';
+import SiteVisitWorkflow from './pages/SiteVisitWorkflow';
 
 export default function App() {
   return (
@@ -66,6 +67,7 @@ export default function App() {
               <Route path="/leads/:id" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><LeadDetail /></RoleGuard>} />
               <Route path="/jobs" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><Jobs /></RoleGuard>} />
               <Route path="/jobs/:id" element={<RoleGuard roles={['owner', 'pm', 'contractor', 'customer']}><JobDetail /></RoleGuard>} />
+              <Route path="/site-visits/:id" element={<RoleGuard roles={['contractor', 'owner', 'pm']}><SiteVisitWorkflow /></RoleGuard>} />
               <Route path="/contractors" element={<RoleGuard roles={['owner', 'pm']}><Contractors /></RoleGuard>} />
               <Route path="/contractors/:id" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><ContractorProfile /></RoleGuard>} />
               <Route path="/customers" element={<RoleGuard roles={['owner', 'pm']}><Customers /></RoleGuard>} />
