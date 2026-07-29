@@ -74,6 +74,9 @@ class LeadIntakeQuarantineService
             fieldConfidence: $evaluation['field_confidence'],
             sendNotifications: $sendNotifications,
             isTestData: $isTest,
+            forceManualReview: false,
+            matchedNeedle: $evaluation['matched_needle'] ?? null,
+            matchMethod: $evaluation['match_method'] ?? null,
         );
 
         $row = $this->storeQuarantine($rawEmail, $parsed, $evaluation, $context, 'auto_approved', $isTest, $result->lead?->id);
@@ -123,6 +126,8 @@ class LeadIntakeQuarantineService
             sendNotifications: $sendNotifications,
             isTestData: (bool) $item->is_test_data,
             forceManualReview: false,
+            matchedNeedle: $item->matched_needle,
+            matchMethod: $item->match_method,
         );
 
         $decision = $overrides === [] ? 'manually_approved' : 'edited_approved';
@@ -205,6 +210,8 @@ class LeadIntakeQuarantineService
             'validation_errors' => $evaluation['validation_errors'],
             'quarantine_reason' => $evaluation['reason'],
             'company_source_id' => $evaluation['company_source_id'],
+            'matched_needle' => $evaluation['matched_needle'] ?? null,
+            'match_method' => $evaluation['match_method'] ?? null,
             'duplicate_group_key' => $evaluation['duplicate_group_key'],
             'converted_lead_id' => $leadId,
             'is_test_data' => $isTest,

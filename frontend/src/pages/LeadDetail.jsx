@@ -887,11 +887,18 @@ export default function LeadDetail() {
           <div className="flex justify-between"><span className="text-slate-500">Category</span><span className="capitalize">{formatCategory(lead.service_category)}</span></div>
           <div className="flex justify-between"><span className="text-slate-500">Source</span><span>{lead.source || '—'}</span></div>
           {lead.company_source && (
-            <div className="flex justify-between">
-              <span className="text-slate-500">Company Source</span>
+            <div className="flex justify-between gap-2">
+              <span className="text-slate-500">Matched source rule</span>
               <span className="text-right max-w-[60%]">
                 {lead.company_source.company_name}
+                {lead.company_source.domain ? ` · ${lead.company_source.domain}` : ''}
                 {lead.company_source.sender_identity ? ` (${lead.company_source.sender_identity})` : ''}
+                {lead.parse_metadata?.matched_source_rule?.match_method
+                  ? ` · via ${lead.parse_metadata.matched_source_rule.match_method}`
+                  : ''}
+                {lead.parse_metadata?.matched_source_rule?.matched_needle
+                  ? ` · “${lead.parse_metadata.matched_source_rule.matched_needle}”`
+                  : ''}
               </span>
             </div>
           )}

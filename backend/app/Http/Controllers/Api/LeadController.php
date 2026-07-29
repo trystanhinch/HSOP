@@ -150,7 +150,7 @@ class LeadController extends Controller
             'assignedContractor:id,name,email,phone',
             'customer:id,name',
             'company:id,name',
-            'companySource:id,company_name,sender_identity,domain,default_pm_id',
+            'companySource:id,company_name,sender_identity,domain,default_pm_id,parser_type,parser_version',
             'companySource.defaultPm:id,name,email,phone',
             'photos',
             'job:id,status',

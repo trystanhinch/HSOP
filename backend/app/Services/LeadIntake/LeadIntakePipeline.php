@@ -152,6 +152,8 @@ class LeadIntakePipeline
         bool $sendNotifications = true,
         bool $isTestData = false,
         bool $forceManualReview = false,
+        ?string $matchedNeedle = null,
+        ?string $matchMethod = null,
     ): LeadIntakeResult {
         $phone = $fields['phone'] ?? null;
         if (is_string($phone) && (str_contains($phone, '@') || ! $this->looksLikePhoneDigits($phone))) {
@@ -236,6 +238,15 @@ class LeadIntakePipeline
                 'voicemail_duplicate_key' => $duplicateKey,
                 'intake_channel' => 'gmail_quarantine',
                 'ai_usage' => $classification['usage'] ?? null,
+                'matched_source_rule' => $companySource ? [
+                    'company_source_id' => $companySource->id,
+                    'company_name' => $companySource->company_name,
+                    'domain' => $companySource->domain,
+                    'matched_needle' => $matchedNeedle,
+                    'match_method' => $matchMethod,
+                    'parser_type' => $companySource->parser_type ?? 'lead_email_v1',
+                    'parser_version' => $companySource->parser_version ?? '1.0',
+                ] : null,
             ],
             'needs_manual_review' => $needsReview,
             'assigned_pm_id' => $companySource?->default_pm_id,

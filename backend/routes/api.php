@@ -320,6 +320,7 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
 
     Route::get('/settings', [SettingsController::class, 'index'])->middleware('role:owner');
     Route::post('/settings', [SettingsController::class, 'update'])->middleware('role:owner');
+    Route::get('/settings/pricing-preview', [SettingsController::class, 'pricingPreview'])->middleware('role:owner');
 
     // A-03 — customer payment destinations (owner-only; separate from contractor payout/Connect)
     Route::get('/payment-destinations', [PaymentDestinationController::class, 'index'])->middleware('role:owner');
@@ -329,9 +330,12 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     Route::middleware('role:owner')->group(function () {
         Route::get('/company-sources', [CompanySourceController::class, 'index']);
         Route::post('/company-sources', [CompanySourceController::class, 'store']);
+        Route::post('/company-sources/test-parser', [CompanySourceController::class, 'testParser']);
         Route::get('/company-sources/{companySource}', [CompanySourceController::class, 'show']);
         Route::put('/company-sources/{companySource}', [CompanySourceController::class, 'update']);
         Route::delete('/company-sources/{companySource}', [CompanySourceController::class, 'destroy']);
+        Route::get('/company-sources/{companySource}/health', [CompanySourceController::class, 'health']);
+        Route::get('/company-sources/{companySource}/versions', [CompanySourceController::class, 'versions']);
 
         Route::get('/pricing-rules/brands', [PricingRuleController::class, 'brands']);
         Route::post('/pricing-rules/preview', [PricingRuleController::class, 'preview']);

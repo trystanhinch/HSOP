@@ -143,6 +143,8 @@ export default function Settings() {
   const [templateVersions, setTemplateVersions] = useState({});
   const [pricingForm, setPricingForm] = useState({ gst_rate: '5', markup_divisor: '0.80' });
   const [splitForm, setSplitForm] = useState({ split_contractor_pct: '80', split_pm_pct: '10', split_company_pct: '10' });
+  const [calcExamplePrice, setCalcExamplePrice] = useState('800');
+  const [pricingPreview, setPricingPreview] = useState(null);
   const [paymentDestinations, setPaymentDestinations] = useState([]);
   const [paymentBrands, setPaymentBrands] = useState([]);
   const [paymentMode, setPaymentMode] = useState('TEST');
@@ -243,6 +245,7 @@ export default function Settings() {
         split_pm_pct: data.split_pm_pct || '10',
         split_company_pct: data.split_company_pct || '10',
       });
+      if (data.pricing_preview_example) setPricingPreview(data.pricing_preview_example);
       setPaymentLegacy({
         company_email: data.payment?.legacy_company_email || data.settings?.company_email || null,
         instructions: data.payment?.legacy_instructions || null,
@@ -281,6 +284,22 @@ export default function Settings() {
       loadAdminUsers();
     }
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!['GST & Markup', 'Payouts & Split'].includes(activeTab)) return undefined;
+    const t = setTimeout(() => {
+      api.get('/settings/pricing-preview', {
+        params: {
+          contractor_price: calcExamplePrice || 800,
+          gst_rate: pricingForm.gst_rate,
+          split_contractor_pct: splitForm.split_contractor_pct,
+          split_pm_pct: splitForm.split_pm_pct,
+          split_company_pct: splitForm.split_company_pct,
+        },
+      }).then(({ data }) => setPricingPreview(data)).catch(() => setPricingPreview(null));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [activeTab, calcExamplePrice, pricingForm, splitForm]);
 
   useEffect(() => {
     if (activeTab === 'AI Settings') {
@@ -676,18 +695,62 @@ export default function Settings() {
     saveSettings(notifForm, 'Notification settings saved.');
   };
 
-  const savePricing = (e) => {
+  const savePricing = async (e) => {
     e.preventDefault();
-    saveSettings(pricingForm, 'GST and markup settings saved.');
+    const ok = await confirmAction({
+      title: 'Apply GST / markup changes?',
+      text: 'These defaults only affect FUTURE quotes and jobs. Existing jobs keep their saved split unless an authorized override is recorded.',
+      confirmText: 'Yes, update future pricing',
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      const payload = {
+        ...pricingForm,
+        ...splitForm,
+        confirm_pricing_change: true,
+        example_contractor_price: calcExamplePrice,
+      };
+      await api.post('/settings', payload);
+      await showSuccess('GST and markup settings saved.');
+      loadSettings();
+    } catch (err) {
+      await showError(err.response?.data?.message || err.response?.data?.errors?.split?.[0] || 'Failed to save settings.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const splitTotal = parseFloat(splitForm.split_contractor_pct || 0) + parseFloat(splitForm.split_pm_pct || 0) + parseFloat(splitForm.split_company_pct || 0);
   const splitValid = Math.abs(splitTotal - 100) < 0.01;
 
-  const saveSplit = (e) => {
+  const saveSplit = async (e) => {
     e.preventDefault();
     if (!splitValid) return;
-    saveSettings(splitForm, 'Payout split settings saved.');
+    const ok = await confirmAction({
+      title: 'Apply payout split changes?',
+      text: 'These defaults only affect FUTURE jobs. Existing jobs keep their original contractor/PM/company split.',
+      confirmText: 'Yes, update future splits',
+    });
+    if (!ok) return;
+    setSaving(true);
+    try {
+      const payload = {
+        ...pricingForm,
+        ...splitForm,
+        confirm_pricing_change: true,
+        example_contractor_price: calcExamplePrice,
+      };
+      // Keep markup divisor in sync with contractor %
+      payload.markup_divisor = (parseFloat(splitForm.split_contractor_pct || 80) / 100).toFixed(4);
+      await api.post('/settings', payload);
+      await showSuccess('Payout split settings saved.');
+      loadSettings();
+    } catch (err) {
+      await showError(err.response?.data?.message || err.response?.data?.errors?.split?.[0] || 'Failed to save settings.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const savePayment = async (e) => {
@@ -1125,28 +1188,59 @@ export default function Settings() {
       )}
 
       {activeTab === 'GST & Markup' && (
-        <form onSubmit={savePricing} className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
+        <form onSubmit={savePricing} className="bg-white rounded-xl border border-slate-200 p-6 max-w-3xl space-y-4">
           <h3 className="font-semibold text-slate-800">Pricing Formula</h3>
-          <p className="text-sm text-slate-500">Customer subtotal = contractor price ÷ markup divisor (default 0.80 = 80/20 split)</p>
-          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Changes apply to all new quotes going forward. Existing quotes keep their original amounts.</p>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">GST Rate (%)</label>
-            <input type="number" step="0.01" value={pricingForm.gst_rate} onChange={(e) => setPricingForm({ ...pricingForm, gst_rate: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          <p className="text-sm text-slate-500">
+            Customer subtotal = contractor price ÷ contractor share (markup divisor). GST is tax — labelled separately from company margin.
+          </p>
+          <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            Changes apply to future quotes/jobs only. Existing jobs keep their saved split.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">GST Rate (%)</label>
+              <input type="number" step="0.01" value={pricingForm.gst_rate} onChange={(e) => setPricingForm({ ...pricingForm, gst_rate: e.target.value })}
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Markup Divisor (synced from contractor %)</label>
+              <input type="number" step="0.01" value={(parseFloat(splitForm.split_contractor_pct || 80) / 100).toFixed(2)} readOnly
+                className="w-full border border-slate-200 bg-slate-50 rounded-lg px-3 py-2 text-sm" />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Markup Divisor</label>
-            <input type="number" step="0.01" value={pricingForm.markup_divisor} onChange={(e) => setPricingForm({ ...pricingForm, markup_divisor: e.target.value })}
-              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
+            <div className="flex flex-wrap items-end gap-3 justify-between">
+              <h4 className="font-medium text-slate-800 text-sm">Live calculator</h4>
+              <label className="text-xs text-slate-600">
+                Example contractor price
+                <input type="number" step="0.01" value={calcExamplePrice}
+                  onChange={(e) => setCalcExamplePrice(e.target.value)}
+                  className="ml-2 border border-slate-300 rounded px-2 py-1 w-28" />
+              </label>
+            </div>
+            {pricingPreview ? (
+              <dl className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                <div><dt className="text-slate-500 text-xs">Customer subtotal</dt><dd className="font-medium">${Number(pricingPreview.customer_subtotal).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">{pricingPreview.gst_label || 'GST'}</dt><dd className="font-medium">${Number(pricingPreview.gst).toFixed(2)} ({pricingPreview.gst_rate}%)</dd></div>
+                <div><dt className="text-slate-500 text-xs">Customer total</dt><dd className="font-medium">${Number(pricingPreview.customer_total).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">Contractor share</dt><dd>${Number(pricingPreview.contractor_share).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">PM share</dt><dd>${Number(pricingPreview.pm_share).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">Company margin</dt><dd>${Number(pricingPreview.company_share).toFixed(2)}</dd></div>
+              </dl>
+            ) : (
+              <p className="text-xs text-slate-500">Enter valid splits totaling 100% to preview.</p>
+            )}
           </div>
-          <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
+
+          <button type="submit" disabled={saving || !splitValid} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
             {saving ? 'Saving...' : 'Save Pricing Settings'}
           </button>
         </form>
       )}
 
       {activeTab === 'Payouts & Split' && (
-        <form onSubmit={saveSplit} className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
+        <form onSubmit={saveSplit} className="bg-white rounded-xl border border-slate-200 p-6 max-w-3xl space-y-4">
           <h3 className="font-semibold text-slate-800">Default Payout Split (80/10/10)</h3>
           <p className="text-sm text-slate-500">Customer price = contractor price ÷ contractor %. PM and company shares are calculated from customer subtotal.</p>
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -1175,6 +1269,29 @@ export default function Settings() {
           {!splitValid && (
             <p className="text-sm text-red-600">Split must add up to 100. Current total: {splitTotal.toFixed(1)}</p>
           )}
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
+            <div className="flex flex-wrap items-end gap-3 justify-between">
+              <h4 className="font-medium text-slate-800 text-sm">Live calculator ($800 example)</h4>
+              <label className="text-xs text-slate-600">
+                Contractor price
+                <input type="number" step="0.01" value={calcExamplePrice}
+                  onChange={(e) => setCalcExamplePrice(e.target.value)}
+                  className="ml-2 border border-slate-300 rounded px-2 py-1 w-28" />
+              </label>
+            </div>
+            {pricingPreview && splitValid ? (
+              <dl className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                <div><dt className="text-slate-500 text-xs">Subtotal</dt><dd className="font-medium">${Number(pricingPreview.customer_subtotal).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">GST (tax)</dt><dd>${Number(pricingPreview.gst).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">Total</dt><dd className="font-medium">${Number(pricingPreview.customer_total).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">Contractor</dt><dd>${Number(pricingPreview.contractor_share).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">PM</dt><dd>${Number(pricingPreview.pm_share).toFixed(2)}</dd></div>
+                <div><dt className="text-slate-500 text-xs">Company</dt><dd>${Number(pricingPreview.company_share).toFixed(2)}</dd></div>
+              </dl>
+            ) : null}
+          </div>
+
           <button type="submit" disabled={saving || !splitValid} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
             {saving ? 'Saving...' : 'Save Split Settings'}
           </button>

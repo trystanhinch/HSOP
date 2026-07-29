@@ -29,6 +29,8 @@ class IntakeQuarantine extends Model
         'validation_errors',
         'quarantine_reason',
         'company_source_id',
+        'matched_needle',
+        'match_method',
         'duplicate_group_key',
         'duplicate_of_quarantine_id',
         'converted_lead_id',

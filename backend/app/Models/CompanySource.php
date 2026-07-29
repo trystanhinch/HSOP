@@ -22,6 +22,10 @@ class CompanySource extends Model
         'intake_allow_patterns',
         'marketing_cost_monthly',
         'status',
+        'priority',
+        'parser_type',
+        'parser_version',
+        'fallback_behavior',
     ];
 
     protected function casts(): array

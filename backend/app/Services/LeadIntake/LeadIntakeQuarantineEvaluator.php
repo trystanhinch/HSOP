@@ -66,6 +66,8 @@ class LeadIntakeQuarantineEvaluator
      *   field_confidence: list<array{field: string, score: int, source_text: ?string, valid: bool}>,
      *   validation_errors: list<string>,
      *   company_source_id: ?int,
+     *   matched_needle: ?string,
+     *   match_method: ?string,
      *   from_header: ?string,
      *   subject: ?string,
      *   duplicate_group_key: ?string
@@ -89,13 +91,16 @@ class LeadIntakeQuarantineEvaluator
                 'field_confidence' => $confidence,
                 'validation_errors' => $errors,
                 'company_source_id' => null,
+                'matched_needle' => null,
+                'match_method' => null,
                 'from_header' => $fromHeader,
                 'subject' => $subject,
                 'duplicate_group_key' => $this->voicemailDuplicateKey($parsed, $fields),
             ];
         }
 
-        $source = $this->matchAllowList($fromHeader, $subject, $parsed, $rawEmail);
+        $match = $this->matchAllowListDetailed($fromHeader, $subject, $parsed, $rawEmail);
+        $source = $match['source'] ?? null;
         if (! $source) {
             $errors[] = 'no matching source rule / sender not on allow-list';
 
@@ -106,11 +111,18 @@ class LeadIntakeQuarantineEvaluator
                 'field_confidence' => $confidence,
                 'validation_errors' => $errors,
                 'company_source_id' => null,
+                'matched_needle' => null,
+                'match_method' => null,
                 'from_header' => $fromHeader,
                 'subject' => $subject,
                 'duplicate_group_key' => $this->voicemailDuplicateKey($parsed, $fields),
             ];
         }
+
+        $matchMeta = [
+            'matched_needle' => $match['matched_needle'] ?? null,
+            'match_method' => $match['match_method'] ?? null,
+        ];
 
         $phoneValid = $this->isValidPhone($fields['phone'] ?? null);
         $nameOk = $this->isAcceptableName($fields['contact_name'] ?? null);
@@ -134,7 +146,7 @@ class LeadIntakeQuarantineEvaluator
         // unless we have a clear source match AND phone. Spec: low-confidence stays in review.
         if ($parsed->isVoicemail()) {
             if (! $phoneValid) {
-                return [
+                return array_merge([
                     'action' => 'quarantine',
                     'reason' => 'voicemail with invalid or missing phone',
                     'parsed_fields' => $fields,
@@ -144,13 +156,13 @@ class LeadIntakeQuarantineEvaluator
                     'from_header' => $fromHeader,
                     'subject' => $subject,
                     'duplicate_group_key' => $this->voicemailDuplicateKey($parsed, $fields),
-                ];
+                ], $matchMeta);
             }
 
             // Valid voicemail phone + allow-list → still quarantine for review (no name/description),
             // unless duplicate merge happens upstream. Spec test 1 is form lead auto-create;
             // voicemail duplicates are test 4. Quarantine single voicemails for review.
-            return [
+            return array_merge([
                 'action' => 'quarantine',
                 'reason' => 'voicemail requires human review (no name/description)',
                 'parsed_fields' => $fields,
@@ -160,11 +172,11 @@ class LeadIntakeQuarantineEvaluator
                 'from_header' => $fromHeader,
                 'subject' => $subject,
                 'duplicate_group_key' => $this->voicemailDuplicateKey($parsed, $fields),
-            ];
+            ], $matchMeta);
         }
 
         if (! $canAuto) {
-            return [
+            return array_merge([
                 'action' => 'quarantine',
                 'reason' => $errors[0] ?? 'low confidence / incomplete fields',
                 'parsed_fields' => $fields,
@@ -174,10 +186,10 @@ class LeadIntakeQuarantineEvaluator
                 'from_header' => $fromHeader,
                 'subject' => $subject,
                 'duplicate_group_key' => null,
-            ];
+            ], $matchMeta);
         }
 
-        return [
+        return array_merge([
             'action' => 'auto_approve',
             'reason' => 'passed validation and allow-list',
             'parsed_fields' => $fields,
@@ -187,7 +199,7 @@ class LeadIntakeQuarantineEvaluator
             'from_header' => $fromHeader,
             'subject' => $subject,
             'duplicate_group_key' => null,
-        ];
+        ], $matchMeta);
     }
 
     public function isValidPhone(?string $phone): bool
@@ -348,6 +360,14 @@ class LeadIntakeQuarantineEvaluator
 
     private function matchAllowList(?string $fromHeader, ?string $subject, ParsedLeadEmail $parsed, string $rawEmail): ?CompanySource
     {
+        return $this->matchAllowListDetailed($fromHeader, $subject, $parsed, $rawEmail)['source'] ?? null;
+    }
+
+    /**
+     * @return array{source: ?CompanySource, matched_needle: ?string, match_method: ?string}
+     */
+    public function matchAllowListDetailed(?string $fromHeader, ?string $subject, ParsedLeadEmail $parsed, string $rawEmail): array
+    {
         $haystack = strtolower(implode(' ', array_filter([
             $fromHeader,
             $subject,
@@ -357,48 +377,83 @@ class LeadIntakeQuarantineEvaluator
             substr($rawEmail, 0, 1500),
         ])));
 
-        $sources = CompanySource::query()->where('status', 'active')->get();
+        $sources = CompanySource::query()
+            ->where('status', 'active')
+            ->orderBy('priority')
+            ->orderBy('id')
+            ->get();
 
         foreach ($sources as $source) {
             $patterns = is_array($source->intake_allow_patterns) ? $source->intake_allow_patterns : [];
-            $candidates = array_filter(array_merge(
-                [$source->domain, $source->sender_identity, $source->company_name],
-                $patterns
-            ));
+            $candidates = [
+                ['needle' => $source->domain, 'method' => 'domain'],
+                ['needle' => $source->sender_identity, 'method' => 'sender_identity'],
+                ['needle' => $source->company_name, 'method' => 'company_name'],
+            ];
+            foreach ($patterns as $pattern) {
+                $candidates[] = ['needle' => $pattern, 'method' => 'intake_allow_pattern'];
+            }
 
             foreach ($candidates as $candidate) {
-                $needle = strtolower(trim((string) $candidate));
+                $needle = strtolower(trim((string) ($candidate['needle'] ?? '')));
                 if ($needle !== '' && str_contains($haystack, $needle)) {
-                    return $source;
+                    return [
+                        'source' => $source,
+                        'matched_needle' => $needle,
+                        'match_method' => $candidate['method'],
+                    ];
                 }
             }
 
-            // Category keywords in company service list
             $cats = is_array($source->service_categories) ? $source->service_categories : [];
             foreach ($cats as $cat) {
                 $c = strtolower((string) $cat);
                 if ($c !== '' && str_contains($haystack, $c)) {
-                    return $source;
+                    return [
+                        'source' => $source,
+                        'matched_needle' => $c,
+                        'match_method' => 'service_category',
+                    ];
                 }
             }
         }
 
-        // Fallback: classic matcher by source label / category text
-        $matcher = app(CompanySourceMatcher::class);
-        $byLabel = $matcher->match($parsed->sourceLabel ?? $parsed->sourceWebsite ?? $subject);
-        if ($byLabel) {
-            return $byLabel;
+        $fallbackOk = $sources->contains(fn (CompanySource $s) => ($s->fallback_behavior ?? 'category_then_quarantine') !== 'none');
+
+        if ($fallbackOk) {
+            $matcher = app(CompanySourceMatcher::class);
+            $byLabel = $matcher->match($parsed->sourceLabel ?? $parsed->sourceWebsite ?? $subject);
+            if ($byLabel) {
+                return [
+                    'source' => $byLabel,
+                    'matched_needle' => $parsed->sourceLabel ?? $parsed->sourceWebsite ?? $subject,
+                    'match_method' => 'fallback_label',
+                ];
+            }
+
+            if (str_contains($haystack, 'drywall') || str_contains($haystack, 'paint')) {
+                $byCat = $matcher->matchByCategory('drywall_paint');
+                if ($byCat) {
+                    return [
+                        'source' => $byCat,
+                        'matched_needle' => 'drywall/paint',
+                        'match_method' => 'fallback_category',
+                    ];
+                }
+            }
+            if (str_contains($haystack, 'insulation')) {
+                $byCat = $matcher->matchByCategory('insulation');
+                if ($byCat) {
+                    return [
+                        'source' => $byCat,
+                        'matched_needle' => 'insulation',
+                        'match_method' => 'fallback_category',
+                    ];
+                }
+            }
         }
 
-        // Form leads with drywall/insulation keywords
-        if (str_contains($haystack, 'drywall') || str_contains($haystack, 'paint')) {
-            return $matcher->matchByCategory('drywall_paint');
-        }
-        if (str_contains($haystack, 'insulation')) {
-            return $matcher->matchByCategory('insulation');
-        }
-
-        return null;
+        return ['source' => null, 'matched_needle' => null, 'match_method' => null];
     }
 
     public function voicemailDuplicateKey(ParsedLeadEmail $parsed, array $fields = []): ?string

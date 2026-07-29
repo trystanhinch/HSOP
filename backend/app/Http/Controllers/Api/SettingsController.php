@@ -9,6 +9,8 @@ use App\Models\Brand;
 use App\Services\BrandResolver;
 use App\Services\Company\CompanyIdentityService;
 use App\Services\Messaging\NotificationChannelHealthService;
+use App\Services\Pricing\PricingSettingsService;
+use App\Models\PricingSettingVersion;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +20,7 @@ class SettingsController extends Controller
     public function __construct(
         protected CompanyIdentityService $identity,
         protected NotificationChannelHealthService $channelHealth,
+        protected PricingSettingsService $pricingSettings,
     ) {}
 
     public function index(): JsonResponse
@@ -65,7 +68,37 @@ class SettingsController extends Controller
             'split_contractor_pct' => $settings['split_contractor_pct'] ?? '80',
             'split_pm_pct' => $settings['split_pm_pct'] ?? '10',
             'split_company_pct' => $settings['split_company_pct'] ?? '10',
+            'pricing_preview_example' => (function () use ($settings) {
+                try {
+                    return $this->pricingSettings->preview([
+                        'contractor_price' => 800,
+                        'gst_rate' => $settings['gst_rate'] ?? 5,
+                        'split_contractor_pct' => $settings['split_contractor_pct'] ?? 80,
+                        'split_pm_pct' => $settings['split_pm_pct'] ?? 10,
+                        'split_company_pct' => $settings['split_company_pct'] ?? 10,
+                    ]);
+                } catch (\Throwable) {
+                    return null;
+                }
+            })(),
+            'pricing_versions' => PricingSettingVersion::query()
+                ->latest('id')
+                ->limit(10)
+                ->get(['id', 'brand_id', 'effective_date', 'gst_rate', 'markup_divisor', 'split_contractor_pct', 'split_pm_pct', 'split_company_pct', 'created_by', 'change_reason', 'created_at']),
         ]);
+    }
+
+    public function pricingPreview(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'contractor_price' => 'nullable|numeric|min:0.01',
+            'gst_rate' => 'nullable|numeric|min:0|max:30',
+            'split_contractor_pct' => 'nullable|numeric|min:0.01|max:99.99',
+            'split_pm_pct' => 'nullable|numeric|min:0|max:99',
+            'split_company_pct' => 'nullable|numeric|min:0|max:99',
+        ]);
+
+        return response()->json($this->pricingSettings->preview($data));
     }
 
     public function update(Request $request): JsonResponse
@@ -78,11 +111,16 @@ class SettingsController extends Controller
 
         $data = $request->validate([
             'company_phone' => 'nullable|string|max:20',
-            'gst_rate' => 'nullable|numeric|min:0|max:100',
-            'markup_divisor' => 'nullable|numeric|min:0.01|max:1',
-            'split_contractor_pct' => 'nullable|numeric|min:1|max:99',
+            'gst_rate' => 'nullable|numeric|min:0|max:30',
+            'markup_divisor' => 'nullable|numeric|min:0.01|max:0.99',
+            'split_contractor_pct' => 'nullable|numeric|min:0.01|max:99.99',
             'split_pm_pct' => 'nullable|numeric|min:0|max:99',
             'split_company_pct' => 'nullable|numeric|min:0|max:99',
+            'brand_id' => 'nullable|integer|exists:brands,id',
+            'effective_date' => 'nullable|date',
+            'change_reason' => 'nullable|string|max:255',
+            'example_contractor_price' => 'nullable|numeric|min:0.01',
+            'confirm_pricing_change' => 'nullable|boolean',
             'sms_globally_enabled' => 'nullable|boolean',
             'email_globally_enabled' => 'nullable|boolean',
             'name' => 'nullable|string|max:255',
@@ -110,7 +148,20 @@ class SettingsController extends Controller
             ], 422);
         }
 
-        foreach (['company_phone', 'gst_rate', 'markup_divisor', 'split_contractor_pct', 'split_pm_pct', 'split_company_pct', 'sms_globally_enabled', 'email_globally_enabled', 'sms_enabled', 'email_enabled'] as $key) {
+        $pricingKeys = ['gst_rate', 'markup_divisor', 'split_contractor_pct', 'split_pm_pct', 'split_company_pct'];
+        $pricingTouched = collect($pricingKeys)->contains(fn ($k) => array_key_exists($k, $data) && $data[$k] !== null);
+
+        $pricingResult = null;
+        if ($pricingTouched) {
+            $pricingResult = $this->pricingSettings->saveDefaults(
+                $data,
+                $request->user(),
+                (bool) ($data['confirm_pricing_change'] ?? false),
+                isset($data['brand_id']) ? (int) $data['brand_id'] : null
+            );
+        }
+
+        foreach (['company_phone', 'sms_globally_enabled', 'email_globally_enabled', 'sms_enabled', 'email_enabled'] as $key) {
             if (array_key_exists($key, $data) && $data[$key] !== null) {
                 $val = is_bool($data[$key]) ? ($data[$key] ? 'true' : 'false') : (string) $data[$key];
                 Setting::set($key, $val);
@@ -143,6 +194,7 @@ class SettingsController extends Controller
         return response()->json([
             'message' => 'Settings updated',
             'identity_readiness' => $this->identity->readiness($company?->fresh()),
+            'pricing' => $pricingResult,
         ]);
     }
 }
