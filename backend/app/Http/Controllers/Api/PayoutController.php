@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\FinancialLedgerEntry;
 use App\Models\Payout;
 use App\Services\Finance\FinancialLedgerService;
+use App\Services\Finance\PmCommissionService;
 use App\Services\JobNotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -16,6 +17,7 @@ class PayoutController extends Controller
     public function __construct(
         protected JobNotificationService $notifications,
         protected FinancialLedgerService $ledger,
+        protected PmCommissionService $commissions,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -57,20 +59,37 @@ class PayoutController extends Controller
 
         if ($user->role === 'pm') {
             $query = Payout::with([
-                'job:id,address,job_title,customer_id,completed_at',
-                'job.customer:id,name',
+                'job:id,address,job_title,customer_id,completed_at,customer_accepted_completion_at,pm_id,status',
+                'job.customer:id,name,email,phone',
+                'job.invoice:id,job_id,status,subtotal,amount,balance',
+                'job.quote:id,job_id,status,customer_price_before_gst,pm_pct,pm_amount,subtotal',
             ])
                 ->where(function ($q) use ($user) {
                     $q->where('pm_id', $user->id)
                         ->orWhere(function ($q2) use ($user) {
                             $q2->where('contractor_id', $user->id)->where('payout_type', 'pm');
                         });
+                })
+                ->where(function ($q) {
+                    $q->where('payout_type', 'pm')->orWhere('split_type', 'pm');
                 });
-            if ($request->status) {
+
+            if ($request->filled('commission_state')) {
+                $statuses = $this->commissions->statusesForCommissionState((string) $request->commission_state);
+                if ($statuses === []) {
+                    return response()->json(['data' => [], 'meta' => ['total' => 0]]);
+                }
+                $query->whereIn('status', $statuses);
+            } elseif ($request->status) {
                 $query->where('status', $request->status);
             }
 
-            return response()->json($query->latest()->paginate(20));
+            $page = $query->latest()->paginate(20);
+            $page->setCollection(
+                $page->getCollection()->map(fn (Payout $p) => $this->commissions->present($p))
+            );
+
+            return response()->json($page);
         }
 
         if ($user->role === 'contractor') {

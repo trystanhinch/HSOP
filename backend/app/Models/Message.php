@@ -17,6 +17,8 @@ class Message extends Model
         'content',
         'visibility',
         'is_read',
+        'delivery_status',
+        'recipient_label',
     ];
 
     protected function casts(): array

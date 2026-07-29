@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Calendar, FileText, Plus, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Calendar, FileText, Lock, MessageSquare, Plus, Send, Trash2 } from 'lucide-react';
 import api, { storageUrl } from '../api/axios';
 import StatusBadge from '../components/StatusBadge';
 import AssignUserModal from '../components/AssignUserModal';
@@ -8,6 +8,7 @@ import JobUpdateForm from '../components/JobUpdateForm';
 import ContractorPriceSubmission from '../components/ContractorPriceSubmission';
 import QuoteBuilder from '../components/QuoteBuilder';
 import { useAuth } from '../context/AuthContext';
+import { channelLabel, looksLikeInternalContent } from '../utils/messageSafety';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 import { formatDate, formatDateTime, toDateInputValue } from '../utils/formatDate';
 import { getStatusLabel } from '../utils/statusLabels';
@@ -44,7 +45,8 @@ export default function JobDetail() {
   const [updates, setUpdates] = useState([]);
   const [messages, setMessages] = useState([]);
   const [msgTab, setMsgTab] = useState('customer_visible');
-  const [newMsg, setNewMsg] = useState('');
+  const [customerDraft, setCustomerDraft] = useState('');
+  const [internalDraft, setInternalDraft] = useState('');
   const [activeTab, setActiveTab] = useState('Overview');
   const [assignModal, setAssignModal] = useState(null);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
@@ -165,19 +167,49 @@ export default function JobDetail() {
     }
   }, [activeTab, id]);
 
+  const switchMsgTab = async (next) => {
+    if (next === msgTab) return;
+    const draft = msgTab === 'internal' ? internalDraft : customerDraft;
+    if (draft.trim()) {
+      const ok = await confirmAction({
+        title: 'Discard unsent draft?',
+        text: `You have an unsent ${channelLabel(msgTab)} — discard it?`,
+        confirmText: 'Discard draft',
+        icon: 'warning',
+      });
+      if (!ok) return;
+      if (msgTab === 'internal') setInternalDraft('');
+      else setCustomerDraft('');
+    }
+    setMsgTab(next);
+  };
+
   const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMsg.trim()) return;
+    const draft = msgTab === 'internal' ? internalDraft : customerDraft;
+    if (!draft.trim()) return;
+
+    if (msgTab === 'customer_visible' && looksLikeInternalContent(draft)) {
+      const proceed = await confirmAction({
+        title: 'Possible internal information',
+        text: 'This looks like it might contain internal information — send to customer anyway?',
+        confirmText: 'Send to customer',
+        icon: 'warning',
+      });
+      if (!proceed) return;
+    }
+
     const ok = await confirmAction({
       title: 'Send message?',
-      text: msgTab === 'internal' ? 'Send this internal note?' : 'Send this message to the customer?',
+      text: msgTab === 'internal' ? 'Send this internal note? (never shown to customer)' : 'Send this message to the customer?',
       confirmText: 'Yes, send',
     });
     if (!ok) return;
 
     try {
-      await api.post(`/jobs/${id}/messages`, { content: newMsg, visibility: msgTab, send_sms: sendSms });
-      setNewMsg('');
+      await api.post(`/jobs/${id}/messages`, { content: draft, visibility: msgTab, send_sms: sendSms });
+      if (msgTab === 'internal') setInternalDraft('');
+      else setCustomerDraft('');
       loadMessages(msgTab);
       await showSuccess('Message sent.');
     } catch (err) {
@@ -808,34 +840,50 @@ export default function JobDetail() {
         </div>
       )}
 
-      {/* Messages */}
       {activeTab === 'Messages' && (
-        <div className="bg-white rounded-xl border border-slate-200 flex flex-col" style={{ height: '480px' }}>
+        <div className={`rounded-xl border flex flex-col ${msgTab === 'internal' ? 'bg-amber-50/80 border-amber-200' : 'bg-sky-50/40 border-sky-200'}`} style={{ height: '480px' }}>
           {!isCustomer && (
-            <div className="flex border-b border-slate-200">
-              {['customer_visible', 'internal'].map((v) => (
-                <button key={v} onClick={() => setMsgTab(v)}
-                  className={`px-4 py-2.5 text-sm font-medium ${msgTab === v ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-500'}`}>
-                  {v === 'customer_visible' ? 'Customer Chat' : 'Internal Notes'}
-                </button>
-              ))}
+            <div className="flex border-b border-slate-200/80 bg-white/60 rounded-t-xl">
+              <button type="button" onClick={() => switchMsgTab('customer_visible')}
+                className={`flex-1 px-4 py-2.5 text-sm font-medium inline-flex items-center justify-center gap-2 ${msgTab === 'customer_visible' ? 'border-b-2 border-sky-600 text-sky-800 bg-sky-50' : 'text-slate-500'}`}>
+                <MessageSquare className="w-4 h-4" /> Customer Chat
+              </button>
+              <button type="button" onClick={() => switchMsgTab('internal')}
+                className={`flex-1 px-4 py-2.5 text-sm font-medium inline-flex items-center justify-center gap-2 ${msgTab === 'internal' ? 'border-b-2 border-amber-700 text-amber-900 bg-amber-50' : 'text-slate-500'}`}>
+                <Lock className="w-4 h-4" /> Internal Notes
+              </button>
             </div>
           )}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          <div className={`flex-1 overflow-y-auto p-4 space-y-3 ${msgTab === 'internal' ? 'bg-amber-50/30' : 'bg-white/80'}`}>
             {messages.map((m) => {
               const mine = m.sender_id === user?.id;
+              const bubble = msgTab === 'internal'
+                ? (mine ? 'bg-amber-700 text-white' : 'bg-amber-100 text-amber-950 border border-amber-200')
+                : (mine ? 'bg-sky-700 text-white' : 'bg-white text-slate-800 border border-slate-200');
               return (
                 <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] rounded-xl px-4 py-2 text-sm ${mine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
+                  <div className={`max-w-[75%] rounded-xl px-4 py-2 text-sm ${bubble}`}>
                     {!mine && <p className="text-xs opacity-70 mb-1">{m.sender?.name}</p>}
                     {m.content}
-                    <p className={`text-xs mt-1 ${mine ? 'text-blue-200' : 'text-slate-400'}`}>{formatDateTime(m.created_at)}</p>
+                    <p className={`text-xs mt-1 ${mine ? 'opacity-70' : 'text-slate-400'}`}>{formatDateTime(m.created_at)}</p>
                   </div>
                 </div>
               );
             })}
           </div>
-          <form onSubmit={sendMessage} className="border-t border-slate-200 p-3 flex flex-col gap-2">
+          <form onSubmit={sendMessage} className={`border-t p-3 flex flex-col gap-2 rounded-b-xl ${msgTab === 'internal' ? 'bg-amber-100/70 border-amber-200' : 'bg-sky-100/50 border-sky-200'}`}>
+            {msgTab === 'internal' ? (
+              <p className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" /> Internal — never shown to customer
+              </p>
+            ) : (
+              <p className="text-xs font-semibold text-sky-900">
+                To: {job.customer?.name || job.lead?.contact_name || 'Customer'}
+                {' · '}Delivery: In-app portal
+                {(job.customer?.email || job.lead?.email) ? ' · Email notify' : ''}
+                {(job.customer?.phone || job.lead?.phone) ? ' · SMS notify' : ''}
+              </p>
+            )}
             {canManage && msgTab === 'customer_visible' && (
               <label className="flex items-center gap-2 text-xs text-slate-600">
                 <input type="checkbox" checked={sendSms} onChange={(e) => setSendSms(e.target.checked)} />
@@ -843,9 +891,13 @@ export default function JobDetail() {
               </label>
             )}
             <div className="flex gap-2">
-            <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Type a message..."
-              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-            <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">Send</button>
+            <input
+              value={msgTab === 'internal' ? internalDraft : customerDraft}
+              onChange={(e) => (msgTab === 'internal' ? setInternalDraft(e.target.value) : setCustomerDraft(e.target.value))}
+              placeholder={msgTab === 'internal' ? 'Write an internal note…' : 'Message the customer…'}
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+            />
+            <button type="submit" className={`px-4 py-2 text-white text-sm rounded-lg hover:opacity-90 ${msgTab === 'internal' ? 'bg-amber-800' : 'bg-sky-700'}`}>Send</button>
             </div>
           </form>
         </div>

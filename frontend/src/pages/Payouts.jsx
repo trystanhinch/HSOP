@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 import { formatDate } from '../utils/formatDate';
 
-const STATUS_TABS = [
+const OWNER_STATUS_TABS = [
   { key: '', label: 'All' },
   { key: 'not_ready', label: 'Not Ready' },
   { key: 'ready_for_payout', label: 'Ready' },
@@ -15,6 +15,34 @@ const STATUS_TABS = [
   { key: 'approved', label: 'Approved' },
   { key: 'paid', label: 'Paid' },
 ];
+
+const PM_COMMISSION_TABS = [
+  { key: '', label: 'All' },
+  { key: 'projected', label: 'Projected' },
+  { key: 'payable', label: 'Payable' },
+  { key: 'processing', label: 'Processing' },
+  { key: 'paid', label: 'Paid' },
+  { key: 'held', label: 'Held' },
+];
+
+const commissionStateColor = {
+  projected: 'bg-slate-100 text-slate-700 border-slate-200',
+  earned: 'bg-sky-100 text-sky-800 border-sky-200',
+  payable: 'bg-amber-100 text-amber-800 border-amber-200',
+  processing: 'bg-indigo-100 text-indigo-800 border-indigo-200',
+  paid: 'bg-green-100 text-green-700 border-green-200',
+  held: 'bg-orange-100 text-orange-800 border-orange-200',
+  reversed: 'bg-red-100 text-red-700 border-red-200',
+};
+
+function CommissionStateBadge({ state, label }) {
+  const cls = commissionStateColor[state] || 'bg-slate-100 text-slate-700 border-slate-200';
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${cls}`}>
+      {label || state}
+    </span>
+  );
+}
 
 function PayoutEditModal({ payout, onClose, onSuccess }) {
   const [form, setForm] = useState({
@@ -79,6 +107,10 @@ function eligibilityLabel(status) {
   return (status || '').replace(/_/g, ' ');
 }
 
+function money(n) {
+  return `$${Number(n || 0).toFixed(2)}`;
+}
+
 export default function Payouts() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -89,6 +121,8 @@ export default function Payouts() {
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [editPayout, setEditPayout] = useState(null);
+
+  const tabs = isPm ? PM_COMMISSION_TABS : OWNER_STATUS_TABS;
 
   const refreshPayouts = useCallback(() => {
     if (isOwner) {
@@ -103,11 +137,15 @@ export default function Payouts() {
         .catch(() => { setGroups([]); setPayouts([]); });
       return;
     }
-    const params = statusFilter ? { status: statusFilter } : {};
+    const params = {};
+    if (statusFilter) {
+      if (isPm) params.commission_state = statusFilter;
+      else params.status = statusFilter;
+    }
     api.get('/payouts', { params })
       .then(({ data }) => setPayouts(data.data || data))
       .catch(() => setPayouts([]));
-  }, [statusFilter, isOwner]);
+  }, [statusFilter, isOwner, isPm]);
 
   useEffect(() => { refreshPayouts(); }, [refreshPayouts]);
 
@@ -151,16 +189,18 @@ export default function Payouts() {
       )}
 
       {isPm && (
-        <div className="mb-4">
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
           <h2 className="text-lg font-semibold text-slate-800">My Commissions</h2>
-          <p className="text-sm text-slate-500">
-            Your PM commission from completed jobs.
+          <p className="text-sm text-slate-600 mt-1">
+            Amounts shown before completion and cleared customer payment are <strong>Projected</strong> only —
+            not earned or guaranteed. Commission becomes <strong>Payable</strong> only after job completion
+            acceptance and cleared payment (same gates as the financial ledger).
           </p>
         </div>
       )}
 
       <div className="flex flex-wrap gap-2 mb-4">
-        {STATUS_TABS.map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.key || 'all'}
             type="button"
@@ -191,7 +231,7 @@ export default function Payouts() {
                     {g.reconciles === false && ' · ⚠ allocation mismatch'}
                   </p>
                 </div>
-                <div className="text-sm font-medium">${Number(g.total_allocations || 0).toFixed(2)}</div>
+                <div className="text-sm font-medium">{money(g.total_allocations)}</div>
               </div>
               <table className="w-full text-sm">
                 <thead>
@@ -209,7 +249,7 @@ export default function Payouts() {
                     <tr key={a.id} className="border-b border-slate-50">
                       <td className="px-4 py-2 capitalize">{a.split_type}</td>
                       <td className="px-4 py-2">{a.recipient_label}</td>
-                      <td className="px-4 py-2 text-right">${Number(a.amount || 0).toFixed(2)}</td>
+                      <td className="px-4 py-2 text-right">{money(a.amount)}</td>
                       <td className="px-4 py-2"><StatusBadge status={a.status} /></td>
                       <td className="px-4 py-2 text-xs text-slate-500">
                         {a.stripe_transfer_id && <div>Transfer: {a.stripe_transfer_id}</div>}
@@ -248,30 +288,47 @@ export default function Payouts() {
       <>
       <div className="md:hidden space-y-3 mb-4">
         {payouts.length === 0 ? (
-          <p className="text-center text-slate-500 py-8">No payouts found.</p>
+          <p className="text-center text-slate-500 py-8">{isPm ? 'No commissions found.' : 'No payouts found.'}</p>
         ) : payouts.map((p) => (
-          <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-4">
-            <div className="flex justify-between items-start mb-2">
-              <span className="font-medium text-slate-800">Payout #{p.id}</span>
-              <StatusBadge status={p.status} />
+          <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2"
+            onClick={() => isPm && p.job_id && navigate(`/jobs/${p.job_id}`)}
+            onKeyDown={() => {}}
+            role={isPm ? 'button' : undefined}
+          >
+            <div className="flex justify-between items-start gap-2">
+              <span className="font-medium text-slate-800">{p.job?.address || `Job #${p.job_id}`}</span>
+              {isPm ? (
+                <CommissionStateBadge state={p.commission_state} label={p.commission_state_label} />
+              ) : (
+                <StatusBadge status={p.status} />
+              )}
             </div>
-            <p className="text-sm text-slate-500">Job #{p.job_id} — {p.job?.address || '—'}</p>
-            <p className="text-sm font-medium text-slate-800 mt-1">${Number(p.payout_amount || 0).toFixed(2)}</p>
+            <p className="text-sm text-slate-500">{p.job?.customer?.name || '—'}</p>
+            <p className={`text-sm font-medium ${p.commission_state === 'projected' ? 'text-slate-500' : 'text-slate-800'}`}>
+              {money(p.commission_amount ?? p.payout_amount)}
+              {p.commission_state === 'projected' && <span className="text-xs font-normal ml-1">(projected)</span>}
+            </p>
+            {isPm && p.outstanding_condition && (
+              <p className="text-xs text-amber-700">Still outstanding: {p.outstanding_condition}</p>
+            )}
           </div>
         ))}
       </div>
 
       <div className="hidden md:block overflow-x-auto rounded-lg border border-[#E2E8F0] bg-white shadow-sm">
-        <table className="w-full min-w-[640px] divide-y divide-[#E2E8F0] text-sm">
+        <table className="w-full min-w-[900px] divide-y divide-[#E2E8F0] text-sm">
           <thead className="bg-slate-50">
             {isPm ? (
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-[#64748B]">Job</th>
                 <th className="text-left px-4 py-3 font-medium text-[#64748B]">Customer</th>
-                <th className="text-left px-4 py-3 font-medium text-[#64748B]">My Commission</th>
-                <th className="text-left px-4 py-3 font-medium text-[#64748B]">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-[#64748B] hidden md:table-cell">Job Completed</th>
-                <th className="text-left px-4 py-3 font-medium text-[#64748B] hidden md:table-cell">Paid Date</th>
+                <th className="text-right px-4 py-3 font-medium text-[#64748B]">Approved subtotal</th>
+                <th className="text-right px-4 py-3 font-medium text-[#64748B]">PM %</th>
+                <th className="text-right px-4 py-3 font-medium text-[#64748B]">Commission</th>
+                <th className="text-left px-4 py-3 font-medium text-[#64748B]">State</th>
+                <th className="text-left px-4 py-3 font-medium text-[#64748B]">Outstanding</th>
+                <th className="text-left px-4 py-3 font-medium text-[#64748B]">Customer payment</th>
+                <th className="text-left px-4 py-3 font-medium text-[#64748B]">Expected / paid</th>
               </tr>
             ) : (
               <tr>
@@ -286,21 +343,41 @@ export default function Payouts() {
           </thead>
           <tbody className="divide-y divide-[#E2E8F0]">
             {payouts.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No payouts found.</td></tr>
+              <tr><td colSpan={isPm ? 9 : 6} className="px-4 py-8 text-center text-slate-500">{isPm ? 'No commissions found.' : 'No payouts found.'}</td></tr>
             ) : isPm ? payouts.map((p) => (
               <tr key={p.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => p.job_id && navigate(`/jobs/${p.job_id}`)}>
-                <td className="px-4 py-3">{p.job?.address || p.job?.job_title || '—'}</td>
+                <td className="px-4 py-3">{p.job?.address || p.job?.job_title || `Job #${p.job_id}`}</td>
                 <td className="px-4 py-3">{p.job?.customer?.name || '—'}</td>
-                <td className="px-4 py-3 font-medium">${Number(p.payout_amount || 0).toFixed(2)}</td>
-                <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
-                <td className="px-4 py-3 hidden md:table-cell">{formatDate(p.job?.completed_at)}</td>
-                <td className="px-4 py-3 hidden md:table-cell">{formatDate(p.paid_date)}</td>
+                <td className="px-4 py-3 text-right">{money(p.approved_subtotal)}</td>
+                <td className="px-4 py-3 text-right">{Number(p.pm_percentage || 0).toFixed(1)}%</td>
+                <td className={`px-4 py-3 text-right font-medium ${p.commission_state === 'projected' ? 'text-slate-500' : 'text-slate-800'}`}>
+                  {money(p.commission_amount ?? p.payout_amount)}
+                  {p.commission_state === 'projected' && (
+                    <div className="text-[10px] font-normal text-slate-400 uppercase tracking-wide">not earned</div>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <CommissionStateBadge state={p.commission_state} label={p.commission_state_label} />
+                </td>
+                <td className="px-4 py-3 text-xs text-slate-600 max-w-[180px]">
+                  {p.outstanding_condition || '—'}
+                </td>
+                <td className="px-4 py-3 text-xs text-slate-600">{p.customer_payment_state_label || '—'}</td>
+                <td className="px-4 py-3 text-xs text-slate-600">
+                  {p.paid_date ? (
+                    <div>Paid {formatDate(p.paid_date)}</div>
+                  ) : p.expected_payout_date ? (
+                    <div>Expected {formatDate(p.expected_payout_date)}</div>
+                  ) : (
+                    '—'
+                  )}
+                </td>
               </tr>
             )) : payouts.map((p) => (
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-4 py-3 font-medium">#{p.id}</td>
                 <td className="px-4 py-3">#{p.job_id}</td>
-                <td className="px-4 py-3">${Number(p.payout_amount || 0).toFixed(2)}</td>
+                <td className="px-4 py-3">{money(p.payout_amount)}</td>
                 <td className="px-4 py-3"><StatusBadge status={p.status} /></td>
                 <td className="px-4 py-3 hidden md:table-cell capitalize text-xs text-slate-500">{eligibilityLabel(p.eligibility_status)}</td>
                 <td className="px-4 py-3 hidden md:table-cell">{formatDate(p.paid_date)}</td>

@@ -15,6 +15,11 @@ use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+/**
+ * Job-scoped messaging.
+ * CT-02: contractor channel filter + lead_id carry-forward threads.
+ * PM-04: delivery_status / recipient_label + customer cannot access internals.
+ */
 class MessageController extends Controller
 {
     public function __construct(
@@ -38,6 +43,7 @@ class MessageController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        // CT-02: contractors only see contractor↔PM (+ customer-visible) channels — never pm_internal.
         if ($user->role === 'contractor') {
             $messages = $this->assignmentMessages->threadForJob($job, $user);
             Message::where(function ($q) use ($job) {
@@ -54,23 +60,21 @@ class MessageController extends Controller
             return response()->json($messages);
         }
 
-        $query = Message::where('job_id', $job->id)
+        $query = Message::query()
+            ->where(function ($q) use ($job) {
+                $q->where('job_id', $job->id);
+                if ($job->lead_id && $this->assignmentMessages->leadSupportsMessages()) {
+                    $q->orWhere('lead_id', $job->lead_id);
+                }
+            })
             ->with('sender:id,name,role')
             ->oldest();
 
-        if ($job->lead_id && $this->assignmentMessages->leadSupportsMessages()) {
-            $query = Message::query()
-                ->where(function ($q) use ($job) {
-                    $q->where('job_id', $job->id)->orWhere('lead_id', $job->lead_id);
-                })
-                ->with('sender:id,name,role')
-                ->oldest();
-        }
-
-        if ($request->visibility) {
-            $query->where('visibility', $request->visibility);
-        } elseif ($user->role === 'customer') {
+        // PM-04: customers never see internal notes (ignore visibility query tampering).
+        if ($user->role === 'customer') {
             $query->where('visibility', 'customer_visible');
+        } elseif ($request->visibility) {
+            $query->where('visibility', $request->visibility);
         }
 
         $messages = $query->get()->unique('id')->values();
@@ -106,7 +110,12 @@ class MessageController extends Controller
             'send_sms' => 'nullable|boolean',
         ]);
 
-        // Contractors messaging PM on a job use the assignment channel (not owner/PM internal notes).
+        // PM-04: customers cannot post internal notes
+        if ($user->role === 'customer' && $request->visibility === 'internal') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        // CT-02: contractor↔PM assignment channel (never pm_internal owner notes).
         if ($user->role === 'contractor') {
             $channel = 'contractor_to_pm';
             $visibility = 'internal';
@@ -119,45 +128,91 @@ class MessageController extends Controller
             $visibility = $request->visibility;
         }
 
+        $job->loadMissing(['customer', 'lead']);
+        $customer = User::find($job->customer_id);
+        $isInternal = $visibility === 'internal';
+
+        $recipientLabel = $isInternal
+            ? ($user->role === 'contractor' ? 'pm' : 'internal')
+            : ($customer?->name ?? $job->lead?->contact_name ?? 'Customer');
+
+        $receiverId = match (true) {
+            $user->role === 'contractor' => $job->pm_id,
+            $user->role === 'customer' => $job->pm_id,
+            ! $isInternal => $job->customer_id,
+            default => null,
+        };
+
+        $deliveryStatus = 'recorded';
+        $deliveryMeta = ['in_app' => true];
+
         $message = Message::create([
             'job_id' => $job->id,
             'lead_id' => $job->lead_id,
             'sender_id' => $user->id,
-            'receiver_id' => $user->role === 'contractor' ? $job->pm_id : null,
+            'receiver_id' => $receiverId,
             'sender_role' => $user->role,
             'content' => $request->content,
             'visibility' => $visibility,
             'channel' => $channel,
+            'recipient_label' => $recipientLabel,
+            'delivery_status' => $deliveryStatus,
         ]);
 
-        $job->loadMissing(['customer', 'lead']);
-
-        if ($visibility === 'customer_visible' && $user->role !== 'customer') {
-            $customer = User::find($job->customer_id);
+        if (! $isInternal && $user->role !== 'customer') {
             $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
             $customerPhone = SmsService::phoneForUser($customer) ?? $job->lead?->phone;
             $customerName = $customer?->name ?? $job->lead?->contact_name ?? 'there';
             $customerEmail = $customer?->email ?? $job->lead?->email;
 
+            $smsOk = false;
+            $emailOk = false;
+
             if ($customerPhone) {
-                $this->sms->send(
-                    $customerPhone,
-                    "Hi {$customerName}, you have a new message about your project at {$job->address}. View it here: {$portalUrl}",
-                    'new_message_customer',
-                    $customer?->id,
-                    $job->id
-                );
+                try {
+                    $this->sms->send(
+                        $customerPhone,
+                        "Hi {$customerName}, you have a new message about your project at {$job->address}. View it here: {$portalUrl}",
+                        'new_message_customer',
+                        $customer?->id,
+                        $job->id
+                    );
+                    $smsOk = true;
+                } catch (\Throwable) {
+                    $smsOk = false;
+                }
             }
 
             if ($customerEmail) {
-                $this->email->sendMailable(
-                    $customerEmail,
-                    new NewMessageMail($job, $message, $portalUrl),
-                    'new_message_customer',
-                    $customer?->id,
-                    $job->id
-                );
+                try {
+                    $this->email->sendMailable(
+                        $customerEmail,
+                        new NewMessageMail($job, $message, $portalUrl),
+                        'new_message_customer',
+                        $customer?->id,
+                        $job->id
+                    );
+                    $emailOk = true;
+                } catch (\Throwable) {
+                    $emailOk = false;
+                }
             }
+
+            $deliveryMeta = [
+                'in_app' => true,
+                'sms' => $smsOk,
+                'email' => $emailOk,
+                'delivery_channel' => match (true) {
+                    $smsOk && $emailOk => 'sms+email',
+                    $smsOk => 'sms',
+                    $emailOk => 'email',
+                    default => 'in_app',
+                },
+            ];
+            $deliveryStatus = ($smsOk || $emailOk) ? 'notified' : 'in_app_only';
+            $message->update([
+                'delivery_status' => $deliveryStatus,
+            ]);
         }
 
         if (in_array($user->role, ['customer', 'contractor'], true)) {
@@ -175,11 +230,24 @@ class MessageController extends Controller
         AuditLog::create([
             'user_id' => $user->id,
             'user_role' => $user->role,
-            'object_type' => 'job',
-            'object_id' => $job->id,
+            'object_type' => 'message',
+            'object_id' => $message->id,
             'action_type' => 'message_sent',
+            'new_value' => [
+                'channel' => $channel,
+                'visibility' => $visibility,
+                'sender_id' => $user->id,
+                'sender_role' => $user->role,
+                'recipient' => $recipientLabel,
+                'receiver_id' => $receiverId,
+                'delivery_status' => $deliveryStatus,
+                'delivery' => $deliveryMeta,
+                'job_id' => $job->id,
+                'lead_id' => $job->lead_id,
+            ],
+            'created_at' => now(),
         ]);
 
-        return response()->json($message->load('sender:id,name,role'), 201);
+        return response()->json($message->fresh()->load('sender:id,name,role'), 201);
     }
 }
