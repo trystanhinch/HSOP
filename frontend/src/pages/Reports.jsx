@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DollarSign, Briefcase, Download } from 'lucide-react';
 import api from '../api/axios';
@@ -9,6 +9,26 @@ import { showError, showSuccess } from '../utils/swal';
 
 function fmt(n) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function monthBounds(period) {
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) return { from: '', to: '' };
+  const [y, m] = period.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const mm = String(m).padStart(2, '0');
+  return {
+    from: `${y}-${mm}-01`,
+    to: `${y}-${mm}-${String(last).padStart(2, '0')}`,
+  };
+}
+
+function Bar({ value, max, color }) {
+  const pct = max > 0 ? Math.max(2, Math.round((Number(value || 0) / max) * 100)) : 0;
+  return (
+    <div className="h-2 w-full max-w-[120px] rounded bg-slate-100 overflow-hidden ml-auto">
+      <div className="h-full rounded" style={{ width: `${pct}%`, backgroundColor: color }} />
+    </div>
+  );
 }
 
 export default function Reports() {
@@ -23,8 +43,7 @@ export default function Reports() {
   const [pmId, setPmId] = useState('');
   const [contractorId, setContractorId] = useState('');
 
-  const load = () => {
-    setLoading(true);
+  const filterParams = useMemo(() => {
     const params = { basis };
     if (from) params.from = from;
     if (to) params.to = to;
@@ -32,7 +51,17 @@ export default function Reports() {
     if (source) params.source = source;
     if (pmId) params.pm_id = pmId;
     if (contractorId) params.contractor_id = contractorId;
-    api.get('/reports/profit-breakdown', { params })
+    return params;
+  }, [basis, from, to, service, source, pmId, contractorId]);
+
+  const ledgerHref = (metric, extra = {}) => {
+    const q = new URLSearchParams({ metric, ...filterParams, ...extra });
+    return `/ledger?${q.toString()}`;
+  };
+
+  const load = () => {
+    setLoading(true);
+    api.get('/reports/profit-breakdown', { params: filterParams })
       .then(({ data: d }) => setData(d))
       .catch(() => setData(null))
       .finally(() => setLoading(false));
@@ -65,6 +94,8 @@ export default function Reports() {
   const quotes = data?.quotes || [];
   const incomplete = data?.incomplete_cost_quotes || [];
   const breakdown = data?.revenue_jobs_breakdown || [];
+  const maxCollected = Math.max(0, ...breakdown.map((r) => Number(r.collected_revenue || 0)));
+  const maxJobs = Math.max(0, ...breakdown.map((r) => Number(r.jobs_invoiced || 0)));
 
   return (
     <div>
@@ -117,10 +148,10 @@ export default function Reports() {
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <KPICard title="Projected Profit" value={fmt(data?.projected_profit)} icon={DollarSign} color="#22C55E" to="/ledger?metric=projected_profit" />
-        <KPICard title="Realized Profit" value={fmt(data?.realized_profit)} icon={DollarSign} color="#0EA5E9" to="/ledger?metric=realized_profit" />
-        <KPICard title="Collected Revenue (ex-GST)" value={fmt(data?.collected_revenue)} icon={DollarSign} color="#3B82F6" to="/ledger?metric=collected_revenue" />
-        <KPICard title="Jobs (complete cost)" value={data?.total_jobs ?? 0} icon={Briefcase} color="#3B82F6" to="/ledger?metric=projected_profit" />
+        <KPICard title="Projected Profit" value={fmt(data?.projected_profit)} icon={DollarSign} color="#22C55E" to={ledgerHref('projected_profit')} />
+        <KPICard title="Realized Profit" value={fmt(data?.realized_profit)} icon={DollarSign} color="#0EA5E9" to={ledgerHref('realized_profit')} />
+        <KPICard title="Collected Revenue (ex-GST)" value={fmt(data?.collected_revenue)} icon={DollarSign} color="#3B82F6" to={ledgerHref('collected_revenue')} />
+        <KPICard title="Jobs (complete cost)" value={data?.total_jobs ?? 0} icon={Briefcase} color="#3B82F6" to={ledgerHref('projected_profit')} />
       </div>
 
       {incomplete.length > 0 && (
@@ -178,11 +209,15 @@ export default function Reports() {
         </table>
       </div>
 
+      {/* A-26: revenue + jobs over time — table viz with bars + month drill-down (no chart lib; matches A-01) */}
       <div className="overflow-x-auto rounded-lg border border-[#E2E8F0] bg-white shadow-sm">
-        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-800">Revenue / jobs by month</h3>
-          <button type="button" className="text-sm text-blue-600" onClick={() => navigate('/ledger?metric=revenue_jobs_breakdown')}>
-            Open drill-down
+        <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-800">Revenue / jobs over time</h3>
+            <p className="text-xs text-slate-500">Click a month to open matching ledger records for the selected basis and filters.</p>
+          </div>
+          <button type="button" className="text-sm text-blue-600" onClick={() => navigate(ledgerHref('revenue_jobs_breakdown'))}>
+            Open full drill-down
           </button>
         </div>
         <table className="min-w-full text-sm divide-y divide-[#E2E8F0]">
@@ -190,21 +225,33 @@ export default function Reports() {
             <tr>
               <th className="text-left px-4 py-3 font-medium text-[#64748B]">Period</th>
               <th className="text-right px-4 py-3 font-medium text-[#64748B]">Jobs invoiced</th>
+              <th className="text-right px-4 py-3 font-medium text-[#64748B]">Jobs trend</th>
               <th className="text-right px-4 py-3 font-medium text-[#64748B]">Invoiced (ex-GST)</th>
               <th className="text-right px-4 py-3 font-medium text-[#64748B]">Collected (ex-GST)</th>
+              <th className="text-right px-4 py-3 font-medium text-[#64748B]">Revenue trend</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E2E8F0]">
             {breakdown.length === 0 ? (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">No invoice activity in range.</td></tr>
-            ) : breakdown.map((row) => (
-              <tr key={row.period} className="hover:bg-slate-50">
-                <td className="px-4 py-3">{row.period}</td>
-                <td className="px-4 py-3 text-right">{row.jobs_invoiced}</td>
-                <td className="px-4 py-3 text-right">{fmt(row.invoiced_revenue)}</td>
-                <td className="px-4 py-3 text-right">{fmt(row.collected_revenue)}</td>
-              </tr>
-            ))}
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No invoice activity in range.</td></tr>
+            ) : breakdown.map((row) => {
+              const bounds = monthBounds(row.period);
+              return (
+                <tr
+                  key={row.period}
+                  className="hover:bg-slate-50 cursor-pointer"
+                  onClick={() => navigate(ledgerHref('collected_revenue', bounds))}
+                  title="Open collected revenue records for this month"
+                >
+                  <td className="px-4 py-3 font-medium text-blue-700">{row.period}</td>
+                  <td className="px-4 py-3 text-right">{row.jobs_invoiced}</td>
+                  <td className="px-4 py-3"><Bar value={row.jobs_invoiced} max={maxJobs} color="#64748B" /></td>
+                  <td className="px-4 py-3 text-right">{fmt(row.invoiced_revenue)}</td>
+                  <td className="px-4 py-3 text-right">{fmt(row.collected_revenue)}</td>
+                  <td className="px-4 py-3"><Bar value={row.collected_revenue} max={maxCollected} color="#3B82F6" /></td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

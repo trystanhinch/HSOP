@@ -22,13 +22,20 @@ return [
     ],
 
     'quote' => [
+        /*
+         | A-32: quotes.status is LIFECYCLE only.
+         | Follow-up is a NextAction (quote_follow_up) — never a status.
+         | Enforced by App\Services\Workflow\QuoteLifecycleService.
+         */
         'canonical' => [
-            'pricing_requested', 'pricing_received', 'draft', 'sent', 'viewed',
-            'follow_up', 'approved', 'declined', 'expired',
+            'pricing_requested', 'pricing_received', 'draft', 'internal_review',
+            'sent', 'viewed', 'revision_requested', 'approved', 'declined', 'expired',
         ],
-        'legacy' => ['rejected', 'revised'],
+        'legacy' => ['follow_up', 'rejected', 'revised'],
         'aliases' => [
             'rejected' => 'declined',
+            'follow_up' => 'viewed',
+            'revised' => 'draft',
         ],
     ],
 

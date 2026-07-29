@@ -205,6 +205,12 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     Route::get('/quotes/{quote}', [QuoteController::class, 'show']);
     Route::put('/quotes/{quote}', [QuoteController::class, 'update'])->middleware('role:owner,pm');
     Route::post('/quotes/{quote}/send', [QuoteController::class, 'send'])->middleware('role:owner,pm');
+    Route::post('/quotes/{quote}/resend', [QuoteController::class, 'resend'])->middleware('role:owner,pm');
+    Route::post('/quotes/{quote}/revise', [QuoteController::class, 'revise'])->middleware('role:owner,pm');
+    Route::post('/quotes/{quote}/follow-up', [QuoteController::class, 'followUp'])->middleware('role:owner,pm');
+    Route::post('/quotes/{quote}/expire', [QuoteController::class, 'expire'])->middleware('role:owner,pm');
+    Route::post('/quotes/{quote}/mark-declined', [QuoteController::class, 'markDeclined'])->middleware('role:owner,pm');
+    Route::post('/quotes/{quote}/internal-review', [QuoteController::class, 'markInternalReview'])->middleware('role:owner,pm');
     Route::post('/quotes/{quote}/approve', [QuoteController::class, 'approve'])->middleware('role:customer');
     Route::post('/quotes/{quote}/reject', [QuoteController::class, 'reject'])->middleware('role:customer');
 

@@ -37,11 +37,17 @@ export const statusLabels = {
   etransfer_pending_confirmation: 'E-Transfer Pending Confirmation',
 
   draft: 'Draft',
+  internal_review: 'Internal Review',
   sent: 'Sent',
   viewed: 'Viewed',
+  follow_up: 'Viewed', // A-32 legacy — follow-up is a task, not a status
+  follow_up_due: 'Follow-up Due',
+  revision_requested: 'Revision Requested',
   approved: 'Approved',
-  rejected: 'Rejected',
-  revised: 'Revised',
+  declined: 'Declined',
+  rejected: 'Declined',
+  revised: 'Draft',
+  expired: 'Expired',
   invoice_sent: 'Invoice Sent',
   awaiting_payment: 'Awaiting Payment',
 

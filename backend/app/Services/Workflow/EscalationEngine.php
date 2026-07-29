@@ -260,7 +260,8 @@ class EscalationEngine
             }
 
             $this->markFired($na, 'quote_follow_up', 'follow_up', ['quote_id' => $quote->id]);
-            $quote->update(['status' => 'follow_up']);
+            // A-32: follow-up is a NextAction — do NOT overwrite quote status.
+            app(\App\Services\Workflow\QuoteLifecycleService::class)->flagFollowUpDue($quote, $na);
             $stats['reminded']++;
 
             $this->logAi('quote_follow_up', $na, 'Quote follow-up flagged', 'quote_follow_up');

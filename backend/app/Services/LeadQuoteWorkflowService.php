@@ -72,6 +72,8 @@ class LeadQuoteWorkflowService
                 'status' => 'sent',
                 'customer_token' => Str::random(64),
                 'sent_at' => now(),
+                'is_immutable' => true,
+                'revision_number' => $existingLeadQuote?->revision_number ?? 1,
         ];
 
         if (! $existingLeadQuote) {
@@ -129,13 +131,8 @@ class LeadQuoteWorkflowService
 
     public function approveQuote(Quote $quote): Quote
     {
-        if (! in_array($quote->status, ['sent', 'viewed'], true)) {
-            throw ValidationException::withMessages([
-                'status' => ['Quote cannot be approved in current status'],
-            ]);
-        }
-
-        $quote->update(['status' => 'approved', 'accepted_at' => now()]);
+        $lifecycle = app(\App\Services\Workflow\QuoteLifecycleService::class);
+        $quote = $lifecycle->approve($quote);
 
         if ($quote->lead_id && ! $quote->job_id) {
             $this->createJobFromLeadQuote($quote);
@@ -148,7 +145,8 @@ class LeadQuoteWorkflowService
 
     public function rejectQuote(Quote $quote, string $reason): Quote
     {
-        $quote->update(['status' => 'rejected', 'rejection_reason' => $reason]);
+        $lifecycle = app(\App\Services\Workflow\QuoteLifecycleService::class);
+        $quote = $lifecycle->decline($quote, $reason);
 
         if ($quote->job_id) {
             $quote->job?->update(['status' => 'waiting_on_customer']);

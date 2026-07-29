@@ -111,9 +111,28 @@ export default function Ledger() {
             )}
             {(data?.records || []).map((row, idx) => {
               if (metric === 'revenue_jobs_breakdown') {
+                const period = row.period || '';
+                const [y, m] = period.split('-').map(Number);
+                const last = y && m ? new Date(y, m, 0).getDate() : 0;
+                const mm = m ? String(m).padStart(2, '0') : '';
+                const monthFrom = y && m ? `${y}-${mm}-01` : '';
+                const monthTo = y && m ? `${y}-${mm}-${String(last).padStart(2, '0')}` : '';
                 return (
-                  <tr key={row.period || idx} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">{row.period}</td>
+                  <tr
+                    key={row.period || idx}
+                    className="hover:bg-slate-50 cursor-pointer"
+                    onClick={() => {
+                      const q = new URLSearchParams({ metric: 'collected_revenue' });
+                      ['basis', 'service_category', 'source', 'pm_id', 'contractor_id'].forEach((k) => {
+                        const v = params.get(k);
+                        if (v) q.set(k, v);
+                      });
+                      if (monthFrom) q.set('from', monthFrom);
+                      if (monthTo) q.set('to', monthTo);
+                      navigate(`/ledger?${q.toString()}`);
+                    }}
+                  >
+                    <td className="px-4 py-3 text-blue-700 font-medium">{row.period}</td>
                     <td className="px-4 py-3 text-right">{row.jobs_invoiced}</td>
                     <td className="px-4 py-3 text-right">{money(row.invoiced_revenue)}</td>
                     <td className="px-4 py-3 text-right">{money(row.collected_revenue)}</td>

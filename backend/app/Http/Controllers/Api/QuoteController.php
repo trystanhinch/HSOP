@@ -5,14 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\QuoteResource;
 use App\Models\Job;
+use App\Models\NextAction;
 use App\Models\Quote;
 use App\Models\QuoteItem;
+use App\Services\Authorization\PmAuthorizationService;
 use App\Services\BrandResolver;
 use App\Services\JobNotificationService;
-use App\Services\Authorization\PmAuthorizationService;
 use App\Services\LeadQuoteWorkflowService;
 use App\Services\PayoutWorkflowService;
 use App\Services\PricingService;
+use App\Services\Workflow\QuoteLifecycleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -25,12 +27,19 @@ class QuoteController extends Controller
         protected PayoutWorkflowService $payouts,
         protected LeadQuoteWorkflowService $leadQuotes,
         protected PmAuthorizationService $authz,
+        protected QuoteLifecycleService $lifecycle,
     ) {}
 
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = Quote::with(['job:id,address,job_title', 'customer:id,name']);
+        $query = Quote::with([
+            'job:id,address,job_title,pm_id,contractor_id,company_id,service_category',
+            'job.pm:id,name',
+            'job.contractor:id,name',
+            'job.company:id,name',
+            'customer:id,name',
+        ]);
 
         if ($user->role === 'pm') {
             $this->authz->scopeQuotesForPm($query, $user);
@@ -40,8 +49,62 @@ class QuoteController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        if ($request->status) {
-            $query->where('status', $request->status);
+        if ($q = trim((string) $request->query('q', ''))) {
+            $query->where(function ($w) use ($q) {
+                $w->where('quote_number', 'like', "%{$q}%")
+                    ->orWhere('scope_of_work', 'like', "%{$q}%")
+                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$q}%"));
+                if (ctype_digit($q)) {
+                    $w->orWhere('id', (int) $q)->orWhere('job_id', (int) $q);
+                }
+            });
+        }
+
+        $status = $request->query('status');
+        if ($status === 'follow_up_due' || $status === 'follow_up') {
+            $query->whereIn('status', ['sent', 'viewed'])
+                ->whereNotNull('follow_up_due_at')
+                ->whereNull('follow_up_stopped_at');
+        } elseif ($status) {
+            $expanded = $this->lifecycle->expandFilterStatus($status);
+            if ($expanded) {
+                $query->whereIn('status', $expanded);
+            }
+        }
+
+        if ($request->filled('brand_id')) {
+            $query->whereHas('job', fn ($j) => $j->where('company_id', (int) $request->brand_id));
+        }
+        if ($request->filled('pm_id')) {
+            $query->whereHas('job', fn ($j) => $j->where('pm_id', (int) $request->pm_id));
+        }
+        if ($request->filled('contractor_id')) {
+            $query->whereHas('job', fn ($j) => $j->where('contractor_id', (int) $request->contractor_id));
+        }
+        if ($request->filled('from')) {
+            $query->whereDate('created_at', '>=', $request->query('from'));
+        }
+        if ($request->filled('to')) {
+            $query->whereDate('created_at', '<=', $request->query('to'));
+        }
+        if ($request->filled('viewed')) {
+            if ($request->boolean('viewed')) {
+                $query->whereNotNull('viewed_at');
+            } else {
+                $query->whereNull('viewed_at')->whereIn('status', ['sent', 'viewed', 'draft', 'internal_review']);
+            }
+        }
+        if ($request->filled('expired')) {
+            if ($request->boolean('expired')) {
+                $query->where(function ($w) {
+                    $w->where('status', 'expired')->orWhereNotNull('expired_at');
+                });
+            } else {
+                $query->where('status', '!=', 'expired')->whereNull('expired_at');
+            }
+        }
+        if ($request->filled('revision_number')) {
+            $query->where('revision_number', (int) $request->revision_number);
         }
 
         return response()->json(QuoteResource::collection($query->latest()->paginate(20)));
@@ -109,7 +172,6 @@ class QuoteController extends Controller
             return response()->json(['message' => 'Please provide contractor_price or ensure contractor price is submitted.'], 422);
         }
 
-        // A-06/A-22: snapshot brand name at creation time so historical quotes are unaffected by later brand edits.
         $brandNameSnapshot = app(BrandResolver::class)->forJob($job);
 
         $quote = Quote::createWithUniqueQuoteNumber([
@@ -129,8 +191,11 @@ class QuoteController extends Controller
             'internal_notes' => $request->internal_notes,
             'customer_notes' => $request->customer_notes,
             'status' => 'draft',
+            'revision_number' => 1,
+            'is_immutable' => false,
             'brand_name_snapshot' => $brandNameSnapshot,
         ]);
+        $quote->update(['root_quote_id' => $quote->id]);
 
         if ($contractorBase > 0 && $job->contractor_price_status !== 'approved') {
             $job->update([
@@ -181,7 +246,7 @@ class QuoteController extends Controller
         $quote = Quote::findOrFail($id);
         $this->authz->assertQuoteAccess($request->user(), $quote);
 
-        if (! in_array($quote->status, ['draft', 'revised'])) {
+        if ($quote->is_immutable || ! in_array($quote->status, QuoteLifecycleService::EDITABLE, true)) {
             return response()->json(['message' => 'Quote cannot be edited in current status'], 422);
         }
 
@@ -204,7 +269,7 @@ class QuoteController extends Controller
 
         $quote->update($data);
 
-        return response()->json($quote->fresh()->load('items'));
+        return response()->json(new QuoteResource($quote->fresh()->load('items')));
     }
 
     public function destroy(string $id): JsonResponse
@@ -226,18 +291,159 @@ class QuoteController extends Controller
             return response()->json(['message' => 'Cannot send quote: customer has no email on file. Please add one first.'], 422);
         }
 
-        $token = Str::random(64);
-        $quote->update([
-            'status' => 'sent',
-            'customer_token' => $token,
-            'sent_at' => now(),
-        ]);
-        $quote->job->update(['status' => 'quote_sent']);
+        $token = $quote->customer_token ?: Str::random(64);
+        $quote = $this->lifecycle->markSent($quote, $token);
+        if ($quote->job) {
+            $quote->job->update(['status' => 'quote_sent']);
+        }
 
         $quoteUrl = $this->notifications->frontendUrl('quote/view/'.$token);
-        $this->notifications->quoteSent($quote->fresh(), $quoteUrl);
+        $this->notifications->quoteSent($quote->fresh(['customer', 'job']), $quoteUrl);
 
-        return response()->json(['message' => 'Quote sent', 'quote_url' => $quoteUrl, 'token' => $token]);
+        return response()->json([
+            'message' => 'Quote sent',
+            'quote_url' => $quoteUrl,
+            'token' => $token,
+            'quote' => new QuoteResource($quote->fresh(['job', 'customer', 'items'])),
+        ]);
+    }
+
+    public function resend(string $id): JsonResponse
+    {
+        $quote = Quote::with(['job', 'customer:id,name,email'])->findOrFail($id);
+
+        if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $this->authz->assertQuoteAccess(auth()->user(), $quote);
+
+        if (! in_array($quote->status, ['sent', 'viewed'], true)) {
+            return response()->json(['message' => 'Only sent/viewed quotes can be resent'], 422);
+        }
+        if (! $quote->customer?->email) {
+            return response()->json(['message' => 'Cannot resend: customer has no email on file.'], 422);
+        }
+
+        $token = $quote->customer_token ?: Str::random(64);
+        if (! $quote->customer_token) {
+            $quote->update(['customer_token' => $token]);
+        }
+
+        $quoteUrl = $this->notifications->frontendUrl('quote/view/'.$token);
+        $this->notifications->quoteSent($quote->fresh(['customer', 'job']), $quoteUrl);
+
+        return response()->json([
+            'message' => 'Quote resent',
+            'quote_url' => $quoteUrl,
+            'quote' => new QuoteResource($quote->fresh(['job', 'customer', 'items'])),
+        ]);
+    }
+
+    public function markInternalReview(string $id): JsonResponse
+    {
+        $quote = Quote::findOrFail($id);
+        if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $this->authz->assertQuoteAccess(auth()->user(), $quote);
+        $quote = $this->lifecycle->markInternalReview($quote);
+
+        return response()->json(['message' => 'Marked for internal review', 'quote' => new QuoteResource($quote)]);
+    }
+
+    public function revise(string $id): JsonResponse
+    {
+        $quote = Quote::with('items')->findOrFail($id);
+        if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $this->authz->assertQuoteAccess(auth()->user(), $quote);
+
+        $originalSnapshot = $quote->only([
+            'id', 'quote_number', 'revision_number', 'status', 'customer_total', 'subtotal', 'gst',
+            'contractor_base_price', 'scope_of_work', 'sent_at', 'is_immutable',
+        ]);
+
+        $revision = $this->lifecycle->createRevision($quote);
+
+        return response()->json([
+            'message' => 'Revision created',
+            'original' => $originalSnapshot,
+            'quote' => new QuoteResource($revision->load(['job', 'customer', 'items'])),
+        ], 201);
+    }
+
+    public function followUp(string $id): JsonResponse
+    {
+        $quote = Quote::with('job')->findOrFail($id);
+        if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $this->authz->assertQuoteAccess(auth()->user(), $quote);
+
+        if (! in_array($quote->status, ['sent', 'viewed'], true)) {
+            return response()->json(['message' => 'Follow-up only applies to sent/viewed quotes'], 422);
+        }
+
+        $job = $quote->job;
+        if (! $job) {
+            return response()->json(['message' => 'Quote has no job for follow-up task'], 422);
+        }
+
+        $na = NextAction::query()
+            ->where('subject_type', $job->getMorphClass())
+            ->where('subject_id', $job->id)
+            ->where('escalation_rule', QuoteLifecycleService::FOLLOW_UP_RULE)
+            ->whereIn('status', ['pending', 'overdue', 'escalated'])
+            ->latest('id')
+            ->first();
+
+        if (! $na) {
+            $na = NextAction::create([
+                'subject_type' => $job->getMorphClass(),
+                'subject_id' => $job->id,
+                'escalation_rule' => QuoteLifecycleService::FOLLOW_UP_RULE,
+                'action_description' => 'Follow up with customer on quote #'.$quote->id,
+                'responsible_role' => 'pm',
+                'responsible_user_id' => $job->pm_id,
+                'due_at' => now(),
+                'status' => 'pending',
+                'last_action_at' => now(),
+            ]);
+        }
+
+        $quote = $this->lifecycle->flagFollowUpDue($quote, $na);
+
+        return response()->json([
+            'message' => 'Follow-up task open (quote status unchanged)',
+            'next_action_id' => $na->id,
+            'quote' => new QuoteResource($quote->fresh(['job', 'customer', 'items'])),
+        ]);
+    }
+
+    public function expire(string $id): JsonResponse
+    {
+        $quote = Quote::findOrFail($id);
+        if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $this->authz->assertQuoteAccess(auth()->user(), $quote);
+        $quote = $this->lifecycle->expire($quote);
+
+        return response()->json(['message' => 'Quote expired', 'quote' => new QuoteResource($quote)]);
+    }
+
+    public function markDeclined(Request $request, string $id): JsonResponse
+    {
+        $quote = Quote::findOrFail($id);
+        if (! in_array(auth()->user()->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $this->authz->assertQuoteAccess(auth()->user(), $quote);
+        $data = $request->validate(['rejection_reason' => 'nullable|string|max:1000']);
+        $quote = $this->lifecycle->decline($quote, $data['rejection_reason'] ?? null);
+
+        return response()->json(['message' => 'Quote declined', 'quote' => new QuoteResource($quote)]);
     }
 
     public function approve(Request $request, string $id): JsonResponse
@@ -246,10 +452,6 @@ class QuoteController extends Controller
 
         if ($quote->customer_id !== auth()->id()) {
             return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        if (! in_array($quote->status, ['sent', 'viewed'])) {
-            return response()->json(['message' => 'Quote cannot be approved in current status'], 422);
         }
 
         try {
@@ -303,7 +505,8 @@ class QuoteController extends Controller
         }
 
         if ($quote->status === 'sent') {
-            $quote->update(['status' => 'viewed', 'viewed_at' => now()]);
+            $this->lifecycle->markViewed($quote);
+            $quote->refresh();
         }
 
         $address = $quote->job?->address ?? $quote->lead?->address ?? '';
@@ -313,9 +516,11 @@ class QuoteController extends Controller
         $companyName = app(BrandResolver::class)->forQuote($quote);
         $pm = $quote->job?->pm ?? $quote->lead?->assignedPm;
 
+        // Customer-facing: totals only — never contractor/margin/split.
         return response()->json([
             'quote_number' => $quote->quote_number,
-            'status' => $quote->status,
+            'revision_number' => (int) ($quote->revision_number ?? 1),
+            'status' => $this->lifecycle->normalizeStatus($quote->status),
             'customer_name' => $quote->customer?->name,
             'scope_of_work' => $scopeOfWork,
             'customer_notes' => $quote->customer_notes,
@@ -326,7 +531,10 @@ class QuoteController extends Controller
             'gst_enabled' => $quote->gst_enabled,
             'items' => $quote->items,
             'sent_at' => $quote->sent_at,
+            'viewed_at' => $quote->viewed_at,
             'accepted_at' => $quote->accepted_at,
+            'declined_at' => $quote->declined_at,
+            'expired_at' => $quote->expired_at,
             'job' => [
                 'address' => $address,
                 'service_category' => $serviceCategory,

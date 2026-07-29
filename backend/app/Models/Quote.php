@@ -22,6 +22,10 @@ class Quote extends Model
         'job_id',
         'customer_id',
         'quote_number',
+        'revision_number',
+        'parent_quote_id',
+        'root_quote_id',
+        'is_immutable',
         'scope_of_work',
         'contractor_base_price',
         'customer_price_before_gst',
@@ -40,6 +44,10 @@ class Quote extends Model
         'sent_at',
         'viewed_at',
         'accepted_at',
+        'declined_at',
+        'expired_at',
+        'follow_up_due_at',
+        'follow_up_stopped_at',
         'contractor_pct',
         'pm_pct',
         'company_pct',
@@ -65,9 +73,15 @@ class Quote extends Model
             'pm_amount' => 'decimal:2',
             'company_amount' => 'decimal:2',
             'gst_enabled' => 'boolean',
+            'is_immutable' => 'boolean',
+            'revision_number' => 'integer',
             'sent_at' => 'datetime',
             'viewed_at' => 'datetime',
             'accepted_at' => 'datetime',
+            'declined_at' => 'datetime',
+            'expired_at' => 'datetime',
+            'follow_up_due_at' => 'datetime',
+            'follow_up_stopped_at' => 'datetime',
         ];
     }
 
@@ -184,5 +198,20 @@ class Quote extends Model
     public function items(): HasMany
     {
         return $this->hasMany(QuoteItem::class)->orderBy('sort_order');
+    }
+
+    public function parentQuote(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'parent_quote_id');
+    }
+
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(self::class, 'parent_quote_id');
+    }
+
+    public function rootQuote(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'root_quote_id');
     }
 }
