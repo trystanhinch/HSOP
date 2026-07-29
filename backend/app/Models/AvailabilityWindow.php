@@ -19,6 +19,13 @@ class AvailabilityWindow extends Model
         'slot_duration_minutes',
         'timezone',
         'status',
+        'blackout_dates',
+        'travel_buffer_minutes',
+        'capacity',
+        'effective_from',
+        'effective_to',
+        'temporary_override',
+        'notes',
     ];
 
     protected function casts(): array
@@ -27,6 +34,12 @@ class AvailabilityWindow extends Model
             'day_of_week' => 'integer',
             'specific_date' => 'date',
             'slot_duration_minutes' => 'integer',
+            'blackout_dates' => 'array',
+            'travel_buffer_minutes' => 'integer',
+            'capacity' => 'integer',
+            'effective_from' => 'date',
+            'effective_to' => 'date',
+            'temporary_override' => 'boolean',
         ];
     }
 

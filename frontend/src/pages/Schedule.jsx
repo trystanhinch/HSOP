@@ -16,6 +16,12 @@ function eventClass(item) {
   if (item.color === 'indigo' || item.type === 'site_visit') {
     return 'bg-indigo-100 text-indigo-700 border-indigo-200';
   }
+  if (item.type === 'booking_hold' || item.color === 'orange') {
+    return 'bg-orange-100 text-orange-800 border-orange-200';
+  }
+  if (item.type === 'booking' || item.color === 'teal') {
+    return 'bg-teal-100 text-teal-800 border-teal-200';
+  }
   if (item.status === 'in_progress' || item.status === 'progress_updated' || item.color === 'blue') {
     return 'bg-blue-100 text-blue-700 border-blue-200';
   }
@@ -195,17 +201,25 @@ function JobScheduleCalendar() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isPm = user?.role === 'pm';
+  const isOwner = user?.role === 'owner';
   const [month, setMonth] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [events, setEvents] = useState([]);
+  const [conflicts, setConflicts] = useState([]);
+  const [timezone, setTimezone] = useState('America/Vancouver');
+  const [view, setView] = useState('month');
 
   useEffect(() => {
-    api.get('/schedule', { params: { month } })
-      .then(({ data }) => setEvents(data.all || data.jobs || []))
+    api.get('/schedule', { params: { month, view } })
+      .then(({ data }) => {
+        setEvents(data.all || data.events || data.jobs || []);
+        setConflicts(data.conflicts || []);
+        if (data.timezone) setTimezone(data.timezone);
+      })
       .catch(() => setEvents([]));
-  }, [month]);
+  }, [month, view]);
 
   const [year, mon] = month.split('-').map(Number);
   const firstDay = new Date(year, mon - 1, 1).getDay();
@@ -226,59 +240,100 @@ function JobScheduleCalendar() {
     if (item.url) navigate(item.url);
   };
 
+  const agenda = [...events].sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`));
+
   return (
     <div>
+      <div className="flex flex-wrap gap-2 mb-3">
+        {['month', 'agenda', 'list'].map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setView(v)}
+            className={`px-3 py-1.5 text-sm rounded-lg ${view === v ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700'}`}
+          >
+            {v}
+          </button>
+        ))}
+        <span className="text-xs text-slate-500 self-center ml-auto">TZ: {timezone}</span>
+      </div>
       <div className="flex gap-4 mb-4 text-xs flex-wrap">
-        {isPm && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-200 border border-purple-300" /> PM Meeting</span>}
+        {(isPm || isOwner) && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-200 border border-purple-300" /> PM Meeting</span>}
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-indigo-200 border border-indigo-300" /> Site Visit</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-yellow-200 border border-yellow-300" /> Scheduled Job</span>
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-200 border border-blue-300" /> In Progress</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-200 border border-green-300" /> Completed</span>
+        {(isPm || isOwner) && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-200 border border-orange-300" /> Hold</span>}
+        {(isPm || isOwner) && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-teal-200 border border-teal-300" /> Booking</span>}
       </div>
-      <div className="bg-white rounded-xl border border-slate-200 p-4">
-        <div className="flex items-center justify-between mb-4">
-          <button type="button" onClick={() => {
-            const d = new Date(year, mon - 2, 1);
-            setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-          }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
-          <h2 className="font-semibold text-slate-800">{monthLabel}</h2>
-          <button type="button" onClick={() => {
-            const d = new Date(year, mon, 1);
-            setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-          }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-5 h-5" /></button>
+      {conflicts.length > 0 && (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {conflicts.length} schedule conflict(s) detected (accepted assignments / holds).
         </div>
-        <div className="grid grid-cols-7 gap-1">
-          {DAYS.map((d) => <div key={d} className="text-center text-xs font-medium text-slate-500 py-2">{d}</div>)}
-          {cells.map((day, i) => (
-            <div key={i} className={`min-h-[80px] border border-slate-100 rounded-lg p-1 ${day ? 'bg-white' : 'bg-slate-50'}`}>
-              {day && (
-                <>
-                  <p className="text-xs font-medium text-slate-600 mb-1">{day}</p>
-                  {eventsOnDay(day).map((item) => (
-                    <button
-                      key={`${item.type}-${item.id}`}
-                      type="button"
-                      onClick={() => handleClick(item)}
-                      disabled={item.type === 'pm_meeting'}
-                      className={`w-full text-left text-xs border rounded px-2 py-1 mb-1 truncate font-medium hover:opacity-80 ${eventClass(item)} ${item.type === 'pm_meeting' ? 'cursor-default' : ''}`}
-                      title={item.type === 'pm_meeting' ? item.notes || item.title : (item.time ? `${formatTime(item.time)} · ${item.address || ''}` : item.address)}
-                    >
-                      {item.type === 'site_visit' ? (
-                        <span>{item.customer_name || 'Site Visit'}</span>
-                      ) : (
-                        <>
-                          {item.time && <span className="opacity-70">{formatTime(item.time)} </span>}
-                          {item.title}
-                        </>
-                      )}
-                    </button>
-                  ))}
-                </>
-              )}
-            </div>
+      )}
+      {(view === 'agenda' || view === 'list') ? (
+        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+          {agenda.map((item) => (
+            <button
+              key={`${item.type}-${item.id}`}
+              type="button"
+              onClick={() => handleClick(item)}
+              className="w-full text-left px-4 py-3 hover:bg-slate-50 min-h-[56px]"
+            >
+              <p className="text-sm font-medium text-slate-800">{item.title}</p>
+              <p className="text-xs text-slate-500">
+                {item.date} {item.time || ''} · {item.type}
+                {item.directions_url ? ' · directions' : ''}
+              </p>
+            </button>
           ))}
+          {agenda.length === 0 && <p className="text-sm text-slate-500 text-center py-8">No events this month.</p>}
         </div>
-      </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-slate-200 p-4">
+          <div className="flex items-center justify-between mb-4">
+            <button type="button" onClick={() => {
+              const d = new Date(year, mon - 2, 1);
+              setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+            }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
+            <h2 className="font-semibold text-slate-800">{monthLabel}</h2>
+            <button type="button" onClick={() => {
+              const d = new Date(year, mon, 1);
+              setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+            }} className="p-2 hover:bg-slate-100 rounded-lg"><ChevronRight className="w-5 h-5" /></button>
+          </div>
+          <div className="grid grid-cols-7 gap-1">
+            {DAYS.map((d) => <div key={d} className="text-center text-xs font-medium text-slate-500 py-2">{d}</div>)}
+            {cells.map((day, i) => (
+              <div key={i} className={`min-h-[80px] border border-slate-100 rounded-lg p-1 ${day ? 'bg-white' : 'bg-slate-50'}`}>
+                {day && (
+                  <>
+                    <p className="text-xs font-medium text-slate-600 mb-1">{day}</p>
+                    {eventsOnDay(day).map((item) => (
+                      <button
+                        key={`${item.type}-${item.id}`}
+                        type="button"
+                        onClick={() => handleClick(item)}
+                        disabled={item.type === 'pm_meeting'}
+                        className={`w-full text-left text-xs border rounded px-2 py-1 mb-1 truncate font-medium hover:opacity-80 ${eventClass(item)} ${item.type === 'pm_meeting' ? 'cursor-default' : ''}`}
+                        title={item.type === 'pm_meeting' ? item.notes || item.title : (item.time ? `${formatTime(item.time)} · ${item.address || ''}` : item.address)}
+                      >
+                        {item.type === 'site_visit' ? (
+                          <span>{item.customer_name || 'Site Visit'}</span>
+                        ) : (
+                          <>
+                            {item.time && <span className="opacity-70">{formatTime(item.time)} </span>}
+                            {item.title}
+                          </>
+                        )}
+                      </button>
+                    ))}
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -286,11 +341,27 @@ function JobScheduleCalendar() {
 export default function Schedule() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'owner';
+  const [adminTab, setAdminTab] = useState('calendar');
 
   return (
     <div>
-      <PageHeader title="Schedule" subtitle={isAdmin ? 'PM meetings' : undefined} />
-      {isAdmin ? <AdminMeetingSchedule /> : <JobScheduleCalendar />}
+      <PageHeader
+        title="Schedule"
+        subtitle={isAdmin ? 'Unified calendar — PM meetings, site visits, jobs, holds, bookings' : undefined}
+      />
+      {isAdmin && (
+        <div className="flex gap-2 mb-4">
+          <button type="button" onClick={() => setAdminTab('calendar')}
+            className={`px-4 py-2 text-sm rounded-lg ${adminTab === 'calendar' ? 'bg-slate-800 text-white' : 'bg-white border border-slate-200'}`}>
+            Unified calendar
+          </button>
+          <button type="button" onClick={() => setAdminTab('meetings')}
+            className={`px-4 py-2 text-sm rounded-lg ${adminTab === 'meetings' ? 'bg-slate-800 text-white' : 'bg-white border border-slate-200'}`}>
+            PM meetings
+          </button>
+        </div>
+      )}
+      {isAdmin && adminTab === 'meetings' ? <AdminMeetingSchedule /> : <JobScheduleCalendar />}
     </div>
   );
 }

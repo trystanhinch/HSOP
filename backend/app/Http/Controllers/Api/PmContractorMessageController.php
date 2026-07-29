@@ -15,7 +15,7 @@ class PmContractorMessageController extends Controller
     {
         $user = $request->user();
 
-        if ($user->role === 'pm') {
+        if ($user->role === 'pm' || $user->role === 'owner') {
             $contractors = User::where('role', 'contractor')->where('status', 'active')->orderBy('name')->get(['id', 'name', 'email']);
 
             $conversations = $contractors->map(function (User $contractor) use ($user) {
@@ -30,6 +30,7 @@ class PmContractorMessageController extends Controller
                     'role' => $contractor->role,
                     'last_message' => $last?->content,
                     'last_message_at' => $last?->created_at,
+                    'last_at' => $last?->created_at,
                     'unread_count' => $unread,
                 ];
             });
@@ -112,11 +113,11 @@ class PmContractorMessageController extends Controller
 
     protected function canMessage(User $sender, User $receiver): bool
     {
-        if ($sender->role === 'pm' && $receiver->role === 'contractor') {
+        if (in_array($sender->role, ['pm', 'owner'], true) && $receiver->role === 'contractor') {
             return true;
         }
 
-        if ($sender->role === 'contractor' && $receiver->role === 'pm') {
+        if ($sender->role === 'contractor' && in_array($receiver->role, ['pm', 'owner'], true)) {
             return true;
         }
 

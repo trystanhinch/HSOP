@@ -19,6 +19,18 @@ class WorkflowSettings
             $out[$name.'_setting_key'] = $settingKey;
         }
 
+        $calc = app(BusinessHoursCalculator::class);
+        $out['clock_mode'] = $calc->clockMode();
+        $out['business_hours_profile_id'] = Setting::get('workflow_business_hours_profile_id');
+        $profile = $calc->resolveProfile();
+        $out['timezone'] = $profile->timezone;
+        $out['reminder_stages'] = [
+            'pm_contact_lead' => ['reminder', 'escalation', 'stop_on_contact'],
+            'quote_follow_up' => ['follow_up', 'stop_on_terminal'],
+            'contractor_pricing' => ['reminder'],
+            'job_missing_update' => ['flag'],
+        ];
+
         return $out;
     }
 
@@ -38,6 +50,9 @@ class WorkflowSettings
         if (! isset($keys[$name])) {
             throw new \InvalidArgumentException("Unknown workflow threshold [{$name}]");
         }
+        if ((float) $value <= 0) {
+            throw new \InvalidArgumentException("Threshold [{$name}] must be positive");
+        }
         Setting::set($keys[$name], (string) $value);
     }
 
@@ -52,8 +67,12 @@ class WorkflowSettings
         return $this->all();
     }
 
-    public function pmContactDueAt(): \Carbon\CarbonInterface
+    public function pmContactDueAt(?int $brandId = null): \Carbon\CarbonInterface
     {
-        return now()->addHours((int) $this->get('pm_contact_lead_hours'));
+        $calc = app(BusinessHoursCalculator::class);
+        $hours = (float) $this->get('pm_contact_lead_hours');
+        $profile = $calc->resolveProfile($brandId);
+
+        return $calc->addThresholdHours(now(), $hours, $profile);
     }
 }

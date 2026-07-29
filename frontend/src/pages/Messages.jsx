@@ -310,13 +310,15 @@ function JobMessagesPanel() {
   );
 }
 
-function AdminPmMessagesPanel() {
+function AdminPmMessagesPanel({ channelTone = 'internal' }) {
   const { user } = useAuth();
   const fieldTabs = usesBottomTabs(user?.role);
   const [conversations, setConversations] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMsg, setNewMsg] = useState('');
+  const [search, setSearch] = useState('');
+  const [mobileShowThread, setMobileShowThread] = useState(false);
 
   const loadConversations = () => {
     api.get('/admin-pm-messages/conversations')
@@ -353,51 +355,98 @@ function AdminPmMessagesPanel() {
   };
 
   const listLabel = user?.role === 'owner' ? 'Project Managers' : 'Admin';
-  const panelHeight = fieldTabs ? 'calc(100dvh - 14.5rem)' : 'calc(100vh - 200px)';
+  const panelHeight = fieldTabs
+    ? 'h-[calc(100dvh-14.5rem)] md:h-[calc(100vh-200px)]'
+    : 'h-[calc(100dvh-8.5rem)] md:h-[calc(100vh-200px)]';
+  const filtered = conversations.filter((c) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return (c.name || '').toLowerCase().includes(q) || (c.last_message || '').toLowerCase().includes(q);
+  });
+  const tone = channelTone === 'internal' ? 'border-amber-200 bg-amber-50/40' : 'border-slate-200 bg-white';
 
   return (
-    <div className="flex flex-col md:flex-row gap-4" style={{ height: panelHeight }}>
-      <div className="md:w-72 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0">
-        <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-3">{listLabel}</p>
-        {conversations.map((c) => (
-          <button key={c.user_id} onClick={() => setSelectedUser(c)}
-            className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${selectedUser?.user_id === c.user_id ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}>
-            <p className="text-sm font-medium text-slate-800 truncate">{c.name}</p>
+    <div className={`flex flex-col md:flex-row gap-0 md:gap-4 min-h-[320px] ${panelHeight}`}>
+      <div className={`md:w-72 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0 ${
+        mobileShowThread ? 'hidden md:block' : 'block flex-1 md:flex-none'
+      }`}>
+        <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-3">{listLabel} · Internal</p>
+        <div className="px-3 pb-2">
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search conversations…"
+            className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm min-h-[44px]"
+          />
+        </div>
+        {filtered.map((c) => (
+          <button
+            key={c.user_id}
+            type="button"
+            onClick={() => { setSelectedUser(c); setMobileShowThread(true); }}
+            className={`w-full text-left px-4 py-3 min-h-[56px] border-b border-slate-100 hover:bg-slate-50 ${selectedUser?.user_id === c.user_id ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}
+          >
+            <div className="flex justify-between gap-2">
+              <p className="text-sm font-medium text-slate-800 truncate">{c.name}</p>
+              {c.last_at && <span className="text-[10px] text-slate-400 flex-shrink-0">{new Date(c.last_at).toLocaleString()}</span>}
+            </div>
             {c.last_message && <p className="text-xs text-slate-500 truncate">{c.last_message}</p>}
             {c.unread_count > 0 && (
               <span className="inline-block mt-1 text-xs bg-blue-600 text-white rounded-full px-2 py-0.5">{c.unread_count}</span>
             )}
           </button>
         ))}
-        {conversations.length === 0 && (
+        {filtered.length === 0 && (
           <p className="text-sm text-slate-500 px-4 py-8 text-center">No conversations yet.</p>
         )}
       </div>
 
-      <div className="flex-1 bg-white rounded-xl border border-slate-200 flex flex-col min-w-0">
+      <div className={`flex-1 rounded-xl border flex flex-col min-w-0 min-h-0 ${tone} ${
+        mobileShowThread ? 'flex' : 'hidden md:flex'
+      }`}>
         {selectedUser ? (
           <>
-            <div className="px-4 py-3 border-b border-slate-200">
-              <p className="font-medium text-slate-800">{selectedUser.name}</p>
-              <p className="text-xs text-slate-500">{selectedUser.email}</p>
+            <div className="px-3 sm:px-4 py-3 border-b border-slate-200/80 flex items-center gap-2 bg-white/70 rounded-t-xl">
+              <button
+                type="button"
+                className="md:hidden p-2 -ml-1 text-slate-600 min-h-[44px] min-w-[44px]"
+                onClick={() => setMobileShowThread(false)}
+                aria-label="Back to list"
+              >
+                ←
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-slate-800 truncate">{selectedUser.name}</p>
+                <p className="text-xs text-slate-500 truncate">{selectedUser.email} · Internal channel</p>
+              </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
               {messages.map((m) => {
                 const mine = m.sender_id === user?.id;
                 return (
                   <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] rounded-xl px-4 py-2 text-sm ${mine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'}`}>
+                    <div className={`max-w-[75%] rounded-xl px-4 py-2 text-sm ${mine ? 'bg-amber-800 text-white' : 'bg-amber-100 text-amber-950 border border-amber-200'}`}>
                       {!mine && <p className="text-xs opacity-70 mb-1">{m.sender?.name}</p>}
                       {m.content}
+                      <p className={`text-[10px] mt-1 ${mine ? 'text-amber-100' : 'text-amber-700/70'}`}>
+                        {m.created_at ? new Date(m.created_at).toLocaleString() : ''}
+                        {m.read_at ? ' · Read' : (mine ? ' · Sent' : '')}
+                      </p>
                     </div>
                   </div>
                 );
               })}
             </div>
-            <form onSubmit={sendMessage} className="border-t border-slate-200 p-3 flex gap-2">
-              <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Message your PM..."
-                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm min-h-[44px]" />
-              <button type="submit" className="btn-primary-action px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">Send</button>
+            <form onSubmit={sendMessage} className="border-t border-amber-200 bg-amber-100/70 p-3 flex gap-2 rounded-b-xl">
+              <input
+                value={newMsg}
+                onChange={(e) => setNewMsg(e.target.value)}
+                placeholder="Message (internal)…"
+                className="flex-1 border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white min-h-[44px]"
+              />
+              <button type="submit" className="btn-primary-action px-4 py-2 bg-amber-800 hover:bg-amber-900 text-white text-sm rounded-lg min-h-[44px]">
+                Send
+              </button>
             </form>
           </>
         ) : (
@@ -512,13 +561,30 @@ export default function Messages() {
   const isAdmin = user?.role === 'owner';
   const isPm = user?.role === 'pm';
   const [pmTab, setPmTab] = useState('jobs');
+  const [adminTab, setAdminTab] = useState('pm');
   const [contractorTab, setContractorTab] = useState('jobs');
 
   if (isAdmin) {
     return (
       <div>
-        <PageHeader title="Messages" subtitle="Communicate with your project managers" />
-        <AdminPmMessagesPanel />
+        <PageHeader title="Messages" subtitle="Admin messaging — PM (internal), jobs/customers, and contractor channels" />
+        <div className="flex flex-wrap gap-2 mb-4">
+          <button type="button" onClick={() => setAdminTab('pm')}
+            className={`px-4 py-2 text-sm rounded-lg ${adminTab === 'pm' ? 'bg-amber-800 text-white' : 'bg-white border border-amber-200 text-amber-900'}`}>
+            PM Messages (internal)
+          </button>
+          <button type="button" onClick={() => setAdminTab('jobs')}
+            className={`px-4 py-2 text-sm rounded-lg ${adminTab === 'jobs' ? 'bg-sky-700 text-white' : 'bg-white border border-sky-200 text-sky-800'}`}>
+            Job / Customer
+          </button>
+          <button type="button" onClick={() => setAdminTab('contractors')}
+            className={`px-4 py-2 text-sm rounded-lg ${adminTab === 'contractors' ? 'bg-slate-800 text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
+            Contractor (CT-02)
+          </button>
+        </div>
+        {adminTab === 'pm' && <AdminPmMessagesPanel channelTone="internal" />}
+        {adminTab === 'jobs' && <JobMessagesPanel />}
+        {adminTab === 'contractors' && <PmContractorMessagesPanel />}
       </div>
     );
   }

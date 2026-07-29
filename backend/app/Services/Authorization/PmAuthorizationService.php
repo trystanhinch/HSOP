@@ -238,34 +238,77 @@ class PmAuthorizationService
     /**
      * Active bookings/holds that would be orphaned by deactivating this window.
      *
-     * @return array{bookings: int, holds: int, blocked: bool, message: ?string}
+     * @return array{
+     *   bookings: int,
+     *   holds: int,
+     *   blocked: bool,
+     *   message: ?string,
+     *   active_bookings: list<array<string, mixed>>,
+     *   active_holds: list<array<string, mixed>>,
+     *   resolution_options: list<array{action: string, label: string}>
+     * }
      */
     public function deactivationGuard(AvailabilityWindow $window): array
     {
         $resourceKey = $window->resourceKey();
-        $activeBookings = Booking::query()
+        $bookingRows = Booking::query()
+            ->with(['lead:id,contact_name,email,phone'])
             ->where('brand_id', $window->brand_id)
             ->where('resource_key', $resourceKey)
             ->whereIn('status', ['confirmed', 'scheduled', 'active', 'held'])
             ->where('slot_start', '>=', now()->subDay())
-            ->count();
+            ->orderBy('slot_start')
+            ->limit(50)
+            ->get();
 
-        $activeHolds = BookingHold::query()
+        $holdRows = BookingHold::query()
             ->where('brand_id', $window->brand_id)
             ->where('resource_key', $resourceKey)
             ->where('status', 'held')
             ->where('held_until', '>', now())
-            ->count();
+            ->orderBy('slot_start')
+            ->limit(50)
+            ->get();
 
+        $activeBookings = $bookingRows->count();
+        $activeHolds = $holdRows->count();
         $blocked = $activeBookings > 0 || $activeHolds > 0;
 
+        $detailsBookings = $bookingRows->map(fn (Booking $b) => [
+            'id' => $b->id,
+            'lead_id' => $b->lead_id,
+            'contact_name' => $b->lead?->contact_name,
+            'slot_start' => optional($b->slot_start)->toIso8601String() ?? (string) $b->slot_start,
+            'slot_end' => optional($b->slot_end)->toIso8601String() ?? (string) $b->slot_end,
+            'status' => $b->status,
+            'timezone' => $b->timezone,
+        ])->all();
+
+        $detailsHolds = $holdRows->map(fn (BookingHold $h) => [
+            'id' => $h->id,
+            'slot_start' => optional($h->slot_start)->toIso8601String() ?? (string) $h->slot_start,
+            'held_until' => optional($h->held_until)->toIso8601String() ?? (string) $h->held_until,
+            'status' => $h->status,
+        ])->all();
+
         return [
+            // Counts (PM-02 / API consumers expect active_bookings as int)
             'bookings' => $activeBookings,
             'holds' => $activeHolds,
+            'active_bookings' => $activeBookings,
+            'active_holds' => $activeHolds,
             'blocked' => $blocked,
             'message' => $blocked
-                ? "Cannot deactivate: {$activeBookings} active booking(s) and {$activeHolds} active hold(s) use this window. Reschedule or cancel them first."
+                ? "Cannot deactivate: {$activeBookings} active booking(s) and {$activeHolds} active hold(s) use this window. Choose a resolution path."
                 : null,
+            'booking_details' => $detailsBookings,
+            'hold_details' => $detailsHolds,
+            'resolution_options' => $blocked ? [
+                ['action' => 'reschedule', 'label' => 'Reschedule bookings/holds to another window first'],
+                ['action' => 'cancel_then_deactivate', 'label' => 'Cancel active bookings/holds, then deactivate'],
+            ] : [
+                ['action' => 'deactivate', 'label' => 'Deactivate window'],
+            ],
         ];
     }
 

@@ -59,7 +59,6 @@ class AvailabilityAdminController extends Controller
         }
 
         if ($user->role === 'pm') {
-            // 3A: brand-level (pm_id null) OR own windows
             $query->where(function ($q) use ($user) {
                 $q->whereNull('pm_id')->orWhere('pm_id', $user->id);
             });
@@ -113,6 +112,9 @@ class AvailabilityAdminController extends Controller
                     'message' => $guard['message'],
                     'active_bookings' => $guard['bookings'],
                     'active_holds' => $guard['holds'],
+                    'booking_details' => $guard['active_bookings'],
+                    'hold_details' => $guard['active_holds'],
+                    'resolution_options' => $guard['resolution_options'],
                 ], 422);
             }
         }
@@ -134,6 +136,9 @@ class AvailabilityAdminController extends Controller
                 'message' => $guard['message'],
                 'active_bookings' => $guard['bookings'],
                 'active_holds' => $guard['holds'],
+                'booking_details' => $guard['active_bookings'],
+                'hold_details' => $guard['active_holds'],
+                'resolution_options' => $guard['resolution_options'],
             ], 422);
         }
 
@@ -142,6 +147,90 @@ class AvailabilityAdminController extends Controller
         $this->authz->logAvailabilityChange($user, $availabilityWindow, 'availability_window_deactivated', $before);
 
         return response()->json(['message' => 'Availability window deactivated.']);
+    }
+
+    /**
+     * A-24 — Preview deactivation impact (bookings/holds + resolution paths).
+     */
+    public function deactivationPreview(Request $request, AvailabilityWindow $availabilityWindow): JsonResponse
+    {
+        $this->authz->assertWindowAccess($request->user(), $availabilityWindow, 'deactivate_preview');
+
+        return response()->json($this->authz->deactivationGuard($availabilityWindow));
+    }
+
+    /**
+     * A-24 — Resolve active bookings/holds then deactivate (explicit cancel path).
+     */
+    public function resolveAndDeactivate(Request $request, AvailabilityWindow $availabilityWindow): JsonResponse
+    {
+        $user = $request->user();
+        $this->authz->assertWindowAccess($user, $availabilityWindow, 'deactivate_resolve');
+
+        $data = $request->validate([
+            'resolution' => ['required', Rule::in(['cancel_then_deactivate', 'reschedule'])],
+            'confirm' => 'required|accepted',
+        ]);
+
+        if ($data['resolution'] === 'reschedule') {
+            return response()->json([
+                'message' => 'Reschedule bookings/holds to another window, then deactivate.',
+                'blocked' => true,
+            ], 422);
+        }
+
+        $guard = $this->authz->deactivationGuard($availabilityWindow);
+        $resourceKey = $availabilityWindow->resourceKey();
+
+        Booking::query()
+            ->where('brand_id', $availabilityWindow->brand_id)
+            ->where('resource_key', $resourceKey)
+            ->whereIn('status', ['confirmed', 'scheduled', 'active', 'held'])
+            ->where('slot_start', '>=', now()->subDay())
+            ->update(['status' => 'cancelled']);
+
+        BookingHold::query()
+            ->where('brand_id', $availabilityWindow->brand_id)
+            ->where('resource_key', $resourceKey)
+            ->where('status', 'held')
+            ->where('held_until', '>', now())
+            ->update(['status' => 'cancelled']);
+
+        $before = $availabilityWindow->toArray();
+        $availabilityWindow->update(['status' => 'inactive']);
+        $this->authz->logAvailabilityChange($user, $availabilityWindow, 'availability_window_deactivated_after_cancel', array_merge($before, [
+            'cancelled_bookings' => $guard['bookings'],
+            'cancelled_holds' => $guard['holds'],
+        ]));
+
+        return response()->json([
+            'message' => 'Active bookings/holds cancelled and window deactivated.',
+            'cancelled_bookings' => $guard['bookings'],
+            'cancelled_holds' => $guard['holds'],
+        ]);
+    }
+
+    /**
+     * A-24 — Duplicate an availability window.
+     */
+    public function duplicateWindow(Request $request, AvailabilityWindow $availabilityWindow): JsonResponse
+    {
+        $user = $request->user();
+        $this->authz->assertWindowAccess($user, $availabilityWindow, 'duplicate');
+        $this->authz->assertBrandAccess($user, (int) $availabilityWindow->brand_id, 'availability_duplicate');
+
+        $copy = $availabilityWindow->replicate([
+            'created_at', 'updated_at',
+        ]);
+        $copy->notes = trim(($copy->notes ? $copy->notes.' · ' : '').'Duplicated from #'.$availabilityWindow->id);
+        $copy->status = 'active';
+        $copy->save();
+
+        $this->authz->logAvailabilityChange($user, $copy, 'availability_window_duplicated', [
+            'source_id' => $availabilityWindow->id,
+        ]);
+
+        return response()->json($copy->load(['brand:id,domain,company_name']), 201);
     }
 
     public function bookings(Request $request): JsonResponse
@@ -181,6 +270,7 @@ class AvailabilityAdminController extends Controller
         return response()->json([
             'bookings' => $bookings,
             'holds' => $holds,
+            'timezone' => config('booking.default_timezone', 'America/Vancouver'),
         ]);
     }
 
@@ -203,6 +293,14 @@ class AvailabilityAdminController extends Controller
             'slot_duration_minutes' => 'nullable|integer|min:15|max:480',
             'timezone' => 'nullable|string|max:64',
             'status' => ['nullable', Rule::in(['active', 'inactive'])],
+            'blackout_dates' => 'nullable|array',
+            'blackout_dates.*' => 'date',
+            'travel_buffer_minutes' => 'nullable|integer|min:0|max:240',
+            'capacity' => 'nullable|integer|min:1|max:50',
+            'effective_from' => 'nullable|date',
+            'effective_to' => 'nullable|date|after_or_equal:effective_from',
+            'temporary_override' => 'nullable|boolean',
+            'notes' => 'nullable|string|max:500',
         ]);
 
         if (! isset($data['slot_duration_minutes'])) {
@@ -214,9 +312,20 @@ class AvailabilityAdminController extends Controller
         if (! isset($data['status'])) {
             $data['status'] = 'active';
         }
+        if (! isset($data['capacity'])) {
+            $data['capacity'] = 1;
+        }
+        if (! isset($data['travel_buffer_minutes'])) {
+            $data['travel_buffer_minutes'] = 0;
+        }
 
         if (empty($data['specific_date']) && ! array_key_exists('day_of_week', $data) && ! $partial) {
             abort(response()->json(['message' => 'Provide day_of_week or specific_date.'], 422));
+        }
+
+        // A-24: no mixed-service day fields — when specific_date set, clear day_of_week.
+        if (! empty($data['specific_date'])) {
+            $data['day_of_week'] = null;
         }
 
         return $data;

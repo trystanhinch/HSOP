@@ -29,6 +29,7 @@ class AdminPmMessageController extends Controller
                     'role' => $pm->role,
                     'last_message' => $last?->content,
                     'last_message_at' => $last?->created_at,
+                    'last_at' => $last?->created_at,
                     'unread_count' => $unread,
                 ];
             });
@@ -51,6 +52,7 @@ class AdminPmMessageController extends Controller
                     'role' => $admin->role,
                     'last_message' => $last?->content,
                     'last_message_at' => $last?->created_at,
+                    'last_at' => $last?->created_at,
                     'unread_count' => $unread,
                 ];
             });

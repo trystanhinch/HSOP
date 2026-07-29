@@ -103,14 +103,21 @@ class EscalationEngine
             return 'reminded';
         }
 
-        $escalationHours = (int) $this->settings->get('pm_contact_escalation_hours');
+        $escalationHours = (float) $this->settings->get('pm_contact_escalation_hours');
         $reminderAt = WorkflowEscalationLog::query()
             ->where('next_action_id', $action->id)
             ->where('rule_key', 'pm_contact_lead')
             ->where('stage', 'reminder')
             ->value('fired_at');
 
-        if (! $reminderAt || now()->lt($reminderAt->copy()->addHours($escalationHours))) {
+        $brandId = $action->subject instanceof Lead ? ($action->subject->brand_id ?? null) : null;
+        $calc = app(BusinessHoursCalculator::class);
+        $profile = $calc->resolveProfile($brandId ? (int) $brandId : null);
+        $escalationDue = $reminderAt
+            ? $calc->addThresholdHours(\Carbon\Carbon::parse($reminderAt), $escalationHours, $profile)
+            : null;
+
+        if (! $reminderAt || ! $escalationDue || now()->lt($escalationDue)) {
             return 'skipped';
         }
 
@@ -129,7 +136,7 @@ class EscalationEngine
                 'action_description' => 'Escalation: PM has not contacted lead — Owner follow-up required.',
                 'responsible_role' => 'owner',
                 'responsible_user_id' => $owner->id,
-                'due_at' => now()->addHours(4),
+                'due_at' => $calc->addThresholdHours(now(), 4, $profile),
                 'status' => 'pending',
                 'escalation_rule' => 'owner_pm_contact_escalation',
                 'last_action_at' => now(),

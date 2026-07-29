@@ -3,19 +3,23 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Contracts\AiProviderInterface;
 use App\Models\AiActionLog;
+use App\Models\BusinessHoursProfile;
 use App\Models\Job;
 use App\Models\Lead;
 use App\Models\MessageTemplate;
 use App\Models\Setting;
 use App\Models\User;
-use App\Contracts\AiProviderInterface;
+use App\Models\WorkflowThresholdVersion;
 use App\Services\AiActionAuthorizer;
+use App\Services\Workflow\BusinessHoursCalculator;
 use App\Services\Workflow\WorkflowSettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Throwable;
 
 class WorkflowAssistController extends Controller
@@ -24,11 +28,16 @@ class WorkflowAssistController extends Controller
         private AiProviderInterface $ai,
         private AiActionAuthorizer $authorizer,
         private WorkflowSettings $workflowSettings,
+        private BusinessHoursCalculator $businessHours,
     ) {}
 
     public function thresholds(): JsonResponse
     {
-        return response()->json($this->workflowSettings->all());
+        $out = $this->workflowSettings->all();
+        $out['profiles'] = BusinessHoursProfile::query()->orderByDesc('is_default')->get();
+        $out['versions'] = WorkflowThresholdVersion::query()->orderByDesc('id')->limit(20)->get();
+
+        return response()->json($out);
     }
 
     public function updateThresholds(Request $request): JsonResponse
@@ -39,9 +48,136 @@ class WorkflowAssistController extends Controller
             'contractor_pricing_deadline_hours' => 'nullable|numeric|min:1|max:336',
             'quote_follow_up_hours' => 'nullable|numeric|min:1|max:336',
             'job_missing_update_days' => 'nullable|numeric|min:1|max:60',
+            'clock_mode' => ['nullable', Rule::in(['wall', 'business'])],
+            'business_hours_profile_id' => 'nullable|integer|exists:business_hours_profiles,id',
+            'notes' => 'nullable|string|max:500',
         ]);
 
-        return response()->json($this->workflowSettings->updateMany($data));
+        foreach (['pm_contact_lead_hours', 'pm_contact_escalation_hours', 'contractor_pricing_deadline_hours', 'quote_follow_up_hours', 'job_missing_update_days'] as $key) {
+            if (array_key_exists($key, $data) && (float) $data[$key] <= 0) {
+                return response()->json(['message' => "{$key} must be positive."], 422);
+            }
+        }
+
+        if (isset($data['clock_mode'])) {
+            Setting::set('workflow_clock_mode', $data['clock_mode']);
+        }
+        if (array_key_exists('business_hours_profile_id', $data) && $data['business_hours_profile_id']) {
+            Setting::set('workflow_business_hours_profile_id', (string) $data['business_hours_profile_id']);
+            BusinessHoursProfile::query()->update(['is_default' => false]);
+            BusinessHoursProfile::query()->whereKey($data['business_hours_profile_id'])->update(['is_default' => true]);
+        }
+
+        $thresholdPayload = collect($data)->only([
+            'pm_contact_lead_hours',
+            'pm_contact_escalation_hours',
+            'contractor_pricing_deadline_hours',
+            'quote_follow_up_hours',
+            'job_missing_update_days',
+        ])->filter(fn ($v) => $v !== null)->all();
+
+        $updated = $this->workflowSettings->updateMany($thresholdPayload);
+
+        $profile = $this->businessHours->resolveProfile();
+        $preview = $this->businessHours->previewTimeline(
+            (float) ($updated['pm_contact_lead_hours'] ?? 4),
+            (float) ($updated['pm_contact_escalation_hours'] ?? 4),
+            $profile,
+            $updated['clock_mode'] ?? null,
+        );
+
+        WorkflowThresholdVersion::create([
+            'actor_id' => $request->user()?->id,
+            'thresholds' => $updated,
+            'preview_timeline' => $preview,
+            'clock_mode' => $updated['clock_mode'] ?? 'business',
+            'business_hours_profile_id' => $profile->id,
+            'notes' => $data['notes'] ?? null,
+        ]);
+
+        $updated['preview_timeline'] = $preview;
+        $updated['profiles'] = BusinessHoursProfile::query()->orderByDesc('is_default')->get();
+        $updated['versions'] = WorkflowThresholdVersion::query()->orderByDesc('id')->limit(20)->get();
+
+        return response()->json($updated);
+    }
+
+    /**
+     * A-15 — Preview exact reminder/escalation timeline before saving.
+     */
+    public function previewThresholds(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'pm_contact_lead_hours' => 'required|numeric|min:0.5|max:168',
+            'pm_contact_escalation_hours' => 'required|numeric|min:0.5|max:168',
+            'clock_mode' => ['nullable', Rule::in(['wall', 'business'])],
+            'brand_id' => 'nullable|integer',
+            'from' => 'nullable|date',
+        ]);
+
+        if ((float) $data['pm_contact_lead_hours'] <= 0 || (float) $data['pm_contact_escalation_hours'] <= 0) {
+            return response()->json(['message' => 'Thresholds must be positive.'], 422);
+        }
+
+        $profile = $this->businessHours->resolveProfile(
+            isset($data['brand_id']) ? (int) $data['brand_id'] : null
+        );
+
+        $timeline = $this->businessHours->previewTimeline(
+            (float) $data['pm_contact_lead_hours'],
+            (float) $data['pm_contact_escalation_hours'],
+            $profile,
+            $data['clock_mode'] ?? null,
+            isset($data['from']) ? \Carbon\Carbon::parse($data['from']) : null,
+        );
+
+        return response()->json([
+            'preview_timeline' => $timeline,
+            'timezone' => $profile->timezone,
+            'clock_mode' => $data['clock_mode'] ?? $this->businessHours->clockMode(),
+            'notified' => [
+                ['when' => 'reminder', 'who' => 'assigned_pm', 'channel' => 'sms+in_app'],
+                ['when' => 'escalation', 'who' => 'owner', 'channel' => 'sms+in_app'],
+            ],
+        ]);
+    }
+
+    public function upsertBusinessHours(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'id' => 'nullable|integer|exists:business_hours_profiles,id',
+            'brand_id' => 'nullable|integer|exists:brands,id',
+            'name' => 'required|string|max:120',
+            'timezone' => 'required|string|max:64',
+            'weekly_hours' => 'required|array',
+            'holidays' => 'nullable|array',
+            'holidays.*' => 'date',
+            'is_default' => 'nullable|boolean',
+        ]);
+
+        if (! empty($data['is_default'])) {
+            BusinessHoursProfile::query()->update(['is_default' => false]);
+        }
+
+        $profile = isset($data['id'])
+            ? BusinessHoursProfile::query()->findOrFail($data['id'])
+            : new BusinessHoursProfile;
+
+        $profile->fill([
+            'brand_id' => $data['brand_id'] ?? null,
+            'name' => $data['name'],
+            'timezone' => $data['timezone'],
+            'weekly_hours' => $data['weekly_hours'],
+            'holidays' => $data['holidays'] ?? [],
+            'is_default' => (bool) ($data['is_default'] ?? false),
+        ]);
+        $profile->save();
+
+        if ($profile->is_default) {
+            Setting::set('workflow_business_hours_profile_id', (string) $profile->id);
+        }
+
+        return response()->json($profile);
     }
 
     public function callPrep(Lead $lead): JsonResponse

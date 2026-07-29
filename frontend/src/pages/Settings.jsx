@@ -390,6 +390,8 @@ export default function Settings() {
         contractor_pricing_deadline_hours: workflowThresholds.contractor_pricing_deadline_hours,
         quote_follow_up_hours: workflowThresholds.quote_follow_up_hours,
         job_missing_update_days: workflowThresholds.job_missing_update_days,
+        clock_mode: workflowThresholds.clock_mode || 'business',
+        business_hours_profile_id: workflowThresholds.business_hours_profile_id || undefined,
       });
       setWorkflowThresholds(data);
       await showSuccess('Workflow thresholds saved.');
@@ -397,6 +399,20 @@ export default function Settings() {
       await showError(err.response?.data?.message || 'Failed to save thresholds.');
     } finally {
       setWorkflowSaving(false);
+    }
+  };
+
+  const previewWorkflowThresholds = async () => {
+    if (!workflowThresholds) return;
+    try {
+      const { data } = await api.post('/workflow/thresholds/preview', {
+        pm_contact_lead_hours: Number(workflowThresholds.pm_contact_lead_hours),
+        pm_contact_escalation_hours: Number(workflowThresholds.pm_contact_escalation_hours),
+        clock_mode: workflowThresholds.clock_mode || 'business',
+      });
+      setWorkflowThresholds({ ...workflowThresholds, preview_timeline: data.preview_timeline, notified: data.notified });
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Preview failed.');
     }
   };
 
@@ -1623,13 +1639,27 @@ export default function Settings() {
       )}
 
       {activeTab === 'Workflow' && (
-        <form onSubmit={saveWorkflowThresholds} className="bg-white rounded-xl border border-slate-200 p-6 max-w-xl space-y-4">
+        <form onSubmit={saveWorkflowThresholds} className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
           <h3 className="font-semibold text-slate-800">Automation thresholds</h3>
-          <p className="text-sm text-slate-500">Owner-editable defaults for reminders and escalations. Change anytime without a rebuild.</p>
+          <p className="text-sm text-slate-500">
+            Business-hours mode skips nights/weekends/holidays for PM contact, escalation, and related clocks.
+          </p>
           {!workflowThresholds ? (
             <p className="text-sm text-slate-400">Loading…</p>
           ) : (
             <>
+              <label className="block text-sm">
+                <span className="text-slate-600">Clock mode</span>
+                <select
+                  value={workflowThresholds.clock_mode || 'business'}
+                  onChange={(e) => setWorkflowThresholds({ ...workflowThresholds, clock_mode: e.target.value })}
+                  className="mt-1 w-full border border-slate-300 rounded-lg px-3 py-2"
+                >
+                  <option value="business">Business hours (timezone-aware)</option>
+                  <option value="wall">Wall clock (24/7)</option>
+                </select>
+              </label>
+              <p className="text-xs text-slate-500">Timezone: {workflowThresholds.timezone || 'America/Vancouver'}</p>
               {[
                 ['pm_contact_lead_hours', 'PM must contact new lead within (hours)'],
                 ['pm_contact_escalation_hours', 'Escalate to Owner after reminder (hours)'],
@@ -1649,9 +1679,38 @@ export default function Settings() {
                   />
                 </label>
               ))}
-              <button type="submit" disabled={workflowSaving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-60">
-                {workflowSaving ? 'Saving…' : 'Save thresholds'}
-              </button>
+              {workflowThresholds.preview_timeline && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-600 uppercase">Timeline preview</p>
+                  {workflowThresholds.preview_timeline.map((row) => (
+                    <div key={`${row.at}-${row.label}`} className="text-sm text-slate-700">
+                      <span className="font-medium">{row.label}</span>
+                      <span className="text-slate-500"> · {row.actor} · {row.at}</span>
+                    </div>
+                  ))}
+                  {workflowThresholds.notified && (
+                    <p className="text-xs text-slate-500 pt-1">
+                      Notified: {workflowThresholds.notified.map((n) => `${n.who} at ${n.when}`).join('; ')}
+                    </p>
+                  )}
+                </div>
+              )}
+              {Array.isArray(workflowThresholds.versions) && workflowThresholds.versions.length > 0 && (
+                <div className="text-xs text-slate-500 space-y-1">
+                  <p className="font-semibold uppercase text-slate-600">Recent versions</p>
+                  {workflowThresholds.versions.slice(0, 5).map((v) => (
+                    <p key={v.id}>#{v.id} · {v.clock_mode} · {v.created_at}</p>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={previewWorkflowThresholds} className="px-4 py-2 border border-slate-300 text-slate-700 text-sm rounded-lg">
+                  Preview timeline
+                </button>
+                <button type="submit" disabled={workflowSaving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-60">
+                  {workflowSaving ? 'Saving…' : 'Save thresholds'}
+                </button>
+              </div>
             </>
           )}
         </form>

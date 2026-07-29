@@ -304,9 +304,9 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     Route::get('/admin-pm-messages/with/{userId}', [AdminPmMessageController::class, 'thread'])->middleware('role:owner,pm');
     Route::post('/admin-pm-messages/with/{userId}', [AdminPmMessageController::class, 'store'])->middleware('role:owner,pm');
 
-    Route::get('/pm-contractor-messages/conversations', [PmContractorMessageController::class, 'conversations'])->middleware('role:pm,contractor');
-    Route::get('/pm-contractor-messages/with/{userId}', [PmContractorMessageController::class, 'thread'])->middleware('role:pm,contractor');
-    Route::post('/pm-contractor-messages/with/{userId}', [PmContractorMessageController::class, 'store'])->middleware('role:pm,contractor');
+    Route::get('/pm-contractor-messages/conversations', [PmContractorMessageController::class, 'conversations'])->middleware('role:owner,pm,contractor');
+    Route::get('/pm-contractor-messages/with/{userId}', [PmContractorMessageController::class, 'thread'])->middleware('role:owner,pm,contractor');
+    Route::post('/pm-contractor-messages/with/{userId}', [PmContractorMessageController::class, 'store'])->middleware('role:owner,pm,contractor');
 
     Route::get('/contractor/leads', [ContractorLeadController::class, 'index'])->middleware('role:contractor');
 
@@ -327,6 +327,7 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     Route::get('/reports/profit-breakdown', [ProfitReportController::class, 'profitBreakdown'])->middleware('role:owner');
 
     Route::get('/schedule', [ScheduleController::class, 'index']);
+    Route::post('/schedule/conflicts/check', [ScheduleController::class, 'checkConflict'])->middleware('role:owner,pm');
 
     Route::get('/settings', [SettingsController::class, 'index'])->middleware('role:owner');
     Route::post('/settings', [SettingsController::class, 'update'])->middleware('role:owner');
@@ -370,6 +371,8 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
 
         Route::get('/workflow/thresholds', [WorkflowAssistController::class, 'thresholds']);
         Route::put('/workflow/thresholds', [WorkflowAssistController::class, 'updateThresholds']);
+        Route::post('/workflow/thresholds/preview', [WorkflowAssistController::class, 'previewThresholds']);
+        Route::put('/workflow/business-hours', [WorkflowAssistController::class, 'upsertBusinessHours']);
         Route::get('/message-templates', [MessageTemplateController::class, 'index']);
         Route::post('/message-templates', [MessageTemplateController::class, 'store']);
         Route::put('/message-templates/{messageTemplate}', [MessageTemplateController::class, 'update']);
@@ -391,6 +394,9 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
         Route::post('/availability/windows', [AvailabilityAdminController::class, 'storeWindow']);
         Route::put('/availability/windows/{availabilityWindow}', [AvailabilityAdminController::class, 'updateWindow']);
         Route::delete('/availability/windows/{availabilityWindow}', [AvailabilityAdminController::class, 'destroyWindow']);
+        Route::get('/availability/windows/{availabilityWindow}/deactivation-preview', [AvailabilityAdminController::class, 'deactivationPreview']);
+        Route::post('/availability/windows/{availabilityWindow}/resolve-deactivate', [AvailabilityAdminController::class, 'resolveAndDeactivate']);
+        Route::post('/availability/windows/{availabilityWindow}/duplicate', [AvailabilityAdminController::class, 'duplicateWindow']);
         Route::get('/availability/bookings', [AvailabilityAdminController::class, 'bookings']);
 
         Route::post('/leads/{lead}/ai/call-prep', [WorkflowAssistController::class, 'callPrep']);
