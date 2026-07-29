@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Plus, Trash2 } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
+import FieldQuickActions from '../components/FieldQuickActions';
+import StatusBadge from '../components/StatusBadge';
 import { useAuth } from '../context/AuthContext';
 import { confirmDanger, showError, showSuccess } from '../utils/swal';
 import { formatTime } from '../utils/formatDate';
@@ -200,6 +202,7 @@ function AdminMeetingSchedule() {
 function JobScheduleCalendar() {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isPm = user?.role === 'pm';
   const isOwner = user?.role === 'owner';
   const [month, setMonth] = useState(() => {
@@ -209,7 +212,19 @@ function JobScheduleCalendar() {
   const [events, setEvents] = useState([]);
   const [conflicts, setConflicts] = useState([]);
   const [timezone, setTimezone] = useState('America/Vancouver');
-  const [view, setView] = useState('month');
+  // PM-13: agenda is the default for PMs (full field details)
+  const [view, setView] = useState(() => {
+    const fromUrl = searchParams.get('view');
+    if (fromUrl && ['month', 'agenda', 'list'].includes(fromUrl)) return fromUrl;
+    return user?.role === 'pm' ? 'agenda' : 'month';
+  });
+
+  const setViewAndUrl = (v) => {
+    setView(v);
+    const next = new URLSearchParams(searchParams);
+    next.set('view', v);
+    setSearchParams(next, { replace: true });
+  };
 
   useEffect(() => {
     api.get('/schedule', { params: { month, view } })
@@ -240,7 +255,19 @@ function JobScheduleCalendar() {
     if (item.url) navigate(item.url);
   };
 
+  const conflictIds = new Set(
+    (conflicts || []).flatMap((c) => [c.event_id, c.id, c.a_id, c.b_id].filter(Boolean).map(String))
+  );
+
   const agenda = [...events].sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`));
+
+  const eventTypeLabel = (item) => {
+    if (item.type === 'site_visit') return 'Site visit';
+    if (item.type === 'pm_meeting') return 'PM meeting';
+    if (item.type === 'booking_hold') return 'Hold';
+    if (item.type === 'booking') return 'Booking';
+    return 'Job';
+  };
 
   return (
     <div>
@@ -249,8 +276,8 @@ function JobScheduleCalendar() {
           <button
             key={v}
             type="button"
-            onClick={() => setView(v)}
-            className={`px-3 py-1.5 text-sm rounded-lg ${view === v ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700'}`}
+            onClick={() => setViewAndUrl(v)}
+            className={`px-3 py-1.5 text-sm rounded-lg capitalize ${view === v ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-700'}`}
           >
             {v}
           </button>
@@ -272,21 +299,58 @@ function JobScheduleCalendar() {
       )}
       {(view === 'agenda' || view === 'list') ? (
         <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-          {agenda.map((item) => (
-            <button
-              key={`${item.type}-${item.id}`}
-              type="button"
-              onClick={() => handleClick(item)}
-              className="w-full text-left px-4 py-3 hover:bg-slate-50 min-h-[56px]"
-            >
-              <p className="text-sm font-medium text-slate-800">{item.title}</p>
-              <p className="text-xs text-slate-500">
-                {item.date} {item.time || ''} · {item.type}
-                {item.directions_url ? ' · directions' : ''}
-              </p>
-            </button>
-          ))}
-          {agenda.length === 0 && <p className="text-sm text-slate-500 text-center py-8">No events this month.</p>}
+          {agenda.map((item) => {
+            const hasConflict = conflictIds.has(String(item.id))
+              || (conflicts || []).some((c) => String(c.type) === String(item.type) && String(c.id) === String(item.id));
+            const timeRange = [
+              item.time ? formatTime(item.time) : null,
+              item.end_time ? formatTime(item.end_time) : null,
+            ].filter(Boolean).join(' – ');
+            return (
+              <div
+                key={`${item.type}-${item.id}`}
+                className={`px-4 py-3 ${hasConflict ? 'bg-red-50/60' : 'hover:bg-slate-50'}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => handleClick(item)}
+                  className="w-full text-left min-h-[44px]"
+                  disabled={item.type === 'pm_meeting' && !item.url}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{item.title}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {item.date}{timeRange ? ` · ${timeRange}` : ''}
+                        {item.end_date && item.end_date !== item.date ? ` → ${item.end_date}` : ''}
+                        {' · '}{eventTypeLabel(item)}
+                      </p>
+                    </div>
+                    {item.status && <StatusBadge status={item.status} />}
+                  </div>
+                  <div className="mt-2 grid sm:grid-cols-2 gap-1 text-xs text-slate-600">
+                    {item.customer_name && <p><span className="text-slate-400">Customer:</span> {item.customer_name}</p>}
+                    {item.address && <p><span className="text-slate-400">Address:</span> {item.address}</p>}
+                    {item.contractor_name && <p><span className="text-slate-400">Contractor:</span> {item.contractor_name}</p>}
+                    {item.pm_name && <p><span className="text-slate-400">PM:</span> {item.pm_name}</p>}
+                  </div>
+                  {hasConflict && (
+                    <p className="text-xs font-medium text-red-700 mt-2">Conflict warning — overlapping accepted work</p>
+                  )}
+                </button>
+                <FieldQuickActions
+                  phone={item.customer_phone}
+                  address={item.address}
+                  className="mt-2"
+                />
+              </div>
+            );
+          })}
+          {agenda.length === 0 && (
+            <p className="text-sm text-slate-500 text-center py-8">
+              {isPm ? 'No events on your schedule for this month.' : 'No events this month.'}
+            </p>
+          )}
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 p-4">

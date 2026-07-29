@@ -28,7 +28,10 @@ class InvoiceController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = Invoice::with(['job:id,address,service_category', 'customer:id,name']);
+        $query = Invoice::with([
+            'job:id,address,service_category,pm_id',
+            'customer:id,name,email,phone',
+        ]);
 
         if ($user->role === 'customer') {
             $query->where('customer_id', $user->id);
@@ -41,6 +44,22 @@ class InvoiceController extends Controller
         $invoices = $query->latest()->paginate(20);
         $invoices->getCollection()->transform(function ($invoice) {
             $invoice->is_overdue = $invoice->is_overdue;
+            $jobId = $invoice->job_id;
+            $lastReminder = $jobId
+                ? \App\Models\EmailLog::query()
+                    ->where('related_job_id', $jobId)
+                    ->whereIn('trigger_event', ['invoice_sent', 'invoice_reminder', 'payment_reminder'])
+                    ->latest('id')
+                    ->first(['id', 'trigger_event', 'created_at', 'status'])
+                : null;
+            $invoice->setAttribute('issued_at', $invoice->created_at);
+            $invoice->setAttribute('payment_state', $this->paymentStateLabel($invoice));
+            $invoice->setAttribute('last_reminder_at', $lastReminder?->created_at);
+            $invoice->setAttribute('last_reminder_event', $lastReminder?->trigger_event);
+            $invoice->setAttribute('customer_phone', $invoice->customer?->phone);
+            $invoice->setAttribute('customer_email', $invoice->customer?->email);
+            $invoice->setAttribute('can_void', false);
+            $invoice->setAttribute('can_refund', false);
 
             return $invoice;
         });
@@ -157,7 +176,8 @@ class InvoiceController extends Controller
 
         $this->authz->assertInvoiceAccess(auth()->user(), $invoice);
 
-        $link = $this->payments->createPaymentLink($invoice);
+        $linkPayload = $this->payments->createPaymentLink($invoice);
+        $link = is_array($linkPayload) ? ($linkPayload['payment_link'] ?? null) : $linkPayload;
         $invoice->update([
             'status' => 'invoice_sent',
             'sent_at' => now(),
@@ -169,6 +189,51 @@ class InvoiceController extends Controller
             'invoice' => $invoice->fresh(),
             'payment_link' => $link,
         ]);
+    }
+
+    /**
+     * PM-14 — generate/return payment link without changing financial status beyond send semantics.
+     * Void/refund stay owner-only (not exposed here).
+     */
+    public function paymentLink(Invoice $invoice): JsonResponse
+    {
+        if (! in_array(auth()->user()->role, ['owner', 'pm'], true)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $this->authz->assertInvoiceAccess(auth()->user(), $invoice);
+
+        $linkPayload = $this->payments->createPaymentLink($invoice);
+        $link = is_array($linkPayload) ? ($linkPayload['payment_link'] ?? null) : $linkPayload;
+
+        return response()->json([
+            'payment_link' => $link,
+            'invoice_id' => $invoice->id,
+            'status' => $invoice->status,
+        ]);
+    }
+
+    /**
+     * PM-14 — light follow-up audit when PM records customer contact about an invoice.
+     */
+    public function recordContact(Request $request, Invoice $invoice): JsonResponse
+    {
+        if (! in_array(auth()->user()->role, ['owner', 'pm'], true)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $this->authz->assertInvoiceAccess(auth()->user(), $invoice);
+
+        $data = $request->validate([
+            'note' => 'nullable|string|max:500',
+            'channel' => 'nullable|in:call,sms,email,other',
+        ]);
+
+        $this->notifications->audit('invoice_customer_contacted', 'invoice', $invoice->id, null, null, [
+            'note' => $data['note'] ?? null,
+            'channel' => $data['channel'] ?? 'other',
+            'by' => auth()->id(),
+        ]);
+
+        return response()->json(['message' => 'Contact recorded']);
     }
 
     public function pdf(Invoice $invoice): Response
@@ -189,5 +254,26 @@ class InvoiceController extends Controller
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'attachment; filename="'.$filename.'"',
         ]);
+    }
+
+    private function paymentStateLabel(Invoice $invoice): string
+    {
+        if (in_array($invoice->status, ['paid', 'refunded'], true)) {
+            return $invoice->status;
+        }
+        if ((float) $invoice->balance <= 0) {
+            return 'paid';
+        }
+        if ($invoice->is_overdue) {
+            return 'overdue';
+        }
+        if ($invoice->sent_at || in_array($invoice->status, ['invoice_sent', 'sent', 'awaiting_payment'], true)) {
+            return 'awaiting_payment';
+        }
+        if (in_array($invoice->status, ['partially_paid'], true)) {
+            return 'partially_paid';
+        }
+
+        return $invoice->status ?: 'draft';
     }
 }

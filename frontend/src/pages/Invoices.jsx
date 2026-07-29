@@ -127,6 +127,7 @@ function PaymentHistory({ invoiceId, balance }) {
 export default function Invoices() {
   const { user } = useAuth();
   const isOwner = user?.role === 'owner';
+  const isPm = user?.role === 'pm';
   const [invoices, setInvoices] = useState([]);
   const [markPaidInvoice, setMarkPaidInvoice] = useState(null);
   const [expandedId, setExpandedId] = useState(null);
@@ -138,23 +139,102 @@ export default function Invoices() {
   useEffect(() => { loadInvoices(); }, [loadInvoices]);
 
   const canMarkPaid = (inv) => isOwner && PAYABLE_STATUSES.includes(inv.status) && Number(inv.balance) > 0;
-  const canSend = (inv) => ['owner', 'pm'].includes(user?.role) && ['draft', 'awaiting_payment'].includes(inv.status);
+  const canSend = (inv) => ['owner', 'pm'].includes(user?.role) && ['draft', 'awaiting_payment', 'invoice_sent', 'sent'].includes(inv.status);
 
   const sendInvoice = async (inv) => {
     const ok = await confirmAction({ title: 'Send invoice?', text: `Send ${inv.invoice_number} to the customer?`, confirmText: 'Yes, send' });
     if (!ok) return;
     try {
-      await api.post(`/invoices/${inv.id}/send`);
-      await showSuccess('Invoice sent.');
+      const { data } = await api.post(`/invoices/${inv.id}/send`);
+      await showSuccess(data.payment_link ? 'Invoice sent. Payment link ready.' : 'Invoice sent.');
       loadInvoices();
     } catch (err) {
       await showError(err.response?.data?.message || 'Failed to send invoice.');
     }
   };
 
+  const copyPaymentLink = async (inv) => {
+    try {
+      const { data } = await api.post(`/invoices/${inv.id}/payment-link`);
+      const link = data.payment_link;
+      if (!link) throw new Error('No payment link returned');
+      await navigator.clipboard.writeText(link);
+      await showSuccess('Payment link copied.');
+    } catch (err) {
+      await showError(err.response?.data?.message || err.message || 'Failed to copy payment link.');
+    }
+  };
+
+  const recordContact = async (inv) => {
+    try {
+      await api.post(`/invoices/${inv.id}/record-contact`, { channel: 'call', note: 'PM follow-up recorded from invoices list' });
+      await showSuccess('Contact recorded.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to record contact.');
+    }
+  };
+
+  const downloadPdf = async (inv) => {
+    try {
+      const res = await api.get(`/invoices/${inv.id}/pdf`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${inv.invoice_number || 'invoice'}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      await showError('PDF download failed');
+    }
+  };
+
+  const followUpActions = (inv) => (
+    <div className="flex flex-wrap gap-2">
+      <button type="button" onClick={() => downloadPdf(inv)}
+        className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg font-medium text-slate-700 hover:bg-slate-50">
+        View PDF
+      </button>
+      {canSend(inv) && (
+        <button type="button" onClick={() => sendInvoice(inv)}
+          className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
+          {inv.sent_at ? 'Resend' : 'Send Invoice'}
+        </button>
+      )}
+      {(isOwner || isPm) && Number(inv.balance) > 0 && (
+        <button type="button" onClick={() => copyPaymentLink(inv)}
+          className="text-xs px-3 py-1.5 border border-blue-200 text-blue-700 rounded-lg font-medium hover:bg-blue-50">
+          Copy payment link
+        </button>
+      )}
+      {(isOwner || isPm) && (
+        <button type="button" onClick={() => recordContact(inv)}
+          className="text-xs px-3 py-1.5 border border-slate-200 rounded-lg font-medium text-slate-700 hover:bg-slate-50">
+          Record contact
+        </button>
+      )}
+      {inv.customer_phone && (
+        <a href={`tel:${String(inv.customer_phone).replace(/[^\d+]/g, '')}`}
+          className="text-xs px-3 py-1.5 border border-green-200 text-green-800 rounded-lg font-medium hover:bg-green-50">
+          Call
+        </a>
+      )}
+      {canMarkPaid(inv) && (
+        <button type="button" onClick={() => setMarkPaidInvoice(inv)}
+          className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">
+          Mark as Paid
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div>
       <PageHeader title="Invoices" />
+      {isPm && (
+        <p className="text-xs text-slate-500 mb-3">
+          Follow up on sent invoices (resend / payment link / contact). Void, refund, and mark-paid are owner-only.
+        </p>
+      )}
       <div className="md:hidden space-y-3 mb-4">
         {invoices.length === 0 ? (
           <p className="text-center text-slate-500 py-8">No invoices found.</p>
@@ -168,43 +248,29 @@ export default function Invoices() {
               </div>
             </div>
             <p className="text-sm text-slate-500">{inv.customer?.name || '—'}</p>
+            <p className="text-xs text-slate-400">
+              {inv.customer_phone || inv.customer?.phone || '—'}
+              {inv.customer_email || inv.customer?.email ? ` · ${inv.customer_email || inv.customer?.email}` : ''}
+            </p>
             <p className="text-sm text-slate-500">Job #{inv.job_id}</p>
             <p className="text-sm font-medium mt-1">Balance: ${Number(inv.balance || 0).toFixed(2)}</p>
-            <a href={`${api.defaults.baseURL}/invoices/${inv.id}/pdf`} 
-              onClick={async (e) => {
-                e.preventDefault();
-                try {
-                  const res = await api.get(`/invoices/${inv.id}/pdf`, { responseType: 'blob' });
-                  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `${inv.invoice_number || 'invoice'}.pdf`;
-                  a.click();
-                  window.URL.revokeObjectURL(url);
-                } catch (err) {
-                  await showError('PDF download failed');
-                }
-              }}
-              className="mt-2 inline-block text-sm text-blue-600 hover:underline">Download PDF</a>
-            {canSend(inv) && (
-              <button type="button" onClick={() => sendInvoice(inv)}
-                className="mt-3 w-full bg-blue-600 hover:bg-blue-700 text-white rounded-lg py-2 text-sm font-medium">
-                Send Invoice
-              </button>
-            )}
-            {canMarkPaid(inv) && (
-              <button type="button" onClick={() => setMarkPaidInvoice(inv)}
-                className="mt-3 w-full bg-green-600 hover:bg-green-700 text-white rounded-lg py-2 text-sm font-medium">
-                Mark as Paid
-              </button>
-            )}
+            <p className="text-xs text-slate-500 mt-1">
+              Issued {formatDate(inv.issued_at || inv.created_at)}
+              {' · '}Due {formatDate(inv.due_date) || '—'}
+              {' · '}{inv.sent_at ? `Sent ${formatDate(inv.sent_at)}` : 'Not sent'}
+            </p>
+            <p className="text-xs text-slate-500">
+              Payment: {(inv.payment_state || inv.status || '').replace(/_/g, ' ')}
+              {inv.last_reminder_at ? ` · Last reminder ${formatDate(inv.last_reminder_at)}` : ''}
+            </p>
+            <div className="mt-3">{followUpActions(inv)}</div>
           </div>
         ))}
       </div>
 
       <div className="hidden md:block bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] divide-y divide-[#E2E8F0] text-sm">
+          <table className="w-full min-w-[960px] divide-y divide-[#E2E8F0] text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="w-8 px-2 py-3" />
@@ -213,13 +279,14 @@ export default function Invoices() {
               <th className="text-left px-4 py-3 font-medium text-[#64748B]">Customer</th>
               <th className="text-left px-4 py-3 font-medium text-[#64748B]">Balance</th>
               <th className="text-left px-4 py-3 font-medium text-[#64748B] whitespace-nowrap">Status</th>
-              <th className="text-left px-4 py-3 font-medium text-[#64748B] hidden lg:table-cell whitespace-nowrap">Due Date</th>
+              <th className="text-left px-4 py-3 font-medium text-[#64748B] hidden lg:table-cell whitespace-nowrap">Issued / Due</th>
+              <th className="text-left px-4 py-3 font-medium text-[#64748B] hidden xl:table-cell whitespace-nowrap">Sent / Reminder</th>
               <th className="text-left px-4 py-3 font-medium text-[#64748B] whitespace-nowrap sticky right-0 bg-slate-50">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#E2E8F0]">
             {invoices.length === 0 ? (
-              <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No invoices found.</td></tr>
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-slate-500">No invoices found.</td></tr>
             ) : invoices.map((inv) => (
               <Fragment key={inv.id}>
                 <tr className="hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => setExpandedId(expandedId === inv.id ? null : inv.id)}>
@@ -231,30 +298,33 @@ export default function Invoices() {
                   </td>
                   <td className="px-4 py-3 whitespace-nowrap">{inv.invoice_number || `#${inv.id}`}</td>
                   <td className="px-4 py-3 whitespace-nowrap">#{inv.job_id}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">{inv.customer?.name || '—'}</td>
+                  <td className="px-4 py-3">
+                    <p className="whitespace-nowrap">{inv.customer?.name || '—'}</p>
+                    <p className="text-xs text-slate-400">{inv.customer_phone || inv.customer?.phone || ''}</p>
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap">${Number(inv.balance || 0).toFixed(2)}</td>
-                  <td className="px-4 py-3 whitespace-nowrap"><StatusBadge status={inv.status} />{inv.is_overdue && <span className="ml-1"><StatusBadge status="overdue" /></span>}</td>
-                  <td className="px-4 py-3 hidden lg:table-cell whitespace-nowrap">{formatDate(inv.due_date)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <StatusBadge status={inv.status} />
+                    {inv.is_overdue && <span className="ml-1"><StatusBadge status="overdue" /></span>}
+                    {inv.payment_state && inv.payment_state !== inv.status && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">{String(inv.payment_state).replace(/_/g, ' ')}</p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 hidden lg:table-cell whitespace-nowrap text-xs text-slate-600">
+                    <p>Issued {formatDate(inv.issued_at || inv.created_at)}</p>
+                    <p>Due {formatDate(inv.due_date) || '—'}</p>
+                  </td>
+                  <td className="px-4 py-3 hidden xl:table-cell whitespace-nowrap text-xs text-slate-600">
+                    <p>{inv.sent_at ? `Sent ${formatDate(inv.sent_at)}` : 'Not sent'}</p>
+                    <p>{inv.last_reminder_at ? `Reminder ${formatDate(inv.last_reminder_at)}` : 'No reminder'}</p>
+                  </td>
                   <td className="px-4 py-3 whitespace-nowrap sticky right-0 bg-white" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex flex-wrap gap-2">
-                      {canSend(inv) && (
-                        <button type="button" onClick={() => sendInvoice(inv)}
-                          className="text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium">
-                          Send Invoice
-                        </button>
-                      )}
-                      {canMarkPaid(inv) && (
-                        <button type="button" onClick={() => setMarkPaidInvoice(inv)}
-                          className="text-xs px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium">
-                          Mark as Paid
-                        </button>
-                      )}
-                    </div>
+                    {followUpActions(inv)}
                   </td>
                 </tr>
                 {expandedId === inv.id && (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <PaymentHistory invoiceId={inv.id} balance={inv.balance} />
                     </td>
                   </tr>
@@ -276,3 +346,4 @@ export default function Invoices() {
     </div>
   );
 }
+

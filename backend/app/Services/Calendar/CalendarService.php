@@ -93,9 +93,11 @@ class CalendarService
             'title' => 'Site Visit — '.($sv->lead->contact_name ?? 'Customer'),
             'date' => $sv->visit_date?->format('Y-m-d'),
             'time' => is_string($sv->visit_time) ? substr($sv->visit_time, 0, 5) : $sv->visit_time,
+            'end_time' => null,
             'status' => $sv->status,
             'address' => $address,
             'customer_name' => $sv->lead->contact_name ?? '',
+            'customer_phone' => $sv->lead->phone ?? null,
             'pm_id' => $sv->pm_id,
             'pm_name' => $sv->pm?->name ?? $sv->lead?->assignedPm?->name ?? '',
             'contractor_id' => $sv->contractor_id,
@@ -150,7 +152,7 @@ class CalendarService
         }
 
         $q = SiteVisit::with([
-            'lead:id,contact_name,address,service_category,status,assigned_pm_id',
+            'lead:id,contact_name,phone,address,service_category,status,assigned_pm_id',
             'lead.assignedPm:id,name',
             'pm:id,name',
             'contractor:id,name',
@@ -168,7 +170,7 @@ class CalendarService
 
     private function jobs(User $user, int $mon, int $year): Collection
     {
-        $q = Job::with(['customer:id,name', 'pm:id,name', 'contractor:id,name'])
+        $q = Job::with(['customer:id,name,phone', 'pm:id,name', 'contractor:id,name'])
             ->whereNotNull('scheduled_start_date')
             ->whereMonth('scheduled_start_date', $mon)
             ->whereYear('scheduled_start_date', $year);
@@ -188,11 +190,16 @@ class CalendarService
                 'title' => $j->job_title ?? ($j->customer?->name ?? 'Job'),
                 'date' => $j->scheduled_start_date?->format('Y-m-d'),
                 'time' => $j->scheduled_start_time,
+                'end_time' => null,
+                'end_date' => $j->scheduled_end_date?->format('Y-m-d'),
                 'status' => $j->status,
                 'address' => $address,
                 'customer_name' => $j->customer?->name ?? '',
+                'customer_phone' => $j->customer?->phone ?? null,
                 'contractor_id' => $j->contractor_id,
+                'contractor_name' => $j->contractor?->name ?? '',
                 'pm_id' => $j->pm_id,
+                'pm_name' => $j->pm?->name ?? '',
                 'url' => '/jobs/'.$j->id,
                 'directions_url' => $address !== ''
                     ? 'https://www.google.com/maps/dir/?api=1&destination='.rawurlencode($address)

@@ -388,6 +388,10 @@ class QuoteLifecycleService
         if ($status === 'draft') {
             return ['draft', 'revised'];
         }
+        // PM-08 / A-32 — quotes awaiting customer response
+        if ($status === 'waiting_on_customer' || $status === 'awaiting_customer') {
+            return ['sent', 'viewed', 'follow_up'];
+        }
 
         return [$status];
     }

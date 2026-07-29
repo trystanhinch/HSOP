@@ -121,16 +121,34 @@ class DashboardController extends Controller
 
         $activeJobs = $this->metrics->countPmActiveJobs($id);
         $inProgress = $this->metrics->countPmInProgress($id);
-        $quotesToSend = Quote::where('status', 'draft')->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count();
+        $quotesToSend = Quote::whereIn('status', ['draft', 'revised'])->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count();
+        $quotesWaitingCustomer = Quote::whereIn('status', ['sent', 'viewed', 'follow_up'])
+            ->whereHas('job', fn ($q) => $q->where('pm_id', $id))
+            ->count();
+        $myLeadsCount = Lead::where('assigned_pm_id', $id)
+            ->whereNotIn('status', ['converted', 'disqualified', 'lost', 'ignored'])
+            ->count();
+
+        $stripeUser = auth()->user();
+        $stripeMode = app(\App\Services\Payments\PaymentDestinationService::class)->paymentModeLabel();
+        $stripeLabel = ! $stripeUser->stripe_account_id
+            ? 'Not connected'
+            : ($stripeUser->stripe_payout_ready
+                ? 'Ready for payouts'
+                : ($stripeUser->stripe_onboarding_status
+                    ? 'Onboarding: '.$stripeUser->stripe_onboarding_status
+                    : 'Connected — setup incomplete'));
 
         return response()->json([
-            'my_leads' => Lead::where('assigned_pm_id', $id)->whereNotIn('status', ['converted', 'disqualified', 'lost'])->count(),
+            'my_leads' => $myLeadsCount,
             // A-09: single active definition (same ACTIVE set as admin, PM-scoped)
             'my_active_jobs' => $activeJobs,
             'active_jobs' => $activeJobs,
             'quotes_to_send' => $quotesToSend,
             'pending_quotes' => $quotesToSend,
-            'awaiting_approval' => Quote::whereIn('status', ['sent', 'viewed', 'follow_up'])->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count(),
+            // PM-08: explicit "waiting on customer" — not ambiguous "Awaiting Approval"
+            'awaiting_approval' => $quotesWaitingCustomer,
+            'quotes_waiting_on_customer_count' => $quotesWaitingCustomer,
             'jobs_in_progress' => $inProgress,
             'jobs_needing_quote_approval' => Job::where('pm_id', $id)
                 ->where('contractor_price_status', 'submitted')
@@ -145,11 +163,17 @@ class DashboardController extends Controller
             'recent_leads' => Lead::where('assigned_pm_id', $id)->latest()->take(5)->get(),
             'recent_jobs' => Job::where('pm_id', $id)->with(['contractor:id,name', 'customer:id,name'])->latest()->take(5)->get(),
             'my_leads_list' => Lead::where('assigned_pm_id', $id)
-                ->whereNotIn('status', ['converted', 'disqualified', 'lost'])
+                ->whereNotIn('status', ['converted', 'disqualified', 'lost', 'ignored'])
                 ->latest()
                 ->take(5)
                 ->get(['id', 'contact_name', 'address', 'service_category', 'status', 'site_visit_date', 'site_visit_time']),
-            'my_jobs_list' => Job::where('pm_id', $id)->with('contractor:id,name')->latest()->take(5)->get(),
+            // PM-08: preview matches active_jobs card (same ACTIVE set), not all recent jobs
+            'my_jobs_list' => Job::where('pm_id', $id)
+                ->whereIn('status', \App\Services\Workflow\JobLifecycleService::ACTIVE_JOB_STATUSES)
+                ->with('contractor:id,name')
+                ->latest()
+                ->take(5)
+                ->get(),
             'recent_updates' => \App\Models\JobUpdate::whereHas('job', fn ($q) => $q->where('pm_id', $id))
                 ->with(['job:id,address', 'postedBy:id,name,role'])
                 ->latest()->take(5)->get(),
@@ -163,16 +187,56 @@ class DashboardController extends Controller
             'customer_revision_requests' => $revisionRequests,
             'awaiting_completion_acceptance' => $awaitingCompletionAcceptance,
             'customer_feedback_follow_up' => $feedbackFollowUp,
-            'payout_status_note' => 'Payout eligibility + scheduling live (Stripe transfer still mocked until keys).',
+            // PM-05: no legacy "mocked" wording — StripeConnectCard is authoritative
+            'payout_status_note' => null,
+            'stripe_connect' => [
+                'provider' => config('payment.provider'),
+                'mode' => $stripeMode,
+                'status_label' => $stripeLabel,
+                'payout_ready' => (bool) $stripeUser->stripe_payout_ready,
+                'has_stripe_account' => filled($stripeUser->stripe_account_id),
+                'stripe_account_ref' => filled($stripeUser->stripe_account_id)
+                    ? '…'.substr((string) $stripeUser->stripe_account_id, -4)
+                    : null,
+            ],
             'workflow_thresholds' => app(\App\Services\Workflow\WorkflowSettings::class)->all(),
             'refreshed_at' => now()->toIso8601String(),
             'filters' => [
                 'pm_id' => $id,
                 'date_range' => 'all_time',
                 'scope' => 'pm_assigned',
+                'brand_scope' => 'assigned_brands_via_own_work',
             ],
             'metric_definitions' => [
-                'active_jobs' => $this->metrics->definitions()['active_jobs'],
+                'my_leads' => [
+                    'label' => 'Active leads assigned to me',
+                    'entity' => 'leads',
+                    'filter' => 'assigned_pm_id = me AND status NOT IN (converted, disqualified, lost, ignored)',
+                    'date_range' => 'all_time',
+                    'scope' => 'pm_assigned + productionOnly (A-05)',
+                    'href' => '/leads?view=active',
+                ],
+                'active_jobs' => array_merge($this->metrics->definitions()['active_jobs'], [
+                    'label' => 'My active jobs',
+                    'scope' => 'pm_id = me + productionOnly (A-05)',
+                    'href' => '/jobs?status=active',
+                ]),
+                'quotes_to_send' => [
+                    'label' => 'Draft quotes ready to send',
+                    'entity' => 'quotes',
+                    'filter' => 'status IN (draft, revised) AND job.pm_id = me',
+                    'date_range' => 'all_time',
+                    'scope' => 'pm_assigned + productionOnly (A-05)',
+                    'href' => '/quotes?status=draft',
+                ],
+                'quotes_waiting_on_customer' => [
+                    'label' => 'Quotes sent — waiting on customer',
+                    'entity' => 'quotes',
+                    'filter' => 'status IN (sent, viewed, follow_up) AND job.pm_id = me',
+                    'date_range' => 'all_time',
+                    'scope' => 'pm_assigned + productionOnly (A-05)',
+                    'href' => '/quotes?status=waiting_on_customer',
+                ],
                 'jobs_in_progress' => $this->metrics->definitions()['jobs_in_progress'],
             ],
         ]);

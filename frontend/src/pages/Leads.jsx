@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { Plus, Trash2 } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
@@ -38,6 +38,107 @@ function ConfidenceList({ items }) {
   );
 }
 
+/** PM-10 / PM-15 — context-specific empty / error copy */
+function leadsEmptyCopy({ isPm, view, status, search, category, loadState, loadError }) {
+  if (loadState === 'permission') {
+    return {
+      title: 'Permission required',
+      body: loadError || 'You do not have permission to view these leads.',
+      links: [],
+    };
+  }
+  if (loadState === 'error') {
+    return {
+      title: 'Unable to load leads',
+      body: loadError || 'Something went wrong loading this list. Try refreshing the page.',
+      links: [],
+    };
+  }
+  if (search) {
+    return {
+      title: 'No matching leads',
+      body: `No leads match “${search}” in your current filters.`,
+      links: isPm
+        ? [{ to: '/leads?view=active', label: 'Clear search — active leads' }]
+        : [{ to: '/leads', label: 'Clear search' }],
+    };
+  }
+  if (view === 'converted' || status === 'converted') {
+    return {
+      title: 'No converted leads',
+      body: isPm
+        ? 'None of your assigned leads have been converted yet.'
+        : 'No converted leads in this view.',
+      links: [{ to: '/leads?view=active', label: 'View active leads' }],
+    };
+  }
+  if (view === 'lost' || status === 'lost') {
+    return {
+      title: 'No lost / disqualified leads',
+      body: isPm
+        ? 'You have no lost or disqualified leads in your assignment history.'
+        : 'No lost leads in this view.',
+      links: [{ to: '/leads?view=active', label: 'View active leads' }],
+    };
+  }
+  if (view === 'ignored') {
+    return {
+      title: 'No ignored leads',
+      body: 'No leads have been marked ignored in this filter.',
+      links: [{ to: '/leads?view=active', label: 'View active leads' }],
+    };
+  }
+  if (view === 'needs_review' || status === 'needs_review') {
+    return {
+      title: 'Nothing needs review',
+      body: 'No leads are currently flagged for manual review.',
+      links: [{ to: '/leads?view=active', label: 'View active leads' }],
+    };
+  }
+  if (category) {
+    return {
+      title: 'No leads in this category',
+      body: `No ${category.replace(/_/g, ' ')} leads match your current filters.`,
+      links: [{ to: '/leads?view=active', label: 'View all active leads' }],
+    };
+  }
+  if (isPm) {
+    return {
+      title: 'No active leads assigned to you',
+      body: 'When a lead is assigned to you it will appear here. Converted and archived leads are available via the tabs above when authorized.',
+      links: [
+        { to: '/leads?view=converted&status=converted', label: 'Converted leads' },
+        { to: '/leads?view=lost&status=lost', label: 'Lost / archived' },
+      ],
+    };
+  }
+  return {
+    title: 'No leads in this view',
+    body: 'Try another tab or clear filters. Converted and lost leads are under their own tabs.',
+    links: [
+      { to: '/leads?view=converted&status=converted', label: 'Converted' },
+      { to: '/leads?view=lost&status=lost', label: 'Lost' },
+    ],
+  };
+}
+
+function LeadsEmptyState(props) {
+  const copy = leadsEmptyCopy(props);
+  return (
+    <div className="text-center py-10 px-4 space-y-2">
+      <p className="text-sm font-medium text-slate-700">{copy.title}</p>
+      <p className="text-sm text-slate-500 max-w-md mx-auto">{copy.body}</p>
+      {copy.links?.length > 0 && (
+        <div className="flex flex-wrap justify-center gap-3 pt-2">
+          {copy.links.map((l) => (
+            <Link key={l.to} to={l.to} className="text-sm text-blue-600 hover:underline font-medium">{l.label}</Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Leads() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -62,6 +163,8 @@ export default function Leads() {
   const showQuarantine = isOwner && (status === 'needs_review' || view === 'quarantine');
   const [selectedIds, setSelectedIds] = useState([]);
   const [dupGroup, setDupGroup] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [loadState, setLoadState] = useState('loading'); // loading | ready | empty | permission | error
 
   const VIEW_TABS = [
     { label: 'Active', view: 'active' },
@@ -76,8 +179,12 @@ export default function Leads() {
   const fetchLeads = () => {
     if (view === 'quarantine') {
       setLeads([]);
+      setLoadState('ready');
+      setLoadError(null);
       return;
     }
+    setLoadState('loading');
+    setLoadError(null);
     const params = { page };
     if (view) params.view = view;
     if (status === 'needs_review' || view === 'needs_review') {
@@ -90,9 +197,21 @@ export default function Leads() {
     if (category) params.category = category;
     if (search) params.search = search;
     api.get('/leads', { params }).then(({ data }) => {
-      setLeads(data.data || []);
+      const rows = data.data || [];
+      setLeads(rows);
       setMeta({ current: data.current_page, last: data.last_page, total: data.total });
-    }).catch(() => setLeads([]));
+      setLoadState(rows.length === 0 ? 'empty' : 'ready');
+    }).catch((err) => {
+      setLeads([]);
+      const code = err.response?.status;
+      if (code === 403) {
+        setLoadState('permission');
+        setLoadError(err.response?.data?.message || 'You do not have permission to view these leads.');
+      } else {
+        setLoadState('error');
+        setLoadError(err.response?.data?.message || 'Could not load leads. Try refreshing.');
+      }
+    });
   };
 
   const fetchQuarantine = () => {
@@ -454,7 +573,15 @@ export default function Leads() {
 
         <div className="md:hidden p-3 space-y-3">
           {leads.length === 0 ? (
-            <p className="text-center text-slate-500 py-8">No leads found.</p>
+            <LeadsEmptyState
+              isPm={isPm}
+              view={view}
+              status={status}
+              search={search}
+              category={category}
+              loadState={loadState}
+              loadError={loadError}
+            />
           ) : leads.map((lead) => (
             <div
               key={lead.id}
@@ -510,7 +637,19 @@ export default function Leads() {
             </thead>
             <tbody className="divide-y divide-slate-200">
               {leads.length === 0 ? (
-                <tr><td colSpan={canDelete ? 12 : 11} className="px-4 py-12 text-center text-slate-500">No leads found.</td></tr>
+                <tr>
+                  <td colSpan={canDelete ? 12 : 11} className="px-4 py-4">
+                    <LeadsEmptyState
+                      isPm={isPm}
+                      view={view}
+                      status={status}
+                      search={search}
+                      category={category}
+                      loadState={loadState}
+                      loadError={loadError}
+                    />
+                  </td>
+                </tr>
               ) : leads.map((lead) => (
                 <tr key={lead.id} className="hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => navigate(`/leads/${lead.id}`)}>
                   {isOwner && (

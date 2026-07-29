@@ -38,8 +38,9 @@ class CustomerController extends Controller
         if ($request->user()->role === 'pm') {
             // 4A: only customers tied to this PM's own leads/jobs
             $this->authz->scopeCustomersForPm($query, $request->user());
-            // PMs do not use duplicate/review admin views
-            $query->whereNull('merged_into_customer_id');
+            // PM-11 / A-02 / A-33: same reviewed directory gate as owner primary view
+            // (excludes quarantined / quality-flagged / non-primary duplicates)
+            $query->activeDirectory();
         } elseif ($view === 'needs_review') {
             $query->needsReview();
         } elseif ($view === 'duplicates') {

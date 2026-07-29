@@ -258,6 +258,8 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     Route::put('/invoices/{invoice}', [InvoiceController::class, 'update'])->middleware('role:owner,pm');
     Route::post('/invoices/{invoice}/mark-paid', [PaymentController::class, 'markPaid'])->middleware('role:owner');
     Route::post('/invoices/{invoice}/send', [InvoiceController::class, 'send'])->middleware('role:owner,pm');
+    Route::post('/invoices/{invoice}/payment-link', [InvoiceController::class, 'paymentLink'])->middleware('role:owner,pm');
+    Route::post('/invoices/{invoice}/record-contact', [InvoiceController::class, 'recordContact'])->middleware('role:owner,pm');
     Route::get('/invoices/{invoice}/payments', [PaymentController::class, 'history']);
     Route::get('/invoices/{invoice}/pdf', [InvoiceController::class, 'pdf']);
     Route::post('/quotes/{quote}/create-invoice', [InvoiceController::class, 'fromQuote'])->middleware('role:owner,pm');

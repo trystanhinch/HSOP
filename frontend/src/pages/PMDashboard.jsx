@@ -26,6 +26,16 @@ function WorkflowSection({ title, empty, items, renderItem }) {
   );
 }
 
+function MetricHint({ definition }) {
+  if (!definition) return null;
+  return (
+    <p className="text-[11px] text-slate-400 mt-1 leading-snug">
+      {definition.filter || definition.label}
+      {definition.date_range ? ` · ${definition.date_range}` : ''}
+    </p>
+  );
+}
+
 export default function PMDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -41,6 +51,44 @@ export default function PMDashboard() {
     return <div className="text-center py-12 text-[#64748B]">Loading dashboard...</div>;
   }
 
+  const defs = data.metric_definitions || {};
+  const filters = data.filters || {};
+
+  const cards = [
+    {
+      title: 'Active leads assigned to me',
+      value: data.my_leads,
+      icon: Users,
+      color: '#3B82F6',
+      to: '/leads?view=active',
+      def: defs.my_leads,
+    },
+    {
+      title: 'My active jobs',
+      value: data.active_jobs,
+      icon: Briefcase,
+      color: '#22C55E',
+      to: '/jobs?status=active',
+      def: defs.active_jobs,
+    },
+    {
+      title: 'Draft quotes — ready to send',
+      value: data.pending_quotes ?? data.quotes_to_send,
+      icon: FileText,
+      color: '#EAB308',
+      to: '/quotes?status=draft',
+      def: defs.quotes_to_send,
+    },
+    {
+      title: 'Quotes sent — waiting on customer',
+      value: data.awaiting_approval ?? data.quotes_waiting_on_customer_count,
+      icon: Clock,
+      color: '#8B5CF6',
+      to: '/quotes?status=waiting_on_customer',
+      def: defs.quotes_waiting_on_customer,
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-lg shadow-sm border border-[#E2E8F0] p-6">
@@ -49,22 +97,29 @@ export default function PMDashboard() {
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard title="My Leads" value={data.my_leads} icon={Users} color="#3B82F6" to="/leads" />
-        <KPICard title="My Active Jobs" value={data.active_jobs} icon={Briefcase} color="#22C55E" to="/jobs?status=active" />
-        <KPICard title="Quotes to Send" value={data.pending_quotes} icon={FileText} color="#EAB308" to="/quotes?status=draft" />
-        <KPICard title="Awaiting Approval" value={data.awaiting_approval} icon={Clock} color="#8B5CF6" to="/quotes?status=sent" />
+        {cards.map((card) => (
+          <div key={card.title}>
+            <KPICard title={card.title} value={card.value} icon={card.icon} color={card.color} to={card.to} />
+            <MetricHint definition={card.def} />
+          </div>
+        ))}
       </div>
-      {data.refreshed_at && (
-        <p className="text-xs text-slate-400">Last refreshed: {new Date(data.refreshed_at).toLocaleString()} · scope: my assigned jobs</p>
-      )}
+      <p className="text-xs text-slate-400">
+        Last refreshed: {data.refreshed_at ? new Date(data.refreshed_at).toLocaleString() : '—'}
+        {' · '}scope: {filters.scope || 'pm_assigned'}
+        {' · '}date range: {filters.date_range || 'all_time'}
+        {' · '}brand: {filters.brand_scope || 'assigned via own work'}
+        {' · '}card counts match linked list filters
+      </p>
 
       <div className="flex flex-wrap gap-3">
         <Link to="/leads" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">+ New Lead</Link>
-        <Link to="/schedule" className="px-4 py-2 border border-[#E2E8F0] rounded-md text-sm font-medium text-[#0F172A] hover:bg-slate-50">
+        <Link to="/schedule?view=agenda" className="px-4 py-2 border border-[#E2E8F0] rounded-md text-sm font-medium text-[#0F172A] hover:bg-slate-50">
           View My Schedule
         </Link>
       </div>
 
+      {/* PM-05: single Stripe Connect card — no contradictory "mocked" payout note */}
       <StripeConnectCard />
 
       {(data.leads_needing_quote_review || []).length > 0 && (
@@ -215,11 +270,6 @@ export default function PMDashboard() {
         )}
       />
 
-      <div className="bg-white rounded-xl border border-dashed border-slate-300 p-5">
-        <h3 className="font-semibold text-slate-800 mb-1">My payout status</h3>
-        <p className="text-sm text-slate-500">{data.payout_status_note || 'Coming soon — Phase 4.'}</p>
-      </div>
-
       {(data.jobs_needing_quote_approval || []).length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="font-semibold text-slate-800 mb-3">Prices Submitted — Needs Your Review</h3>
@@ -250,8 +300,9 @@ export default function PMDashboard() {
       )}
 
       <div className="bg-white rounded-lg shadow-sm border border-[#E2E8F0] overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#E2E8F0] bg-slate-50">
-          <h3 className="text-sm font-semibold text-[#0F172A]">My Leads</h3>
+        <div className="px-4 py-3 border-b border-[#E2E8F0] bg-slate-50 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-[#0F172A]">Active leads assigned to me</h3>
+          <Link to="/leads?view=active" className="text-xs text-blue-600 font-medium">View all ({data.my_leads})</Link>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -266,7 +317,9 @@ export default function PMDashboard() {
               </tr>
             </thead>
             <tbody>
-              {(data.my_leads_list || []).map((lead) => (
+              {(data.my_leads_list || []).length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">No active leads are currently assigned to you.</td></tr>
+              ) : (data.my_leads_list || []).map((lead) => (
                 <tr
                   key={lead.id}
                   className="border-b border-[#E2E8F0] hover:bg-slate-50 cursor-pointer transition-colors"
@@ -288,8 +341,9 @@ export default function PMDashboard() {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm border border-[#E2E8F0] overflow-hidden">
-        <div className="px-4 py-3 border-b border-[#E2E8F0] bg-slate-50">
-          <h3 className="text-sm font-semibold text-[#0F172A]">My Jobs</h3>
+        <div className="px-4 py-3 border-b border-[#E2E8F0] bg-slate-50 flex items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-[#0F172A]">My active jobs (preview)</h3>
+          <Link to="/jobs?status=active" className="text-xs text-blue-600 font-medium">View all ({data.active_jobs})</Link>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
@@ -298,13 +352,15 @@ export default function PMDashboard() {
                 <th className="text-left px-4 py-2 text-[#64748B]">Address</th>
                 <th className="text-left px-4 py-2 text-[#64748B]">Category</th>
                 <th className="text-left px-4 py-2 text-[#64748B]">Contractor</th>
-                <th className="text-left px-4 py-2 text-[#64748B]">Status</th>
+                <th className="text-left px-4 py-2 text-[#64748B]">Lifecycle</th>
                 <th className="text-left px-4 py-2 text-[#64748B] hidden sm:table-cell">Start</th>
                 <th className="text-left px-4 py-2 text-[#64748B]">Action</th>
               </tr>
             </thead>
             <tbody>
-              {(data.my_jobs_list || []).map((job) => (
+              {(data.my_jobs_list || []).length === 0 ? (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400 text-sm">No active jobs assigned to you right now.</td></tr>
+              ) : (data.my_jobs_list || []).map((job) => (
                 <tr
                   key={job.id}
                   className="border-b border-[#E2E8F0] hover:bg-slate-50 cursor-pointer transition-colors"

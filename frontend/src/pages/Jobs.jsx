@@ -449,7 +449,7 @@ export default function Jobs() {
               <tr>
                 <th className="text-left px-3 py-3 font-medium text-slate-500">Job</th>
                 <th className="text-left px-3 py-3 font-medium text-slate-500">Customer</th>
-                <th className="text-left px-3 py-3 font-medium text-slate-500">Status</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">{isPm ? 'Lifecycle' : 'Status'}</th>
                 <th className="text-left px-3 py-3 font-medium text-slate-500">Next action</th>
                 <th className="text-left px-3 py-3 font-medium text-slate-500">Owner</th>
                 <th className="text-left px-3 py-3 font-medium text-slate-500">Deadline</th>

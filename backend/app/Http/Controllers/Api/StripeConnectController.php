@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Contracts\PaymentProviderInterface;
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Services\Payments\PaymentDestinationService;
 use App\Services\Payments\StripePaymentProvider;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,17 +24,7 @@ class StripeConnectController extends Controller
             $user = User::findOrFail((int) $request->user_id);
         }
 
-        return response()->json([
-            'provider' => config('payment.provider'),
-            'stripe_account_id' => $user->stripe_account_id,
-            'onboarding_status' => $user->stripe_onboarding_status,
-            'requirements_due' => $user->stripe_requirements_due,
-            'payout_ready' => (bool) $user->stripe_payout_ready,
-            // Never expose secret keys — publishable only when useful for Elements (Checkout uses hosted page)
-            'publishable_key' => config('payment.provider') === 'stripe'
-                ? config('payment.stripe.publishable')
-                : null,
-        ]);
+        return response()->json($this->statusPayload($user));
     }
 
     public function start(Request $request, PaymentProviderInterface $payments): JsonResponse
@@ -72,7 +63,8 @@ class StripeConnectController extends Controller
 
         return response()->json([
             'message' => 'Stripe Connect onboarding link created',
-            'account_id' => $result['account_id'],
+            'account_id' => $this->maskAccountId($result['account_id'] ?? null),
+            'stripe_account_ref' => $this->maskAccountId($result['account_id'] ?? null),
             'onboarding_url' => $result['onboarding_url'],
         ]);
     }
@@ -103,14 +95,9 @@ class StripeConnectController extends Controller
         }
 
         if (! $user->stripe_account_id) {
-            return response()->json([
+            return response()->json(array_merge($this->statusPayload($user), [
                 'message' => 'No Stripe Connect account linked yet',
-                'provider' => 'stripe',
-                'stripe_account_id' => null,
-                'onboarding_status' => $user->stripe_onboarding_status,
-                'payout_ready' => false,
-                'requirements_due' => [],
-            ], 422);
+            ]), 422);
         }
 
         try {
@@ -122,15 +109,70 @@ class StripeConnectController extends Controller
             ], 422);
         }
 
-        return response()->json([
+        $user->refresh();
+
+        return response()->json(array_merge($this->statusPayload($user), [
             'message' => 'Stripe status refreshed',
-            'stripe_account_id' => $result['account_id'],
-            'onboarding_status' => $result['onboarding_status'],
-            'payout_ready' => $result['payout_ready'],
-            'requirements_due' => $result['requirements_due'],
             'charges_enabled' => $result['charges_enabled'],
             'payouts_enabled' => $result['payouts_enabled'],
             'details_submitted' => $result['details_submitted'],
-        ]);
+        ]));
+    }
+
+    /**
+     * PM-05 / A-04 — authoritative Connect status; never expose full account ID.
+     *
+     * @return array<string, mixed>
+     */
+    private function statusPayload(User $user): array
+    {
+        $provider = (string) config('payment.provider');
+        $mode = app(PaymentDestinationService::class)->paymentModeLabel($provider);
+        $hasAccount = filled($user->stripe_account_id);
+
+        return [
+            'provider' => $provider,
+            'mode' => $mode,
+            'livemode' => $mode === 'LIVE',
+            'has_stripe_account' => $hasAccount,
+            // Masked reference only (last 4). Full ID never returned to clients.
+            'stripe_account_ref' => $this->maskAccountId($user->stripe_account_id),
+            'stripe_account_id' => null,
+            'onboarding_status' => $user->stripe_onboarding_status,
+            'requirements_due' => $user->stripe_requirements_due ?? [],
+            'payout_ready' => (bool) $user->stripe_payout_ready,
+            'status_label' => $this->statusLabel($user),
+            'publishable_key' => $provider === 'stripe'
+                ? config('payment.stripe.publishable')
+                : null,
+            'synced_at' => now()->toIso8601String(),
+        ];
+    }
+
+    private function statusLabel(User $user): string
+    {
+        if (! $user->stripe_account_id) {
+            return 'Not connected';
+        }
+        if ($user->stripe_payout_ready) {
+            return 'Ready for payouts';
+        }
+
+        return $user->stripe_onboarding_status
+            ? 'Onboarding: '.$user->stripe_onboarding_status
+            : 'Connected — setup incomplete';
+    }
+
+    private function maskAccountId(?string $accountId): ?string
+    {
+        if (! filled($accountId)) {
+            return null;
+        }
+        $id = (string) $accountId;
+        if (strlen($id) <= 4) {
+            return $id;
+        }
+
+        return '…'.substr($id, -4);
     }
 }
