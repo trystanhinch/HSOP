@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
 import StatusBadge from '../components/StatusBadge';
+import ListStatePanel from '../components/ListStatePanel';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 import { formatDate } from '../utils/formatDate';
@@ -16,10 +17,10 @@ const OWNER_STATUS_TABS = [
   { key: 'paid', label: 'Paid' },
 ];
 
-const PM_COMMISSION_TABS = [
+const CONTRACTOR_PAYOUT_TABS = [
   { key: '', label: 'All' },
   { key: 'projected', label: 'Projected' },
-  { key: 'payable', label: 'Payable' },
+  { key: 'payable', label: 'Ready' },
   { key: 'processing', label: 'Processing' },
   { key: 'paid', label: 'Paid' },
   { key: 'held', label: 'Held' },
@@ -116,15 +117,19 @@ export default function Payouts() {
   const navigate = useNavigate();
   const isOwner = user?.role === 'owner';
   const isPm = user?.role === 'pm';
+  const isContractor = user?.role === 'contractor';
   const [payouts, setPayouts] = useState([]);
   const [groups, setGroups] = useState([]);
   const [refreshedAt, setRefreshedAt] = useState(null);
   const [statusFilter, setStatusFilter] = useState('');
   const [editPayout, setEditPayout] = useState(null);
+  const [emptyReason, setEmptyReason] = useState(null);
+  const [loadError, setLoadError] = useState(null);
 
-  const tabs = isPm ? PM_COMMISSION_TABS : OWNER_STATUS_TABS;
+  const tabs = isPm ? PM_COMMISSION_TABS : (isContractor ? CONTRACTOR_PAYOUT_TABS : OWNER_STATUS_TABS);
 
   const refreshPayouts = useCallback(() => {
+    setLoadError(null);
     if (isOwner) {
       const params = { group_by_job: 1 };
       if (statusFilter) params.status = statusFilter;
@@ -132,20 +137,32 @@ export default function Payouts() {
         .then(({ data }) => {
           setGroups(data.groups || []);
           setPayouts([]);
+          setEmptyReason(null);
           setRefreshedAt(data.refreshed_at || null);
         })
-        .catch(() => { setGroups([]); setPayouts([]); });
+        .catch((err) => {
+          setGroups([]);
+          setPayouts([]);
+          setLoadError(err.response?.data?.message || 'Failed to load payouts.');
+        });
       return;
     }
     const params = {};
     if (statusFilter) {
-      if (isPm) params.commission_state = statusFilter;
+      if (isPm || isContractor) params.commission_state = statusFilter;
       else params.status = statusFilter;
     }
     api.get('/payouts', { params })
-      .then(({ data }) => setPayouts(data.data || data))
-      .catch(() => setPayouts([]));
-  }, [statusFilter, isOwner, isPm]);
+      .then(({ data }) => {
+        setPayouts(data.data || data);
+        setEmptyReason(data.empty_reason || null);
+      })
+      .catch((err) => {
+        setPayouts([]);
+        setEmptyReason(null);
+        setLoadError(err.response?.data?.message || 'Failed to load payouts.');
+      });
+  }, [statusFilter, isOwner, isPm, isContractor]);
 
   useEffect(() => { refreshPayouts(); }, [refreshPayouts]);
 
@@ -183,7 +200,7 @@ export default function Payouts() {
 
   return (
     <div>
-      <PageHeader title={isPm ? 'My Commissions' : 'Payouts'} />
+      <PageHeader title={isPm ? 'My Commissions' : (isContractor ? 'My Payouts' : 'Payouts')} />
       {isOwner && refreshedAt && (
         <p className="text-xs text-slate-400 mb-3">Grouped by job · last refreshed {new Date(refreshedAt).toLocaleString()}</p>
       )}
@@ -196,6 +213,22 @@ export default function Payouts() {
             not earned or guaranteed. Commission becomes <strong>Payable</strong> only after job completion
             acceptance and cleared payment (same gates as the financial ledger).
           </p>
+        </div>
+      )}
+
+      {isContractor && (
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <h2 className="text-lg font-semibold text-slate-800">My Payouts</h2>
+          <p className="text-sm text-slate-600 mt-1">
+            Only your contractor share is shown. Projected amounts are not guaranteed until the job is
+            completion-accepted and the customer payment has cleared.
+          </p>
+        </div>
+      )}
+
+      {loadError && (
+        <div className="mb-4">
+          <ListStatePanel state="error" title="Unable to load payouts" body={loadError} actionLabel="Retry" onAction={refreshPayouts} />
         </div>
       )}
 
@@ -288,29 +321,36 @@ export default function Payouts() {
       <>
       <div className="md:hidden space-y-3 mb-4">
         {payouts.length === 0 ? (
-          <p className="text-center text-slate-500 py-8">{isPm ? 'No commissions found.' : 'No payouts found.'}</p>
+          loadError ? null : (
+            <ListStatePanel
+              state="empty"
+              title={emptyReason?.message || (isPm ? 'No commissions found.' : 'No payouts found.')}
+              body={emptyReason?.next_action}
+            />
+          )
         ) : payouts.map((p) => (
           <div key={p.id} className="bg-white border border-slate-200 rounded-xl p-4 space-y-2"
-            onClick={() => isPm && p.job_id && navigate(`/jobs/${p.job_id}`)}
+            onClick={() => (isPm || isContractor) && p.job_id && navigate(`/jobs/${p.job_id}`)}
             onKeyDown={() => {}}
-            role={isPm ? 'button' : undefined}
+            role={(isPm || isContractor) ? 'button' : undefined}
           >
             <div className="flex justify-between items-start gap-2">
               <span className="font-medium text-slate-800">{p.job?.address || `Job #${p.job_id}`}</span>
-              {isPm ? (
-                <CommissionStateBadge state={p.commission_state} label={p.commission_state_label} />
+              {(isPm || isContractor) ? (
+                <CommissionStateBadge state={p.payout_state || p.commission_state} label={p.payout_state_label || p.commission_state_label} />
               ) : (
                 <StatusBadge status={p.status} />
               )}
             </div>
-            <p className="text-sm text-slate-500">{p.job?.customer?.name || '—'}</p>
-            <p className={`text-sm font-medium ${p.commission_state === 'projected' ? 'text-slate-500' : 'text-slate-800'}`}>
-              {money(p.commission_amount ?? p.payout_amount)}
-              {p.commission_state === 'projected' && <span className="text-xs font-normal ml-1">(projected)</span>}
+            <p className="text-sm text-slate-500">{p.customer?.name || p.job?.customer?.name || '—'}</p>
+            <p className={`text-sm font-medium ${(p.payout_state || p.commission_state) === 'projected' ? 'text-slate-500' : 'text-slate-800'}`}>
+              {money(p.contractor_amount ?? p.commission_amount ?? p.payout_amount)}
+              {(p.payout_state || p.commission_state) === 'projected' && <span className="text-xs font-normal ml-1">(projected)</span>}
             </p>
-            {isPm && p.outstanding_condition && (
-              <p className="text-xs text-amber-700">Still outstanding: {p.outstanding_condition}</p>
+            {(p.outstanding_condition || p.next_step) && (
+              <p className="text-xs text-amber-700">{p.next_step || `Still outstanding: ${p.outstanding_condition}`}</p>
             )}
+            {p.expected_payout_date && <p className="text-xs text-slate-500">Expected: {formatDate(p.expected_payout_date)}</p>}
           </div>
         ))}
       </div>

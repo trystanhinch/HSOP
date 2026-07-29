@@ -15,6 +15,7 @@ class ContractorAssignmentGuard
 {
     public function __construct(
         private readonly ContractorProfileCompleteness $completeness,
+        private readonly ContractorAvailabilityService $availability,
     ) {}
 
     /**
@@ -97,6 +98,23 @@ class ContractorAssignmentGuard
 
             throw ValidationException::withMessages([
                 'contractor_id' => ["This contractor's profile is not approved for assignment.{$detail}"],
+            ]);
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * CT-09 — gate NEW offers against availability preferences (does not touch accepted work).
+     *
+     * @return array{user: User, profile: Contractor}
+     */
+    public function assertAssignableForVisit(int $id, \Carbon\Carbon|string $visitAt): array
+    {
+        $resolved = $this->assertAssignable($id);
+        if (! $this->availability->canReceiveNewOffer($resolved['profile'], $visitAt)) {
+            throw ValidationException::withMessages([
+                'contractor_id' => ['This contractor is unavailable for that date/time (paused, blackout, notice, or outside working hours). Existing accepted work is unaffected.'],
             ]);
         }
 

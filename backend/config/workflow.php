@@ -146,4 +146,13 @@ return [
         'quote_follow_up_hours' => 'workflow_quote_follow_up_hours',
         'job_missing_update_days' => 'workflow_job_missing_update_days',
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | CT-07 — contractor assignment response window
+    |--------------------------------------------------------------------------
+    */
+    'contractor_assignment' => [
+        'response_deadline_hours' => (int) env('CONTRACTOR_ASSIGNMENT_RESPONSE_HOURS', 24),
+    ],
 ];

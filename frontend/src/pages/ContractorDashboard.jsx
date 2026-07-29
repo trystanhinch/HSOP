@@ -5,6 +5,7 @@ import api from '../api/axios';
 import KPICard from '../components/KPICard';
 import StatusBadge from '../components/StatusBadge';
 import StripeConnectCard from '../components/StripeConnectCard';
+import ListStatePanel from '../components/ListStatePanel';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 
@@ -46,14 +47,25 @@ export default function ContractorDashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
+  const [loadState, setLoadState] = useState('loading');
   const [priceJob, setPriceJob] = useState(null);
   const [price, setPrice] = useState('');
 
-  useEffect(() => {
+  const load = () => {
+    setLoadState('loading');
+    setError(null);
     api.get('/dashboard/contractor/kpis')
-      .then(({ data: d }) => setData(d))
-      .catch((err) => setError(err.response?.data?.message || 'Failed to load dashboard'));
-  }, []);
+      .then(({ data: d }) => {
+        setData(d);
+        setLoadState('ready');
+      })
+      .catch((err) => {
+        setError(err.response?.data?.message || 'Failed to load dashboard');
+        setLoadState(err.response?.status === 403 ? 'permission' : 'error');
+      });
+  };
+
+  useEffect(() => { load(); }, []);
 
   const submitPrice = async () => {
     if (!priceJob || !price) return;
@@ -69,29 +81,35 @@ export default function ContractorDashboard() {
       setPriceJob(null);
       setPrice('');
       await showSuccess('Price submitted successfully.');
-      api.get('/dashboard/contractor/kpis').then(({ data: d }) => setData(d));
+      load();
     } catch (err) {
       await showError(err.response?.data?.message || 'Failed to submit price.');
     }
   };
 
-  if (!data) {
+  if (loadState === 'loading' || (!data && loadState === 'loading')) {
+    return <div className="text-center py-12 text-slate-500">Loading dashboard...</div>;
+  }
+  if (loadState === 'error' || loadState === 'permission') {
     return (
-      <div className="text-center py-12 text-slate-500">
-        {error || 'Loading dashboard...'}
-        {error && (
-          <button type="button" onClick={() => window.location.reload()} className="block mx-auto mt-2 text-blue-600 text-sm underline">
-            Try again
-          </button>
-        )}
+      <div className="max-w-lg mx-auto mt-8">
+        <ListStatePanel
+          state={loadState}
+          title={loadState === 'permission' ? 'Permission required' : 'Unable to load dashboard'}
+          body={error}
+          actionLabel="Retry"
+          onAction={load}
+        />
       </div>
     );
   }
 
   const profile = data.contractor_profile || data.document_status || {};
+  const onboarding = data.onboarding;
   const jobsNeedingPrice = (data.jobs_list || []).filter((job) =>
     ['pending', 'not_requested', null, undefined].includes(job.contractor_price_status)
   );
+  const readiness = onboarding?.readiness || {};
 
   return (
     <div className="space-y-6">
@@ -100,6 +118,45 @@ export default function ContractorDashboard() {
       </div>
 
       <StripeConnectCard />
+
+      {onboarding && (
+        <div className="bg-white rounded-xl border border-slate-200 p-5 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-semibold text-slate-800">Onboarding checklist</h3>
+            <span className="text-xs text-slate-500">
+              {onboarding.progress?.done}/{onboarding.progress?.total} complete ({onboarding.progress?.percent}%)
+            </span>
+          </div>
+          <ol className="space-y-2">
+            {(onboarding.steps || []).map((step) => (
+              <li key={step.key} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border border-slate-100 rounded-lg p-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-800">{step.number}. {step.label}</p>
+                  <p className="text-xs text-slate-500">Owner: {step.owner} · {step.status_label}</p>
+                  {step.next_action && <p className="text-xs text-amber-700 mt-0.5">{step.next_action}</p>}
+                </div>
+                {step.href && step.status !== 'complete' && (
+                  <Link to={step.href} className="text-xs font-medium text-blue-600 whitespace-nowrap">Continue</Link>
+                )}
+              </li>
+            ))}
+          </ol>
+          <div className="grid sm:grid-cols-3 gap-2 text-xs">
+            {[
+              ['Site visits', readiness.can_receive_site_visits],
+              ['Jobs', readiness.can_receive_jobs],
+              ['Payouts', readiness.can_receive_payouts],
+            ].map(([label, info]) => (
+              <div key={label} className={`rounded-lg border p-2 ${info?.ready ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
+                <p className="font-semibold">{label}: {info?.ready ? 'Ready' : 'Blocked'}</p>
+                {!info?.ready && (info?.blocking || []).slice(0, 2).map((b) => (
+                  <p key={b} className="text-amber-800 mt-0.5">{b}</p>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {jobsNeedingPrice.length > 0 && (
         <div className="space-y-3">
@@ -140,6 +197,10 @@ export default function ContractorDashboard() {
                   <p className="text-xs text-indigo-600">
                     {formatDate(sv.visit_date)}
                     {sv.visit_time && ` at ${formatTime(sv.visit_time)}`}
+                  </p>
+                  <p className="text-xs font-medium mt-1 text-indigo-900">
+                    {sv.assignment_state_label || sv.status}
+                    {sv.is_confirmed === false ? ' — respond to confirm' : ''}
                   </p>
                 </div>
                 <button

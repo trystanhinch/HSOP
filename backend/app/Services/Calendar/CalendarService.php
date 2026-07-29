@@ -85,6 +85,9 @@ class CalendarService
         $maps = $address !== ''
             ? 'https://www.google.com/maps/dir/?api=1&destination='.rawurlencode($address)
             : null;
+        $lifecycle = app(\App\Services\Contractors\ContractorAssignmentLifecycleService::class);
+        $assignment = $lifecycle->present($sv);
+        $state = $assignment['assignment_state'];
 
         return [
             'type' => 'site_visit',
@@ -95,6 +98,10 @@ class CalendarService
             'time' => is_string($sv->visit_time) ? substr($sv->visit_time, 0, 5) : $sv->visit_time,
             'end_time' => null,
             'status' => $sv->status,
+            'assignment_state' => $state,
+            'assignment_state_label' => $assignment['assignment_state_label'],
+            'is_confirmed' => $assignment['is_confirmed'],
+            'event_type_label' => 'Site visit',
             'address' => $address,
             'customer_name' => $sv->lead->contact_name ?? '',
             'customer_phone' => $sv->lead->phone ?? null,
@@ -102,10 +109,13 @@ class CalendarService
             'pm_name' => $sv->pm?->name ?? $sv->lead?->assignedPm?->name ?? '',
             'contractor_id' => $sv->contractor_id,
             'contractor_name' => $sv->contractor?->name ?? '',
-            'url' => '/leads/'.$sv->lead_id,
+            'url' => $sv->lead_id ? '/leads/'.$sv->lead_id : '/site-visits/'.$sv->id,
             'directions_url' => $maps,
+            'next_action' => $assignment['is_confirmed']
+                ? 'Open visit details'
+                : ('Respond by '.($sv->respond_by?->format('M j, g:ia') ?: 'deadline').' — currently '.$assignment['assignment_state_label']),
             'travel_buffer_minutes' => 0,
-            'color' => 'indigo',
+            'color' => $assignment['is_confirmed'] ? 'indigo' : 'orange',
         ];
     }
 

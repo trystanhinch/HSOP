@@ -14,18 +14,24 @@ class SiteVisit extends Model
     use HasTestData;
 
     protected $fillable = [
-        'lead_id', 'pm_id', 'contractor_id', 'customer_id',
+        'lead_id', 'pm_id', 'contractor_id', 'previous_contractor_id', 'customer_id',
         'visit_date', 'visit_time', 'notes', 'status',
-        'accepted_at', 'declined_at', 'completed_at',
+        'assignment_state', 'respond_by', 'viewed_at',
+        'accepted_at', 'confirmed_at', 'declined_at', 'decline_reason', 'completed_at',
+        'reassigned_at',
     ];
 
     protected function casts(): array
     {
         return [
             'visit_date' => DateOnly::class,
+            'respond_by' => 'datetime',
+            'viewed_at' => 'datetime',
             'accepted_at' => 'datetime',
+            'confirmed_at' => 'datetime',
             'declined_at' => 'datetime',
             'completed_at' => 'datetime',
+            'reassigned_at' => 'datetime',
         ];
     }
 

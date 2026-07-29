@@ -99,7 +99,9 @@ class CalendarConflictService
                     'id' => $sv->id,
                     'title' => 'Site visit #'.$sv->id,
                     'status' => $sv->status,
-                    'accepted' => $sv->accepted_at !== null || $sv->status === 'accepted',
+                    'accepted' => $sv->accepted_at !== null
+                        || $sv->status === 'accepted'
+                        || in_array((string) ($sv->assignment_state ?? ''), ['accepted', 'confirmed'], true),
                 ];
             }
         }

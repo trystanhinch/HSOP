@@ -91,6 +91,10 @@ class ContractorAssignmentService
                     'visit_date' => $row['visit_date'],
                     'visit_time' => $row['visit_time'],
                     'status' => $row['status'],
+                    'assignment_state' => $row['assignment_state'] ?? null,
+                    'assignment_state_label' => $row['assignment_state_label'] ?? null,
+                    'is_confirmed' => $row['is_confirmed'] ?? false,
+                    'respond_by' => $row['respond_by'] ?? null,
                     'pm' => $row['pm'],
                     'url' => $row['url'],
                 ];
@@ -126,6 +130,14 @@ class ContractorAssignmentService
             : 'site_visit';
 
         $hasVisit = $visitDate || $visitTime || $sv;
+        $lifecycle = app(ContractorAssignmentLifecycleService::class);
+        $assignment = $sv ? $lifecycle->present($sv) : [
+            'assignment_state' => ContractorAssignmentLifecycleService::OFFERED,
+            'assignment_state_label' => $lifecycle->label(ContractorAssignmentLifecycleService::OFFERED),
+            'is_confirmed' => false,
+        ];
+        // Display status for lists: assignment state label — never imply confirmed when only offered
+        $displayStatus = $assignment['assignment_state_label'] ?? ($hasVisit ? 'Offered' : ($lead->status ?: 'assigned'));
 
         return [
             'type' => 'site_visit',
@@ -135,7 +147,12 @@ class ContractorAssignmentService
             'job_title' => ($hasVisit ? 'Site Visit — ' : 'Lead — ').($lead->contact_name ?? 'Customer'),
             'address' => $lead->address,
             'service_category' => $lead->service_category,
-            'status' => $hasVisit ? 'site_visit_scheduled' : ($lead->status ?: 'assigned'),
+            'status' => $displayStatus,
+            'lifecycle_status' => $lead->status,
+            'assignment_state' => $assignment['assignment_state'] ?? null,
+            'assignment_state_label' => $assignment['assignment_state_label'] ?? null,
+            'is_confirmed' => (bool) ($assignment['is_confirmed'] ?? false),
+            'respond_by' => $assignment['respond_by'] ?? null,
             'contractor_price_status' => $lead->contractor_price ? 'submitted' : 'pending',
             'contractor_submitted_price' => $lead->contractor_price,
             'visit_date' => $visitDate,
@@ -223,8 +240,10 @@ class ContractorAssignmentService
      */
     public function scheduleSiteVisitsForMonth(User $contractor, int $month, int $year): Collection
     {
+        $lifecycle = app(ContractorAssignmentLifecycleService::class);
+
         return SiteVisit::with([
-            'lead:id,contact_name,address,service_category,status,assigned_pm_id',
+            'lead:id,contact_name,phone,address,service_category,status,assigned_pm_id',
             'lead.assignedPm:id,name',
             'pm:id,name',
             'contractor:id,name',
@@ -234,20 +253,36 @@ class ContractorAssignmentService
             ->whereYear('visit_date', $year)
             ->where('status', '!=', 'cancelled')
             ->get()
-            ->map(fn (SiteVisit $sv) => [
-                'type' => 'site_visit',
-                'id' => $sv->id,
-                'lead_id' => $sv->lead_id,
-                'title' => 'Site Visit — '.($sv->lead->contact_name ?? 'Customer'),
-                'date' => $sv->visit_date?->format('Y-m-d'),
-                'time' => is_string($sv->visit_time) ? substr($sv->visit_time, 0, 5) : $sv->visit_time,
-                'status' => $sv->status,
-                'address' => $sv->lead->address ?? '',
-                'customer_name' => $sv->lead->contact_name ?? '',
-                'pm_name' => $sv->pm?->name ?? $sv->lead?->assignedPm?->name ?? '',
-                'contractor_name' => $sv->contractor?->name ?? '',
-                'url' => '/leads/'.$sv->lead_id,
-                'color' => 'indigo',
-            ]);
+            ->map(function (SiteVisit $sv) use ($lifecycle) {
+                $assignment = $lifecycle->present($sv);
+                $address = $sv->lead->address ?? '';
+
+                return [
+                    'type' => 'site_visit',
+                    'id' => $sv->id,
+                    'lead_id' => $sv->lead_id,
+                    'title' => 'Site Visit — '.($sv->lead->contact_name ?? 'Customer'),
+                    'date' => $sv->visit_date?->format('Y-m-d'),
+                    'time' => is_string($sv->visit_time) ? substr($sv->visit_time, 0, 5) : $sv->visit_time,
+                    'status' => $sv->status,
+                    'assignment_state' => $assignment['assignment_state'],
+                    'assignment_state_label' => $assignment['assignment_state_label'],
+                    'is_confirmed' => $assignment['is_confirmed'],
+                    'event_type_label' => 'Site visit',
+                    'address' => $address,
+                    'customer_name' => $sv->lead->contact_name ?? '',
+                    'customer_phone' => $sv->lead->phone ?? null,
+                    'pm_name' => $sv->pm?->name ?? $sv->lead?->assignedPm?->name ?? '',
+                    'contractor_name' => $sv->contractor?->name ?? '',
+                    'url' => $sv->lead_id ? '/leads/'.$sv->lead_id : '/site-visits/'.$sv->id,
+                    'directions_url' => $address !== ''
+                        ? 'https://www.google.com/maps/dir/?api=1&destination='.rawurlencode($address)
+                        : null,
+                    'next_action' => $assignment['is_confirmed']
+                        ? 'Open visit details'
+                        : ('Respond — currently '.$assignment['assignment_state_label']),
+                    'color' => $assignment['is_confirmed'] ? 'indigo' : 'orange',
+                ];
+            });
     }
 }

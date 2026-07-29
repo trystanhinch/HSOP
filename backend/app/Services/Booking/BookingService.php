@@ -320,9 +320,10 @@ class BookingService
                     'assigned_pm_id' => $pmId ?? $lead->assigned_pm_id,
                 ]);
 
+                $lifecycle = app(\App\Services\Contractors\ContractorAssignmentLifecycleService::class);
                 $siteVisit = SiteVisit::updateOrCreate(
                     ['lead_id' => $lead->id],
-                    [
+                    array_merge([
                         'pm_id' => $pmId,
                         'contractor_id' => $contractorId,
                         'customer_id' => $customerId,
@@ -330,8 +331,7 @@ class BookingService
                         'visit_time' => $localStart->format('H:i'),
                         'notes' => 'Confirmed from public intake booking hold.'
                             .($autoMatched ? ' '.$matchRule : ''),
-                        'status' => 'scheduled',
-                    ]
+                    ], $contractorId ? $lifecycle->offerAttributes() : ['status' => 'scheduled'])
                 );
 
                 $booking = Booking::create([

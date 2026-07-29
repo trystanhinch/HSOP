@@ -167,6 +167,9 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     Route::get('/companies', [CompanyController::class, 'index']);
 
     Route::get('/me/contractor', [ContractorController::class, 'me'])->middleware('role:contractor');
+    Route::get('/me/contractor/availability', [\App\Http\Controllers\Api\ContractorPortalController::class, 'availability'])->middleware('role:contractor');
+    Route::put('/me/contractor/availability', [\App\Http\Controllers\Api\ContractorPortalController::class, 'updateAvailability'])->middleware('role:contractor');
+    Route::get('/me/contractor/onboarding', [\App\Http\Controllers\Api\ContractorPortalController::class, 'onboarding'])->middleware('role:contractor');
 
     Route::get('/users/pms', [UserController::class, 'pms'])->middleware('role:owner,pm');
     Route::get('/users/contractors', [UserController::class, 'contractors'])->middleware('role:owner,pm');

@@ -61,6 +61,7 @@ export const ALL_NAV_ITEMS = [
   { id: 'company-sources', label: 'Company Sources', icon: Building2, path: '/company-sources', roles: ['owner'] },
   { id: 'pricing-rules', label: 'Pricing Rules', icon: Calculator, path: '/pricing-rules', roles: ['owner'] },
   { id: 'availability', label: 'Availability', icon: Calendar, path: '/availability', roles: ['owner', 'pm'] },
+  { id: 'my-availability', label: 'My Availability', icon: Calendar, path: '/my-availability', roles: ['contractor'] },
   { id: 'db', label: 'DB Structure', icon: Database, path: '/settings?tab=database', roles: ['owner'] },
   { id: 'settings', label: 'Settings', icon: Settings, path: '/settings', roles: ['owner'] },
 ];

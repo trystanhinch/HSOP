@@ -130,6 +130,12 @@ class StripeConnectController extends Controller
         $mode = app(PaymentDestinationService::class)->paymentModeLabel($provider);
         $hasAccount = filled($user->stripe_account_id);
 
+        $rawRequirements = $user->stripe_requirements_due ?? [];
+        if (is_string($rawRequirements)) {
+            $decoded = json_decode($rawRequirements, true);
+            $rawRequirements = is_array($decoded) ? $decoded : [];
+        }
+
         return [
             'provider' => $provider,
             'mode' => $mode,
@@ -139,14 +145,40 @@ class StripeConnectController extends Controller
             'stripe_account_ref' => $this->maskAccountId($user->stripe_account_id),
             'stripe_account_id' => null,
             'onboarding_status' => $user->stripe_onboarding_status,
-            'requirements_due' => $user->stripe_requirements_due ?? [],
+            // CT-05: never expose raw Stripe requirement paths to contractors
+            'requirements_due' => [],
+            'requirements_plain' => $this->plainRequirements($rawRequirements),
             'payout_ready' => (bool) $user->stripe_payout_ready,
             'status_label' => $this->statusLabel($user),
+            'support_guidance' => 'Finish setup in Stripe’s secure form. ServiceOP never stores your bank details. If stuck, contact support with your account ref only.',
             'publishable_key' => $provider === 'stripe'
                 ? config('payment.stripe.publishable')
                 : null,
             'synced_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * @param  list<string>|array<int, string>  $requirements
+     * @return list<string>
+     */
+    private function plainRequirements(array $requirements): array
+    {
+        $out = [];
+        foreach ($requirements as $req) {
+            $key = strtolower((string) $req);
+            $out[] = match (true) {
+                str_contains($key, 'individual.verification.document') || str_contains($key, 'id_number') => 'Verify your identity with a government ID in Stripe.',
+                str_contains($key, 'external_account') || str_contains($key, 'bank') => 'Add a bank account for payouts in Stripe.',
+                str_contains($key, 'tos_acceptance') => 'Accept Stripe’s terms of service.',
+                str_contains($key, 'business_profile') => 'Complete your business profile in Stripe.',
+                str_contains($key, 'individual.dob') || str_contains($key, 'address') => 'Confirm your personal details (address / date of birth) in Stripe.',
+                str_contains($key, 'company') => 'Complete company information in Stripe.',
+                default => 'Additional information is required in Stripe — continue setup to see the next step.',
+            };
+        }
+
+        return array_values(array_unique($out));
     }
 
     private function statusLabel(User $user): string

@@ -18,6 +18,7 @@ class PayoutController extends Controller
         protected JobNotificationService $notifications,
         protected FinancialLedgerService $ledger,
         protected PmCommissionService $commissions,
+        protected \App\Services\Finance\ContractorPayoutService $contractorPayouts,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -93,14 +94,37 @@ class PayoutController extends Controller
         }
 
         if ($user->role === 'contractor') {
-            $query = Payout::with(['job:id,address,job_title'])
+            $query = Payout::with([
+                'job:id,address,job_title,customer_id,status,customer_accepted_completion_at',
+                'job.customer:id,name',
+                'job.invoice:id,job_id,status,subtotal,amount,balance',
+                'job.quote:id,job_id,status,customer_price_before_gst,subtotal',
+            ])
                 ->where('contractor_id', $user->id)
                 ->where('payout_type', 'contractor');
-            if ($request->status) {
+            if ($request->filled('payout_state') || $request->filled('commission_state')) {
+                $state = (string) ($request->query('payout_state') ?: $request->query('commission_state'));
+                $statuses = $this->commissions->statusesForCommissionState($state);
+                // Map Ready label to payable statuses
+                if ($state === 'ready') {
+                    $statuses = $this->commissions->statusesForCommissionState('payable');
+                }
+                if ($statuses !== []) {
+                    $query->whereIn('status', $statuses);
+                }
+            } elseif ($request->status) {
                 $query->where('status', $request->status);
             }
 
-            return response()->json($query->latest()->paginate(20));
+            $page = $query->latest()->paginate(20);
+            $page->getCollection()->transform(fn (Payout $p) => $this->contractorPayouts->present($p));
+
+            $payload = $page->toArray();
+            if (($payload['total'] ?? 0) === 0) {
+                $payload['empty_reason'] = $this->contractorPayouts->emptyReason($user);
+            }
+
+            return response()->json($payload);
         }
 
         return response()->json(['data' => []]);

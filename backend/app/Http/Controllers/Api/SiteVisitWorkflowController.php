@@ -48,6 +48,12 @@ class SiteVisitWorkflowController extends Controller
         ]);
 
         $submission = $siteVisit->submission;
+        $lifecycle = app(\App\Services\Contractors\ContractorAssignmentLifecycleService::class);
+        if ($user->role === 'contractor') {
+            $lifecycle->markViewed($siteVisit);
+            $siteVisit->refresh();
+        }
+        $assignment = $lifecycle->present($siteVisit);
 
         return response()->json([
             'site_visit' => [
@@ -59,7 +65,15 @@ class SiteVisitWorkflowController extends Controller
                 'accepted_at' => $siteVisit->accepted_at,
                 'declined_at' => $siteVisit->declined_at,
                 'completed_at' => $siteVisit->completed_at,
+                'assignment_state' => $assignment['assignment_state'],
+                'assignment_state_label' => $assignment['assignment_state_label'],
+                'is_confirmed' => $assignment['is_confirmed'],
+                'respond_by' => $assignment['respond_by'],
+                'viewed_at' => $assignment['viewed_at'],
+                'confirmed_at' => $assignment['confirmed_at'],
+                'decline_reason' => $assignment['decline_reason'],
             ],
+            'assignment' => $assignment,
             'lead' => [
                 'id' => $lead->id,
                 'contact_name' => $lead->contact_name,
@@ -104,38 +118,33 @@ class SiteVisitWorkflowController extends Controller
     public function accept(Request $request, SiteVisit $siteVisit): JsonResponse
     {
         $this->assertContractorAccess($request->user(), $siteVisit);
+        $lifecycle = app(\App\Services\Contractors\ContractorAssignmentLifecycleService::class);
+        $siteVisit = $lifecycle->accept($siteVisit);
 
-        if ($siteVisit->accepted_at) {
-            return response()->json(['message' => 'Already accepted'], 422);
-        }
-
-        $siteVisit->update([
-            'status' => 'accepted',
-            'accepted_at' => now(),
+        return response()->json([
+            'message' => 'Site visit accepted',
+            'site_visit' => $siteVisit,
+            'assignment' => $lifecycle->present($siteVisit),
         ]);
-
-        return response()->json(['message' => 'Site visit accepted', 'site_visit' => $siteVisit->fresh()]);
     }
 
     /**
-     * CT-04: Contractor declines the site visit.
+     * CT-04 / CT-07: Contractor declines the site visit with reason.
      */
     public function decline(Request $request, SiteVisit $siteVisit): JsonResponse
     {
         $this->assertContractorAccess($request->user(), $siteVisit);
-
-        $siteVisit->update([
-            'status' => 'declined',
-            'declined_at' => now(),
+        $data = $request->validate([
+            'reason' => 'nullable|string|max:500',
         ]);
+        $lifecycle = app(\App\Services\Contractors\ContractorAssignmentLifecycleService::class);
+        $siteVisit = $lifecycle->decline($siteVisit, $request->user(), $data['reason'] ?? null);
 
-        $pm = User::find($siteVisit->pm_id);
-        if ($pm) {
-            $label = $siteVisit->lead?->address ?: 'site visit #'.$siteVisit->id;
-            $this->sms->sendToUser($pm, "{$request->user()->name} declined the site visit at {$label}.", 'site_visit_declined');
-        }
-
-        return response()->json(['message' => 'Site visit declined', 'site_visit' => $siteVisit->fresh()]);
+        return response()->json([
+            'message' => 'Site visit declined',
+            'site_visit' => $siteVisit,
+            'assignment' => $lifecycle->present($siteVisit),
+        ]);
     }
 
     /**

@@ -686,9 +686,16 @@ class LeadController extends Controller
             $lead->refresh();
         }
 
+        $visitAt = $request->site_visit_date.' '.($request->site_visit_time ?: '09:00');
         $resolved = app(\App\Services\Contractors\ContractorAssignmentGuard::class)
-            ->assertAssignable((int) $request->site_visit_contractor_id);
+            ->assertAssignableForVisit((int) $request->site_visit_contractor_id, $visitAt);
         $contractor = $resolved['user'];
+        $lifecycle = app(\App\Services\Contractors\ContractorAssignmentLifecycleService::class);
+        $existingVisit = \App\Models\SiteVisit::where('lead_id', $lead->id)->first();
+        $previousContractorId = $existingVisit?->contractor_id
+            && (int) $existingVisit->contractor_id !== (int) $contractor->id
+            ? (int) $existingVisit->contractor_id
+            : null;
 
         $resolver = app(LeadCustomerResolver::class);
         $customerId = $lead->customer_id;
@@ -712,15 +719,14 @@ class LeadController extends Controller
 
         $siteVisit = \App\Models\SiteVisit::updateOrCreate(
             ['lead_id' => $lead->id],
-            [
+            array_merge([
                 'pm_id' => $lead->assigned_pm_id,
                 'contractor_id' => $contractor->id,
                 'customer_id' => $customerId,
                 'visit_date' => $request->site_visit_date,
                 'visit_time' => $request->site_visit_time,
                 'notes' => $request->site_visit_notes,
-                'status' => 'scheduled',
-            ]
+            ], $lifecycle->offerAttributes($previousContractorId))
         );
 
         $customerPortalUrl = SmsMessageTemplates::customerPortalUrl($lead->customer_portal_token);

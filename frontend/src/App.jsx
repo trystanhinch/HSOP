@@ -31,6 +31,7 @@ import Ledger from './pages/Ledger';
 import CompanySources from './pages/CompanySources';
 import PricingRules from './pages/PricingRules';
 import Availability from './pages/Availability';
+import ContractorAvailability from './pages/ContractorAvailability';
 import BrandContent from './pages/BrandContent';
 import Settings from './pages/Settings';
 import Unauthorized from './pages/Unauthorized';
@@ -84,6 +85,7 @@ export default function App() {
               <Route path="/company-sources" element={<RoleGuard roles={['owner']}><CompanySources /></RoleGuard>} />
               <Route path="/pricing-rules" element={<RoleGuard roles={['owner']}><PricingRules /></RoleGuard>} />
               <Route path="/availability" element={<RoleGuard roles={['owner', 'pm']}><Availability /></RoleGuard>} />
+              <Route path="/my-availability" element={<RoleGuard roles={['contractor']}><ContractorAvailability /></RoleGuard>} />
               <Route path="/settings" element={<RoleGuard roles={['owner']}><Settings /></RoleGuard>} />
               <Route path="/unauthorized" element={<Unauthorized />} />
             </Route>

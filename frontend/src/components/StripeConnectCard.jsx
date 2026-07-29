@@ -21,6 +21,8 @@ export default function StripeConnectCard() {
       onboarding_status: data.onboarding_status,
       payout_ready: !!data.payout_ready,
       requirements_due: data.requirements_due || [],
+      requirements_plain: data.requirements_plain || [],
+      support_guidance: data.support_guidance,
       status_label: data.status_label,
       synced_at: data.synced_at,
     });
@@ -124,7 +126,7 @@ export default function StripeConnectCard() {
   }
 
   const ready = !!status.payout_ready;
-  const due = status.requirements_due || [];
+  const duePlain = status.requirements_plain || [];
   const mode = status.mode || (status.livemode ? 'LIVE' : 'TEST');
 
   return (
@@ -152,8 +154,15 @@ export default function StripeConnectCard() {
         {status.stripe_account_ref && (
           <p className="text-xs text-slate-400 font-mono">Account ref: {status.stripe_account_ref}</p>
         )}
-        {due.length > 0 && (
-          <p className="text-xs text-amber-700">Requirements due: {due.slice(0, 5).join(', ')}{due.length > 5 ? '…' : ''}</p>
+        {duePlain.length > 0 && (
+          <ul className="text-xs text-amber-800 list-disc pl-4 space-y-0.5">
+            {duePlain.slice(0, 5).map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ul>
+        )}
+        {status.support_guidance && (
+          <p className="text-xs text-slate-500">{status.support_guidance}</p>
         )}
         {status.synced_at && (
           <p className="text-xs text-slate-400">Synced {new Date(status.synced_at).toLocaleString()}</p>

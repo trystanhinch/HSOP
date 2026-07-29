@@ -212,12 +212,14 @@ function JobScheduleCalendar() {
   const [events, setEvents] = useState([]);
   const [conflicts, setConflicts] = useState([]);
   const [timezone, setTimezone] = useState('America/Vancouver');
-  // PM-13: agenda is the default for PMs (full field details)
+  // PM-13 / CT-08: agenda is the default for PMs and contractors (full field details)
   const [view, setView] = useState(() => {
     const fromUrl = searchParams.get('view');
-    if (fromUrl && ['month', 'agenda', 'list'].includes(fromUrl)) return fromUrl;
-    return user?.role === 'pm' ? 'agenda' : 'month';
+    if (fromUrl && ['day', 'week', 'month', 'agenda', 'list'].includes(fromUrl)) return fromUrl;
+    return (user?.role === 'pm' || user?.role === 'contractor') ? 'agenda' : 'month';
   });
+  const [loadError, setLoadError] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const setViewAndUrl = (v) => {
     setView(v);
@@ -226,14 +228,24 @@ function JobScheduleCalendar() {
     setSearchParams(next, { replace: true });
   };
 
-  useEffect(() => {
+  const loadSchedule = () => {
+    setLoading(true);
+    setLoadError(null);
     api.get('/schedule', { params: { month, view } })
       .then(({ data }) => {
         setEvents(data.all || data.events || data.jobs || []);
         setConflicts(data.conflicts || []);
         if (data.timezone) setTimezone(data.timezone);
       })
-      .catch(() => setEvents([]));
+      .catch((err) => {
+        // CT-11: never present API failure as an empty calendar
+        setLoadError(err?.response?.data?.message || 'Could not load schedule. Retry or contact support.');
+      })
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadSchedule();
   }, [month, view]);
 
   const [year, mon] = month.split('-').map(Number);
@@ -259,9 +271,29 @@ function JobScheduleCalendar() {
     (conflicts || []).flatMap((c) => [c.event_id, c.id, c.a_id, c.b_id].filter(Boolean).map(String))
   );
 
-  const agenda = [...events].sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`));
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const weekStart = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - d.getDay());
+    return d.toISOString().slice(0, 10);
+  })();
+  const weekEnd = (() => {
+    const d = new Date();
+    d.setDate(d.getDate() - d.getDay() + 6);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  const agenda = [...events]
+    .filter((e) => {
+      const d = (e.date || '').slice(0, 10);
+      if (view === 'day') return d === todayStr;
+      if (view === 'week') return d >= weekStart && d <= weekEnd;
+      return true;
+    })
+    .sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`));
 
   const eventTypeLabel = (item) => {
+    if (item.event_type_label) return item.event_type_label;
     if (item.type === 'site_visit') return 'Site visit';
     if (item.type === 'pm_meeting') return 'PM meeting';
     if (item.type === 'booking_hold') return 'Hold';
@@ -269,10 +301,12 @@ function JobScheduleCalendar() {
     return 'Job';
   };
 
+  const listViews = ['day', 'week', 'agenda', 'list'];
+
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-3">
-        {['month', 'agenda', 'list'].map((v) => (
+        {['day', 'week', 'month', 'agenda', 'list'].map((v) => (
           <button
             key={v}
             type="button"
@@ -284,6 +318,13 @@ function JobScheduleCalendar() {
         ))}
         <span className="text-xs text-slate-500 self-center ml-auto">TZ: {timezone}</span>
       </div>
+      {loadError && (
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800 flex flex-wrap items-center gap-2">
+          <span>{loadError}</span>
+          <button type="button" onClick={loadSchedule} className="underline font-medium">Retry</button>
+        </div>
+      )}
+      {loading && !loadError && <p className="text-sm text-slate-500 mb-3">Loading schedule…</p>}
       <div className="flex gap-4 mb-4 text-xs flex-wrap">
         {(isPm || isOwner) && <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-purple-200 border border-purple-300" /> PM Meeting</span>}
         <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-indigo-200 border border-indigo-300" /> Site Visit</span>
@@ -297,7 +338,7 @@ function JobScheduleCalendar() {
           {conflicts.length} schedule conflict(s) detected (accepted assignments / holds).
         </div>
       )}
-      {(view === 'agenda' || view === 'list') ? (
+      {listViews.includes(view) ? (
         <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
           {agenda.map((item) => {
             const hasConflict = conflictIds.has(String(item.id))
@@ -333,6 +374,14 @@ function JobScheduleCalendar() {
                     {item.address && <p><span className="text-slate-400">Address:</span> {item.address}</p>}
                     {item.contractor_name && <p><span className="text-slate-400">Contractor:</span> {item.contractor_name}</p>}
                     {item.pm_name && <p><span className="text-slate-400">PM:</span> {item.pm_name}</p>}
+                    {(item.assignment_state_label || item.event_type_label) && (
+                      <p>
+                        <span className="text-slate-400">State:</span>{' '}
+                        {item.assignment_state_label || item.event_type_label}
+                        {item.is_confirmed === false && item.assignment_state ? ' (not confirmed)' : ''}
+                      </p>
+                    )}
+                    {item.next_action && <p className="sm:col-span-2"><span className="text-slate-400">Next:</span> {item.next_action}</p>}
                   </div>
                   {hasConflict && (
                     <p className="text-xs font-medium text-red-700 mt-2">Conflict warning — overlapping accepted work</p>
@@ -346,9 +395,11 @@ function JobScheduleCalendar() {
               </div>
             );
           })}
-          {agenda.length === 0 && (
+          {!loadError && agenda.length === 0 && !loading && (
             <p className="text-sm text-slate-500 text-center py-8">
-              {isPm ? 'No events on your schedule for this month.' : 'No events this month.'}
+              {view === 'day' ? 'Nothing scheduled today.'
+                : view === 'week' ? 'Nothing scheduled this week.'
+                : (isPm ? 'No events on your schedule for this month.' : 'No events this month.')}
             </p>
           )}
         </div>

@@ -273,7 +273,8 @@ class DashboardController extends Controller
                 'insurance' => $this->resolveDocStatus($contractor, 'liability_insurance'),
             ] : ['wcb' => 'not_uploaded', 'insurance' => 'not_uploaded'],
             'contractor_id' => $contractor?->id,
-            'contractor_profile' => $contractor ? $contractor->only(['wcb_status', 'liability_insurance_status', 'approval_status']) : null,
+            'contractor_profile' => $contractor ? $contractor->only(['wcb_status', 'liability_insurance_status', 'approval_status', 'state']) : null,
+            'onboarding' => app(\App\Services\Contractors\ContractorOnboardingService::class)->checklist($user),
             'recent_messages' => \App\Models\Message::where('sender_id', '!=', $id)
                 ->where(function ($q) use ($id) {
                     $q->whereHas('job', fn ($jq) => $jq->where('contractor_id', $id))
