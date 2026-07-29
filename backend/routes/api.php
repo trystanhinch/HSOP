@@ -141,6 +141,10 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
 
     Route::get('/leads', [LeadController::class, 'index']);
     Route::get('/leads/review-count', [LeadController::class, 'reviewCount'])->middleware('role:owner');
+    Route::get('/leads/duplicate-groups/{groupId}', [LeadController::class, 'duplicateGroup'])->middleware('role:owner');
+    Route::post('/leads/regroup-duplicates', [LeadController::class, 'regroupDuplicates'])->middleware('role:owner');
+    Route::post('/leads/merge', [LeadController::class, 'merge'])->middleware('role:owner');
+    Route::post('/leads/bulk-ignore', [LeadController::class, 'bulkIgnore'])->middleware('role:owner');
     Route::get('/intake-quarantine/pending-count', [IntakeQuarantineController::class, 'pendingCount'])->middleware('role:owner');
     Route::get('/intake-quarantine', [IntakeQuarantineController::class, 'index'])->middleware('role:owner');
     Route::get('/intake-quarantine/{intakeQuarantine}', [IntakeQuarantineController::class, 'show'])->middleware('role:owner');

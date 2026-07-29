@@ -40,17 +40,47 @@ class LeadController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
-        $query = Lead::with(['assignedPm:id,name', 'customer:id,name', 'company:id,name', 'companySource:id,company_name']);
+        $view = $request->query('view', '');
+        $query = Lead::with([
+            'assignedPm:id,name',
+            'customer:id,name',
+            'company:id,name',
+            'companySource:id,company_name',
+            'brand:id,company_name,slug',
+            'pendingNextAction.responsibleUser:id,name',
+        ]);
 
         if ($user->role === 'pm') {
             $this->authz->scopeLeadsForPm($query, $user);
         }
 
-        if ($request->show_converted !== 'true') {
-            $query->where('status', '!=', 'converted');
+        // A-35 views
+        if ($view === 'ignored') {
+            $query->whereNotNull('ignored_at');
+        } elseif ($view === 'duplicates') {
+            $query->whereNotNull('duplicate_group_id')
+                ->whereNull('merged_into_lead_id')
+                ->whereNull('ignored_at');
+        } elseif ($view === 'converted') {
+            $query->where('status', 'converted');
+        } elseif ($view === 'lost') {
+            $query->where('status', 'lost')->whereNull('ignored_at');
+        } elseif ($view === 'active') {
+            $query->whereNull('merged_into_lead_id')
+                ->whereNull('ignored_at')
+                ->whereNotIn('status', ['converted', 'lost'])
+                ->where('needs_manual_review', false);
+        } else {
+            if ($request->show_converted !== 'true' && $request->status !== 'converted' && $view !== 'converted') {
+                $query->where('status', '!=', 'converted');
+            }
+            $query->whereNull('merged_into_lead_id');
+            if ($view !== 'lost' && $request->status !== 'lost') {
+                $query->whereNull('ignored_at');
+            }
         }
 
-        if ($request->status) {
+        if ($request->status && $view === '') {
             $query->where('status', $request->status);
         }
 
@@ -66,8 +96,8 @@ class LeadController extends Controller
             $query->where('brand_id', $request->brand_id);
         }
 
-        if ($request->needs_review === 'true') {
-            $query->where('needs_manual_review', true);
+        if ($request->needs_review === 'true' || $view === 'needs_review') {
+            $query->where('needs_manual_review', true)->whereNull('ignored_at');
         }
 
         if ($request->search) {
@@ -80,7 +110,44 @@ class LeadController extends Controller
             });
         }
 
-        return response()->json($query->latest()->paginate(20));
+        $paginator = $query->latest()->paginate(20);
+        $presenter = app(\App\Services\Leads\LeadConfidencePresenter::class);
+        $gate = app(\App\Services\Leads\LeadConvertGate::class);
+
+        $paginator->setCollection(
+            $paginator->getCollection()->map(function (Lead $lead) use ($presenter, $gate) {
+                $confidence = $presenter->summarize($lead->parse_metadata, (bool) $lead->needs_manual_review);
+                if ($lead->review_reason) {
+                    $confidence['review_reason'] = $lead->review_reason;
+                    array_unshift($confidence['reasons'], $lead->review_reason);
+                    $confidence['reasons'] = array_values(array_unique($confidence['reasons']));
+                }
+                $gateResult = $gate->evaluate($lead);
+                $arr = $lead->toArray();
+                $lastContact = $lead->updated_at;
+
+                return array_merge($arr, [
+                    'source_label' => $lead->companySource?->company_name ?: $lead->source,
+                    'brand_name' => $lead->brand?->company_name ?: $lead->company?->name,
+                    'age_days' => $lead->created_at ? $lead->created_at->diffInDays(now()) : null,
+                    'last_contact_at' => optional($lastContact)?->toIso8601String(),
+                    'confidence_summary' => $confidence,
+                    'review_reason' => $confidence['review_reason'],
+                    'next_action' => $lead->pendingNextAction ? [
+                        'id' => $lead->pendingNextAction->id,
+                        'action_description' => $lead->pendingNextAction->action_description,
+                        'due_at' => optional($lead->pendingNextAction->due_at)?->toIso8601String(),
+                        'status' => $lead->pendingNextAction->status,
+                    ] : null,
+                    'contact_clickable' => $gateResult['contact_clickable'],
+                    'can_convert' => $gateResult['ok'],
+                    'convert_blockers' => $gateResult['errors'],
+                    'recommended_primary' => (bool) $lead->is_duplicate_primary,
+                ]);
+            })
+        );
+
+        return response()->json($paginator);
     }
 
     public function reviewCount(Request $request): JsonResponse
@@ -94,6 +161,93 @@ class LeadController extends Controller
             'definition' => 'productionOnly leads where needs_manual_review = true (same as Admin Dashboard "Needs Review")',
             'quarantine_pending' => \App\Models\IntakeQuarantine::query()->where('status', 'pending')->count(),
         ]);
+    }
+
+    public function duplicateGroup(Request $request, string $groupId): JsonResponse
+    {
+        if ($request->user()->role !== 'owner') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $group = app(\App\Services\Leads\LeadDuplicateService::class)->group($groupId);
+        $presenter = app(\App\Services\Leads\LeadConfidencePresenter::class);
+        $leads = array_map(function (Lead $lead) use ($presenter, $group) {
+            $confidence = $presenter->summarize($lead->parse_metadata, (bool) $lead->needs_manual_review);
+
+            return array_merge($lead->toArray(), [
+                'confidence_summary' => $confidence,
+                'review_reason' => $confidence['review_reason'] ?: $lead->review_reason,
+                'is_recommended_primary' => (int) $lead->id === (int) $group['recommended_primary_id'],
+            ]);
+        }, $group['leads']);
+
+        return response()->json([
+            'group_id' => $group['group_id'],
+            'recommended_primary_id' => $group['recommended_primary_id'],
+            'leads' => $leads,
+        ]);
+    }
+
+    public function regroupDuplicates(Request $request): JsonResponse
+    {
+        if ($request->user()->role !== 'owner') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $result = app(\App\Services\Leads\LeadDuplicateService::class)->regroup();
+
+        return response()->json(['message' => 'Duplicate groups refreshed', ...$result]);
+    }
+
+    public function merge(Request $request): JsonResponse
+    {
+        if ($request->user()->role !== 'owner') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $data = $request->validate([
+            'lead_ids' => 'required|array|min:2',
+            'lead_ids.*' => 'integer|exists:leads,id',
+            'primary_lead_id' => 'required|integer|exists:leads,id',
+            'field_choices' => 'nullable|array',
+            'confirm' => 'accepted',
+        ]);
+
+        try {
+            $result = app(\App\Services\Leads\LeadMergeService::class)->merge(
+                $data['lead_ids'],
+                (int) $data['primary_lead_id'],
+                $request->user(),
+                $data['field_choices'] ?? []
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message' => 'Leads merged',
+            'primary' => $result['primary'],
+            'counts' => $result['counts'],
+            'log_id' => $result['log']->id,
+        ]);
+    }
+
+    public function bulkIgnore(Request $request): JsonResponse
+    {
+        if ($request->user()->role !== 'owner') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        $data = $request->validate([
+            'lead_ids' => 'required|array|min:1',
+            'lead_ids.*' => 'integer|exists:leads,id',
+            'reason' => 'required|string|max:500',
+            'confirm' => 'accepted',
+        ]);
+
+        $count = app(\App\Services\Leads\LeadMergeService::class)->bulkIgnore(
+            $data['lead_ids'],
+            $request->user(),
+            $data['reason']
+        );
+
+        return response()->json(['message' => "Ignored {$count} lead(s)", 'count' => $count]);
     }
 
     public function store(Request $request): JsonResponse
@@ -174,6 +328,9 @@ class LeadController extends Controller
             $pricingPreview = $lead->contractor_price
                 ? $this->pricing->fromContractorPrice((float) $lead->contractor_price)
                 : null;
+            $gate = app(\App\Services\Leads\LeadConvertGate::class)->evaluate($lead);
+            $confidence = app(\App\Services\Leads\LeadConfidencePresenter::class)
+                ->summarize($lead->parse_metadata, (bool) $lead->needs_manual_review);
 
             return response()->json(array_merge($lead->toArray(), [
                 'activity' => $activity,
@@ -181,6 +338,11 @@ class LeadController extends Controller
                 'pricing_preview' => $pricingPreview,
                 'next_action' => $lead->pendingNextAction()->with('responsibleUser:id,name,role')->first(),
                 'event_timeline' => app(\App\Services\ActivityTimelineService::class)->forSubject($lead, 20),
+                'confidence_summary' => $confidence,
+                'review_reason' => $lead->review_reason ?: $confidence['review_reason'],
+                'can_convert' => $gate['ok'],
+                'convert_blockers' => $gate['errors'],
+                'contact_clickable' => $gate['contact_clickable'],
             ]));
         }
 
@@ -410,8 +572,24 @@ class LeadController extends Controller
             return response()->json(['message' => 'Lead already converted'], 422);
         }
 
-        if (! $lead->contact_name) {
-            return response()->json(['message' => 'Lead is missing a contact name.'], 422);
+        $data = $request->validate([
+            'owner_override' => 'sometimes|boolean',
+            'owner_override_reason' => 'nullable|string|max:500',
+        ]);
+
+        try {
+            app(\App\Services\Leads\LeadConvertGate::class)->assertCanConvert(
+                $lead,
+                $user,
+                (bool) ($data['owner_override'] ?? false),
+                $data['owner_override_reason'] ?? null
+            );
+            $lead->refresh();
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => collect($e->errors())->flatten()->first() ?: 'Lead cannot be converted',
+                'errors' => $e->errors(),
+            ], 422);
         }
 
         $jobId = null;

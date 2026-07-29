@@ -53,17 +53,36 @@ export default function Leads() {
   const [acting, setActing] = useState(false);
 
   const status = searchParams.get('status') || '';
+  const view = searchParams.get('view') || '';
   const category = searchParams.get('category') || '';
   const search = searchParams.get('search') || '';
   const page = searchParams.get('page') || '1';
   const isOwner = user?.role === 'owner';
   const isPm = user?.role === 'pm';
-  const showQuarantine = isOwner && status === 'needs_review';
+  const showQuarantine = isOwner && (status === 'needs_review' || view === 'quarantine');
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [dupGroup, setDupGroup] = useState(null);
+
+  const VIEW_TABS = [
+    { label: 'Active', view: 'active' },
+    { label: 'Needs Review', view: 'needs_review', status: 'needs_review' },
+    { label: 'Quarantine', view: 'quarantine', status: 'needs_review' },
+    { label: 'Duplicates', view: 'duplicates' },
+    { label: 'Converted', view: 'converted', status: 'converted' },
+    { label: 'Lost', view: 'lost', status: 'lost' },
+    { label: 'Ignored', view: 'ignored' },
+  ];
 
   const fetchLeads = () => {
+    if (view === 'quarantine') {
+      setLeads([]);
+      return;
+    }
     const params = { page };
-    if (status === 'needs_review') {
+    if (view) params.view = view;
+    if (status === 'needs_review' || view === 'needs_review') {
       params.needs_review = 'true';
+      params.view = 'needs_review';
     } else if (status) {
       params.status = status;
       if (status === 'converted') params.show_converted = 'true';
@@ -92,7 +111,64 @@ export default function Leads() {
   useEffect(() => {
     fetchLeads();
     fetchQuarantine();
-  }, [status, category, search, page, showQuarantine]);
+  }, [status, view, category, search, page, showQuarantine]);
+
+  const setViewTab = (tab) => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('page');
+    if (tab.view) next.set('view', tab.view); else next.delete('view');
+    if (tab.status) next.set('status', tab.status); else next.delete('status');
+    setSearchParams(next);
+  };
+
+  const openDupGroup = async (groupId) => {
+    try {
+      const { data } = await api.get(`/leads/duplicate-groups/${groupId}`);
+      setDupGroup(data);
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Failed to load duplicate group');
+    }
+  };
+
+  const bulkIgnore = async () => {
+    if (!selectedIds.length) return;
+    const reason = window.prompt('Reason for ignoring selected leads (audit trail):');
+    if (!reason?.trim()) return;
+    const ok = await confirmAction({ title: 'Ignore selected leads?', text: `${selectedIds.length} lead(s) will be marked ignored.`, confirmText: 'Ignore' });
+    if (!ok) return;
+    try {
+      await api.post('/leads/bulk-ignore', { lead_ids: selectedIds, reason: reason.trim(), confirm: true });
+      await showSuccess('Leads ignored with audit trail.');
+      setSelectedIds([]);
+      fetchLeads();
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Bulk ignore failed');
+    }
+  };
+
+  const mergeDupGroup = async () => {
+    if (!dupGroup?.leads?.length) return;
+    const primary = dupGroup.recommended_primary_id;
+    const ids = dupGroup.leads.map((l) => l.id);
+    const ok = await confirmAction({
+      title: 'Merge duplicate leads?',
+      text: `Primary #${primary} will absorb ${ids.length - 1} secondary lead(s). Soft-merge with audit log.`,
+      confirmText: 'Merge',
+    });
+    if (!ok) return;
+    try {
+      await api.post('/leads/merge', {
+        lead_ids: ids,
+        primary_lead_id: primary,
+        confirm: true,
+      });
+      await showSuccess('Leads merged.');
+      setDupGroup(null);
+      fetchLeads();
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Merge failed');
+    }
+  };
 
   const goToPage = (p) => {
     const next = new URLSearchParams(searchParams);
@@ -217,24 +293,72 @@ export default function Leads() {
         </button>
       </PageHeader>
 
+      <div className="flex flex-wrap gap-2 mb-3">
+        {VIEW_TABS.map((tab) => (
+          <button
+            key={tab.label}
+            type="button"
+            onClick={() => setViewTab(tab)}
+            className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium ${
+              (view || status || 'active') === (tab.view || tab.status || 'active')
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-slate-600 border border-slate-200'
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+        {isOwner && view === 'duplicates' && (
+          <button
+            type="button"
+            className="px-3 py-1.5 rounded-lg text-xs border border-slate-200"
+            onClick={async () => {
+              try {
+                await api.post('/leads/regroup-duplicates');
+                await showSuccess('Duplicate groups refreshed');
+                fetchLeads();
+              } catch (e) {
+                await showError(e.response?.data?.message || 'Regroup failed');
+              }
+            }}
+          >
+            Refresh groups
+          </button>
+        )}
+        {isOwner && selectedIds.length > 0 && (
+          <button type="button" onClick={bulkIgnore} className="px-3 py-1.5 rounded-lg text-xs bg-slate-800 text-white">
+            Ignore selected ({selectedIds.length})
+          </button>
+        )}
+      </div>
+
       <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <select value={status} onChange={(e) => setFilter('status', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
-            <option value="">All Statuses</option>
-            <option value="needs_review">Needs Review</option>
-            {['new', 'contacted', 'site_visit_scheduled', 'quote_needed', 'converted', 'lost'].map((s) => (
-              <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
-            ))}
-          </select>
-          <select value={category} onChange={(e) => setFilter('category', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
-            <option value="">All Categories</option>
-            <option value="drywall_paint">Drywall & Paint</option>
-            <option value="insulation">Insulation</option>
-          </select>
-          <div className="flex flex-1 gap-2">
-            <input type="text" placeholder="Search leads..." defaultValue={search}
-              onKeyDown={(e) => e.key === 'Enter' && setFilter('search', e.target.value)}
-              className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none" />
+        <div className="flex flex-col sm:flex-row gap-3 items-end">
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Status</label>
+            <select value={status} onChange={(e) => setFilter('status', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+              <option value="">All Statuses</option>
+              <option value="needs_review">Needs Review</option>
+              {['new', 'contacted', 'site_visit_scheduled', 'quote_needed', 'converted', 'lost'].map((s) => (
+                <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-slate-500 block mb-1">Category</label>
+            <select value={category} onChange={(e) => setFilter('category', e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+              <option value="">All Categories</option>
+              <option value="drywall_paint">Drywall & Paint</option>
+              <option value="insulation">Insulation</option>
+            </select>
+          </div>
+          <div className="flex flex-1 gap-2 items-end">
+            <div className="flex-1">
+              <label className="text-xs text-slate-500 block mb-1">Search</label>
+              <input type="text" placeholder="Search leads..." defaultValue={search}
+                onKeyDown={(e) => e.key === 'Enter' && setFilter('search', e.target.value)}
+                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none" />
+            </div>
             <button type="button" onClick={() => setFilter('search', document.querySelector('input[placeholder="Search leads..."]')?.value || '')}
               className="px-4 py-2 bg-slate-100 rounded-lg text-sm font-medium">Search</button>
           </div>
@@ -370,42 +494,84 @@ export default function Leads() {
           <table className="w-full text-sm divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Contact</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Phone</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500 hidden md:table-cell">Address</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Category</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500 hidden md:table-cell">Review</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500 hidden lg:table-cell">PM</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">Date</th>
-                {canDelete && <th className="text-right px-4 py-3 font-medium text-slate-500 w-12" />}
+                {isOwner && <th className="px-2 py-3 w-8" />}
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Contact</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Source / Brand</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Confidence</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Review reason</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Dup</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">PM</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Age</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Last contact</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Next action</th>
+                <th className="text-left px-3 py-3 font-medium text-slate-500">Status</th>
+                {canDelete && <th className="text-right px-3 py-3 font-medium text-slate-500 w-12" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {leads.length === 0 ? (
-                <tr><td colSpan={canDelete ? 9 : 8} className="px-4 py-12 text-center text-slate-500">No leads found.</td></tr>
+                <tr><td colSpan={canDelete ? 12 : 11} className="px-4 py-12 text-center text-slate-500">No leads found.</td></tr>
               ) : leads.map((lead) => (
                 <tr key={lead.id} className="hover:bg-slate-50 cursor-pointer transition-colors" onClick={() => navigate(`/leads/${lead.id}`)}>
-                  <td className="px-4 py-3 font-medium text-blue-600">{lead.contact_name}</td>
-                  <td className="px-4 py-3">{lead.phone || '—'}</td>
-                  <td className="px-4 py-3 hidden md:table-cell">{lead.address || '—'}</td>
-                  <td className="px-4 py-3 capitalize">{formatCategory(lead.service_category)}</td>
-                  <td className="px-4 py-3"><StatusBadge status={lead.status} /></td>
-                  <td className="px-4 py-3 hidden md:table-cell">
-                    {lead.needs_manual_review ? (
-                      <span className="text-xs font-medium bg-amber-100 text-amber-800 px-2 py-0.5 rounded">Review</span>
-                    ) : '—'}
+                  {isOwner && (
+                    <td className="px-2 py-3" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(lead.id)}
+                        onChange={(e) => {
+                          setSelectedIds((ids) => e.target.checked ? [...ids, lead.id] : ids.filter((id) => id !== lead.id));
+                        }}
+                      />
+                    </td>
+                  )}
+                  <td className="px-3 py-3">
+                    <p className="font-medium text-blue-600">{lead.contact_name}</p>
+                    <p className="text-xs text-slate-500">
+                      {lead.contact_clickable && lead.phone ? (
+                        <a href={`tel:${lead.phone}`} onClick={(e) => e.stopPropagation()} className="underline">{lead.phone}</a>
+                      ) : (lead.phone || '—')}
+                      {' · '}
+                      {lead.contact_clickable && lead.email ? (
+                        <a href={`mailto:${lead.email}`} onClick={(e) => e.stopPropagation()} className="underline">{lead.email}</a>
+                      ) : (lead.email || '')}
+                    </p>
                   </td>
-                  <td className="px-4 py-3 hidden lg:table-cell">{lead.assigned_pm?.name || '—'}</td>
-                  <td className="px-4 py-3 hidden sm:table-cell">{formatDate(lead.created_at)}</td>
-                  {canDelete && (
-                    <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-3 text-xs">
+                    <div>{lead.source_label || lead.source || '—'}</div>
+                    <div className="text-slate-500">{lead.brand_name || '—'}</div>
+                  </td>
+                  <td className="px-3 py-3 text-xs">
+                    {lead.confidence_summary?.min_score != null
+                      ? `${lead.confidence_summary.min_score}%`
+                      : '—'}
+                    {lead.confidence_summary?.low_fields?.length > 0 && (
+                      <div className="text-amber-700">{lead.confidence_summary.low_fields.join(', ')}</div>
+                    )}
+                  </td>
+                  <td className="px-3 py-3 text-xs text-amber-800 max-w-[200px]">
+                    {lead.needs_manual_review
+                      ? (lead.review_reason || lead.confidence_summary?.review_reason || 'Needs review')
+                      : '—'}
+                  </td>
+                  <td className="px-3 py-3 text-xs" onClick={(e) => e.stopPropagation()}>
+                    {lead.duplicate_group_id ? (
                       <button
                         type="button"
-                        onClick={(e) => confirmDelete(lead.id, e)}
-                        className="text-red-500 hover:text-red-700 p-1 rounded"
-                        title="Delete lead"
+                        className="text-blue-600 underline"
+                        onClick={() => openDupGroup(lead.duplicate_group_id)}
                       >
+                        {lead.is_duplicate_primary || lead.recommended_primary ? 'Primary' : 'Group'}
+                      </button>
+                    ) : '—'}
+                  </td>
+                  <td className="px-3 py-3 text-xs">{lead.assigned_pm?.name || '—'}</td>
+                  <td className="px-3 py-3 text-xs">{lead.age_days != null ? `${lead.age_days}d` : '—'}</td>
+                  <td className="px-3 py-3 text-xs">{formatDate(lead.last_contact_at)}</td>
+                  <td className="px-3 py-3 text-xs max-w-[160px]">{lead.next_action?.action_description || '—'}</td>
+                  <td className="px-3 py-3"><StatusBadge status={lead.status} /></td>
+                  {canDelete && (
+                    <td className="px-3 py-3 text-right">
+                      <button type="button" onClick={(e) => confirmDelete(lead.id, e)} className="text-red-500 hover:text-red-700 p-1 rounded" title="Delete lead">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </td>
@@ -515,6 +681,35 @@ export default function Leads() {
                 Cancel
               </button>
             </div>
+          </div>
+        )}
+      </SlideOverPanel>
+      <SlideOverPanel
+        isOpen={!!dupGroup}
+        onClose={() => setDupGroup(null)}
+        title="Duplicate lead group"
+      >
+        {dupGroup && (
+          <div className="space-y-3 text-sm">
+            <p className="text-xs text-slate-500">
+              Recommended primary: #{dupGroup.recommended_primary_id}
+            </p>
+            <ul className="space-y-2">
+              {dupGroup.leads.map((l) => (
+                <li key={l.id} className={`border rounded-lg p-2 ${l.id === dupGroup.recommended_primary_id ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200'}`}>
+                  <div className="font-medium">#{l.id} {l.contact_name}</div>
+                  <div className="text-xs text-slate-500">{l.phone || '—'} · {l.email || '—'}</div>
+                  {l.id === dupGroup.recommended_primary_id && (
+                    <div className="text-xs text-emerald-700 mt-1">Recommended primary</div>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {isOwner && (
+              <button type="button" onClick={mergeDupGroup} className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium">
+                Merge into recommended primary
+              </button>
+            )}
           </div>
         )}
       </SlideOverPanel>

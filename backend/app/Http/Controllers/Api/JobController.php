@@ -68,12 +68,87 @@ class JobController extends Controller
             ]);
         }
 
-        $query = Job::with(['customer:id,name', 'contractor:id,name', 'pm:id,name', 'company:id,name', 'invoice', 'payout']);
+        $query = Job::with([
+            'customer:id,name,phone,email',
+            'contractor:id,name',
+            'pm:id,name',
+            'company:id,name',
+            'invoice',
+            'payout',
+            'quote:id,job_id,quote_number,status,sent_at',
+            'pendingNextAction.responsibleUser:id,name',
+            'updates' => fn ($q) => $q->latest('id')->limit(1),
+        ]);
 
         if ($user->role === 'pm') {
             $this->authz->scopeJobsForPm($query, $user);
         } elseif ($user->role === 'customer') {
             $query->where('customer_id', $user->id);
+        }
+
+        $this->applyJobListFilters($query, $request);
+
+        $paginator = $query->latest()->paginate(20);
+        $attention = app(\App\Services\Jobs\JobAttentionService::class);
+        $paginator->setCollection(
+            $paginator->getCollection()->map(function (Job $job) use ($attention) {
+                $extra = $attention->enrich($job);
+                $arr = $job->toArray();
+
+                return array_merge($arr, $extra);
+            })
+        );
+
+        return response()->json($paginator);
+    }
+
+    public function search(Request $request): JsonResponse
+    {
+        if (! in_array($request->user()->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $query = Job::with([
+            'customer:id,name,phone,email',
+            'contractor:id,name',
+            'pm:id,name',
+            'company:id,name',
+            'invoice',
+            'payout',
+            'quote:id,job_id,quote_number,status,sent_at',
+            'pendingNextAction.responsibleUser:id,name',
+            'updates' => fn ($q) => $q->latest('id')->limit(1),
+        ]);
+
+        if ($request->user()->role === 'pm') {
+            $this->authz->scopeJobsForPm($query, $request->user());
+        }
+
+        $this->applyJobListFilters($query, $request);
+
+        $paginator = $query->latest()->paginate(20);
+        $attention = app(\App\Services\Jobs\JobAttentionService::class);
+        $paginator->setCollection(
+            $paginator->getCollection()->map(function (Job $job) use ($attention) {
+                $extra = $attention->enrich($job);
+                $arr = $job->toArray();
+
+                return array_merge($arr, $extra);
+            })
+        );
+
+        return response()->json($paginator);
+    }
+
+    /**
+     * A-34 shared list/search filters (lifecycle via A-08, attention via A-09 rules).
+     */
+    private function applyJobListFilters($query, Request $request): void
+    {
+        $attention = app(\App\Services\Jobs\JobAttentionService::class);
+
+        if ($request->filled('attention') && filter_var($request->attention, FILTER_VALIDATE_BOOLEAN)) {
+            $attention->applyAttentionFilter($query);
         }
 
         if ($request->status && $request->status !== 'All') {
@@ -106,18 +181,21 @@ class JobController extends Controller
         if ($request->contractor_price_status) {
             $query->where('contractor_price_status', $request->contractor_price_status);
         }
-
         if ($request->brand_id) {
-            $query->whereHas('lead', fn ($lq) => $lq->where('brand_id', $request->brand_id));
-        }
-
-        if ($request->q) {
-            $s = $request->q;
-            $query->where(function ($qq) use ($s) {
-                $qq->where('address', 'like', "%{$s}%")
-                    ->orWhere('job_title', 'like', "%{$s}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"));
+            $query->where(function ($q) use ($request) {
+                $q->where('company_id', (int) $request->brand_id)
+                    ->orWhereHas('lead', fn ($lq) => $lq->where('brand_id', (int) $request->brand_id)
+                        ->orWhere('company_id', (int) $request->brand_id));
             });
+        }
+        if ($request->filled('service_category') || $request->filled('category')) {
+            $query->where('service_category', $request->service_category ?: $request->category);
+        }
+        if ($request->filled('quote_status')) {
+            $query->whereHas('quote', fn ($q) => $q->where('status', $request->quote_status));
+        }
+        if ($request->q) {
+            $attention->applySearch($query, (string) $request->q);
         }
         if ($request->contractor_id) {
             $query->where('contractor_id', $request->contractor_id);
@@ -137,66 +215,6 @@ class JobController extends Controller
         if ($request->payout_status) {
             $query->whereHas('payout', fn ($p) => $p->where('status', $request->payout_status));
         }
-
-        return response()->json($query->latest()->paginate(20));
-    }
-
-    public function search(Request $request): JsonResponse
-    {
-        if (! in_array($request->user()->role, ['owner', 'pm'])) {
-            return response()->json(['message' => 'Unauthorized'], 403);
-        }
-
-        $query = Job::with(['customer:id,name', 'contractor:id,name', 'pm:id,name', 'invoice', 'payout']);
-
-        if ($request->user()->role === 'pm') {
-            $this->authz->scopeJobsForPm($query, $request->user());
-        }
-
-        if ($request->q) {
-            $s = $request->q;
-            $query->where(function ($qq) use ($s) {
-                $qq->where('address', 'like', "%{$s}%")
-                    ->orWhere('job_title', 'like', "%{$s}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$s}%"));
-            });
-        }
-
-        if ($request->status) {
-            $expanded = app(\App\Services\Workflow\JobLifecycleService::class)
-                ->expandFilterStatus((string) $request->status);
-            if (count($expanded) === 1) {
-                $query->where('status', $expanded[0]);
-            } else {
-                $query->whereIn('status', $expanded);
-            }
-        }
-        if ($request->contractor_price_status) {
-            $query->where('contractor_price_status', $request->contractor_price_status);
-        }
-        if ($request->brand_id) {
-            $query->whereHas('lead', fn ($lq) => $lq->where('brand_id', $request->brand_id));
-        }
-        if ($request->contractor_id) {
-            $query->where('contractor_id', $request->contractor_id);
-        }
-        if ($request->pm_id) {
-            $query->where('pm_id', $request->pm_id);
-        }
-        if ($request->date_from) {
-            $query->whereDate('created_at', '>=', $request->date_from);
-        }
-        if ($request->date_to) {
-            $query->whereDate('created_at', '<=', $request->date_to);
-        }
-        if ($request->payment_status) {
-            $query->whereHas('invoice', fn ($i) => $i->where('status', $request->payment_status));
-        }
-        if ($request->payout_status) {
-            $query->whereHas('payout', fn ($p) => $p->where('status', $request->payout_status));
-        }
-
-        return response()->json($query->latest()->paginate(20));
     }
 
     public function store(Request $request): JsonResponse

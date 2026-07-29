@@ -367,9 +367,28 @@ export default function LeadDetail() {
   };
 
   const convertToJob = async () => {
+    const blockers = lead?.convert_blockers || [];
+    let ownerOverride = false;
+    let ownerOverrideReason = '';
+    if (lead?.needs_manual_review || (lead?.can_convert === false && blockers.length)) {
+      if (user?.role === 'owner') {
+        const reason = window.prompt(
+          `Convert blocked:\n${(blockers.length ? blockers : ['Needs review / invalid contact']).join('\n')}\n\nEnter owner override reason to proceed, or Cancel:`
+        );
+        if (!reason?.trim()) return;
+        ownerOverride = true;
+        ownerOverrideReason = reason.trim();
+      } else {
+        await showError((blockers.length ? blockers.join('; ') : 'Lead cannot be converted until contact fields are validated.'));
+        return;
+      }
+    }
+
     const ok = await confirmAction({
       title: 'Convert to job?',
-      text: 'This will create a new job from this lead. This action cannot be undone.',
+      text: ownerOverride
+        ? 'Owner override will be audited. This creates a new job from this lead.'
+        : 'This will create a new job from this lead. This action cannot be undone.',
       confirmText: 'Yes, convert',
       icon: 'warning',
     });
@@ -377,7 +396,10 @@ export default function LeadDetail() {
 
     setConverting(true);
     try {
-      const { data } = await api.post(`/leads/${id}/convert-to-job`);
+      const payload = ownerOverride
+        ? { owner_override: true, owner_override_reason: ownerOverrideReason }
+        : {};
+      const { data } = await api.post(`/leads/${id}/convert-to-job`, payload);
       await showSuccess('Lead converted to job.');
       navigate(`/jobs/${data.job_id}`);
     } catch (e) {
