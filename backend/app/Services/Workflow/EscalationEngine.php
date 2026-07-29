@@ -145,20 +145,25 @@ class EscalationEngine
         }
 
         if (! $killSwitch && in_array($mode, ['assisted', 'autopilot'], true) && $owner) {
-            $this->sms->sendToUser(
-                $owner,
-                MessageTemplate::render(
-                    'pm_contact_escalation_owner',
-                    [
-                        'pm_name' => $action->responsibleUser?->name ?? 'PM',
-                        'lead_name' => $action->subject instanceof Lead ? ($action->subject->contact_name ?? 'lead') : 'lead',
-                        'lead_id' => (string) ($action->subject_id ?? ''),
-                    ],
-                    'ServiceOP escalation: PM has not contacted lead #{{lead_id}} ({{lead_name}}). Please follow up.'
-                ),
-                'pm_contact_escalation',
-                $action->subject_id
+            $company = \App\Services\BrandResolver::PLATFORM_NAME;
+            $body = MessageTemplate::render(
+                'pm_contact_escalation_owner',
+                [
+                    'company_name' => $company,
+                    'pm_name' => $action->responsibleUser?->name ?? 'PM',
+                    'lead_name' => $action->subject instanceof Lead ? ($action->subject->contact_name ?? 'lead') : 'lead',
+                    'lead_id' => (string) ($action->subject_id ?? ''),
+                ],
+                $company.' escalation: PM has not contacted lead #{{lead_id}} ({{lead_name}}). Please follow up.'
             );
+            if ($body) {
+                $this->sms->sendToUser(
+                    $owner,
+                    $body,
+                    'pm_contact_escalation',
+                    $action->subject_id
+                );
+            }
         }
 
         $this->logAi('escalation_to_owner', $action, 'Escalated to owner', 'pm_contact_lead');
@@ -184,7 +189,9 @@ class EscalationEngine
             'Hi {{pm_name}}, reminder: contact {{lead_name}} (lead #{{lead_id}}) — overdue.'
         );
 
-        $this->sms->sendToUser($pm, $body, 'pm_contact_reminder', $action->subject_id);
+        if ($body) {
+            $this->sms->sendToUser($pm, $body, 'pm_contact_reminder', $action->subject_id);
+        }
     }
 
     private function createDraftReminder(NextAction $action, string $note): void
@@ -303,16 +310,24 @@ class EscalationEngine
 
             if ($this->authorizer->isAiEnabled() && $this->authorizer->getModuleMode('escalations') !== 'suggestion') {
                 if ($lead->assignedPm) {
-                    $this->sms->sendToUser(
-                        $lead->assignedPm,
-                        MessageTemplate::render(
-                            'contractor_pricing_reminder_pm',
-                            ['lead_name' => $lead->contact_name, 'lead_id' => (string) $lead->id],
-                            'ServiceOP: Contractor pricing still outstanding for {{lead_name}} (lead #{{lead_id}}).'
-                        ),
-                        'contractor_pricing_reminder',
-                        $lead->id
+                    $company = \App\Services\BrandResolver::PLATFORM_NAME;
+                    $body = MessageTemplate::render(
+                        'contractor_pricing_reminder_pm',
+                        [
+                            'company_name' => $company,
+                            'lead_name' => $lead->contact_name,
+                            'lead_id' => (string) $lead->id,
+                        ],
+                        $company.': Contractor pricing still outstanding for {{lead_name}} (lead #{{lead_id}}).'
                     );
+                    if ($body) {
+                        $this->sms->sendToUser(
+                            $lead->assignedPm,
+                            $body,
+                            'contractor_pricing_reminder',
+                            $lead->id
+                        );
+                    }
                 }
             }
         }

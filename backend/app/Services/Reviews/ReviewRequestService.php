@@ -67,6 +67,7 @@ class ReviewRequestService
         $body = MessageTemplate::render(
             'review_request_customer',
             [
+                'company_name' => $brandName,
                 'customer_name' => $customer?->name ?? 'there',
                 'review_url' => $reviewUrl,
                 'address' => $job->address ?? '',
@@ -74,7 +75,7 @@ class ReviewRequestService
             'Hi {{customer_name}}, thanks for choosing '.$brandName.'! Please rate your experience: {{review_url}}'
         );
 
-        if ($customer) {
+        if ($customer && $body) {
             $this->sms->sendToUser($customer, $body, 'review_request', $job->id);
             if ($customer->email) {
                 $this->email->send(

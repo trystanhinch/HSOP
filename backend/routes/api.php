@@ -349,6 +349,10 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
         Route::get('/message-templates', [MessageTemplateController::class, 'index']);
         Route::post('/message-templates', [MessageTemplateController::class, 'store']);
         Route::put('/message-templates/{messageTemplate}', [MessageTemplateController::class, 'update']);
+        Route::post('/message-templates/{messageTemplate}/preview', [MessageTemplateController::class, 'preview']);
+        Route::post('/message-templates/{messageTemplate}/test-send', [MessageTemplateController::class, 'testSend']);
+        Route::get('/message-templates/{messageTemplate}/versions', [MessageTemplateController::class, 'versions']);
+        Route::post('/message-templates/{messageTemplate}/versions/{version}/restore', [MessageTemplateController::class, 'restore']);
 
         Route::get('/notification-channels/health', [NotificationChannelController::class, 'health']);
         Route::post('/notification-channels/test-sms', [NotificationChannelController::class, 'testSms']);
@@ -371,7 +375,9 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     });
 
     Route::get('/sms-logs', [SmsLogController::class, 'index'])->middleware('role:owner');
+    Route::post('/sms-logs/{smsLog}/retry', [SmsLogController::class, 'retry'])->middleware('role:owner');
     Route::get('/email-logs', [EmailLogController::class, 'index'])->middleware('role:owner');
+    Route::post('/email-logs/{emailLog}/retry', [EmailLogController::class, 'retry'])->middleware('role:owner');
     Route::put('/users/{user}/toggle-sms', [UserController::class, 'toggleSms'])->middleware('role:owner');
 
     Route::middleware('role:owner')->prefix('admin')->group(function () {

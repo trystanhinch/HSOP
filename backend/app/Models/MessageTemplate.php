@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class MessageTemplate extends Model
 {
@@ -23,16 +24,40 @@ class MessageTemplate extends Model
         ];
     }
 
-    public static function render(string $eventKey, array $vars, ?string $fallback = null): string
+    public function versions(): HasMany
     {
-        $template = static::query()->where('event_key', $eventKey)->where('is_active', true)->first();
+        return $this->hasMany(MessageTemplateVersion::class);
+    }
+
+    /**
+     * Render an active template. Returns null when the template exists but is inactive
+     * (A-16: inactive templates must not fall through to hardcoded fallbacks).
+     */
+    public static function render(string $eventKey, array $vars, ?string $fallback = null): ?string
+    {
+        $template = static::query()->where('event_key', $eventKey)->first();
+
+        if ($template && ! $template->is_active) {
+            return null;
+        }
+
         $body = $template?->body ?? $fallback ?? '';
+        if ($body === '') {
+            return $template ? '' : ($fallback ?? '');
+        }
 
         foreach ($vars as $key => $value) {
             $body = str_replace('{{'.$key.'}}', (string) $value, $body);
         }
 
-        // Strip any leftover placeholders
+        // Customer never receives raw {{variable}} text.
         return preg_replace('/\{\{[a-z0-9_]+\}\}/i', '', $body) ?? $body;
+    }
+
+    public static function isInactive(string $eventKey): bool
+    {
+        $template = static::query()->where('event_key', $eventKey)->first();
+
+        return $template !== null && ! $template->is_active;
     }
 }

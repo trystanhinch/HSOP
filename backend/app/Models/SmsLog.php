@@ -11,9 +11,34 @@ class SmsLog extends Model
     use HasTestData;
 
     protected $fillable = [
-        'to_phone', 'user_id', 'trigger_event', 'related_job_id',
-        'message_body', 'status', 'provider_message_id', 'error_message',
+        'to_phone',
+        'recipient_normalized',
+        'user_id',
+        'trigger_event',
+        'related_job_id',
+        'related_lead_id',
+        'brand_id',
+        'message_body',
+        'status',
+        'provider_message_id',
+        'error_message',
+        'error_code',
+        'error_plain',
+        'attempt_count',
+        'retry_of_id',
+        'idempotency_key',
+        'correction_path',
+        'is_critical',
+        'is_test_data',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'is_critical' => 'boolean',
+            'is_test_data' => 'boolean',
+        ];
+    }
 
     public function user(): BelongsTo
     {
@@ -23,5 +48,20 @@ class SmsLog extends Model
     public function job(): BelongsTo
     {
         return $this->belongsTo(Job::class, 'related_job_id');
+    }
+
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class, 'related_lead_id');
+    }
+
+    public function brand(): BelongsTo
+    {
+        return $this->belongsTo(Brand::class);
+    }
+
+    public function retryOf(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'retry_of_id');
     }
 }

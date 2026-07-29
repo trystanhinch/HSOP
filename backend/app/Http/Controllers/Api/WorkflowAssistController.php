@@ -103,13 +103,20 @@ class WorkflowAssistController extends Controller
 
         $this->logAssist('draft_message', $lead->id, 'lead');
 
+        $brand = app(\App\Services\BrandResolver::class)->forLead($lead);
+        $fallbackDraft = MessageTemplate::render(
+            'pm_intro_customer',
+            [
+                'company_name' => $brand,
+                'customer_name' => $lead->contact_name ?? 'there',
+                'pm_name' => auth()->user()->name,
+            ],
+            'Hi {{customer_name}}, this is {{pm_name}} from '.$brand.' following up on your project inquiry. When is a good time to chat?'
+        );
+
         return response()->json([
             'ai_drafted' => true,
-            'draft' => $text ?: MessageTemplate::render(
-                'pm_intro_customer',
-                ['customer_name' => $lead->contact_name ?? 'there', 'pm_name' => auth()->user()->name],
-                'Hi {{customer_name}}, this is {{pm_name}} from ServiceOP following up on your project inquiry. When is a good time to chat?'
-            ),
+            'draft' => $text ?: ($fallbackDraft ?? ''),
             'note' => 'AI-drafted — review and edit before sending. Not auto-sent.',
         ]);
     }

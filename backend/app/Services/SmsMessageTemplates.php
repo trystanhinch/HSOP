@@ -108,15 +108,18 @@ class SmsMessageTemplates
     {
         $brand = app(BrandResolver::class)->forQuote($quote);
 
-        return \App\Models\MessageTemplate::render(
+        $body = \App\Models\MessageTemplate::render(
             'quote_sent',
             [
+                'company_name' => $brand,
                 'customer_total' => number_format((float) $quote->customer_total, 2),
                 'portal_url' => $portalUrl,
             ],
             $brand.': Your quote is ready. Total: $'.number_format((float) $quote->customer_total, 2)
                 .'. View quote: '.$portalUrl
         );
+
+        return $body ?? '';
     }
 
     public static function quoteApprovedCustomer(string $portalUrl, ?Quote $quote = null): string
@@ -152,9 +155,10 @@ class SmsMessageTemplates
     {
         $brand = app(BrandResolver::class)->forJob($job);
 
-        return \App\Models\MessageTemplate::render(
+        $body = \App\Models\MessageTemplate::render(
             'progress_update_customer',
             [
+                'company_name' => $brand,
                 'customer_name' => $customer->name ?? 'there',
                 'address' => $job->address ?? '',
                 'portal_url' => $portalUrl,
@@ -162,6 +166,8 @@ class SmsMessageTemplates
             $brand.': A progress update has been posted for your project.'
                 .' View update: '.$portalUrl
         );
+
+        return $body ?? '';
     }
 
     public static function jobCompletePendingApproval(User $customer, Job $job, string $portalUrl): string

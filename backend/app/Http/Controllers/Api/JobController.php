@@ -622,21 +622,26 @@ class JobController extends Controller
 
         $job->load('lead', 'customer');
         $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
+        $brand = app(\App\Services\BrandResolver::class)->forJob($job);
 
-        $this->sms->sendToUser(
-            $job->customer,
-            \App\Models\MessageTemplate::render(
-                'job_complete_pending_approval',
-                [
-                    'customer_name' => $job->customer?->name ?? 'there',
-                    'address' => $job->address ?? '',
-                    'portal_url' => $portalUrl,
-                ],
-                SmsMessageTemplates::jobCompletePendingApproval($job->customer, $job, $portalUrl)
-            ),
-            'contractor_marked_complete',
-            $job->id
+        $completeBody = \App\Models\MessageTemplate::render(
+            'job_complete_pending_approval',
+            [
+                'company_name' => $brand,
+                'customer_name' => $job->customer?->name ?? 'there',
+                'address' => $job->address ?? '',
+                'portal_url' => $portalUrl,
+            ],
+            SmsMessageTemplates::jobCompletePendingApproval($job->customer, $job, $portalUrl)
         );
+        if ($completeBody) {
+            $this->sms->sendToUser(
+                $job->customer,
+                $completeBody,
+                'contractor_marked_complete',
+                $job->id
+            );
+        }
 
         if ($job->customer?->email) {
             $this->email->sendMailable(
@@ -757,27 +762,31 @@ class JobController extends Controller
 
         $contractorPortalUrl = SmsMessageTemplates::contractorDashboardUrl();
         $job->loadMissing('contractor', 'pm');
+        $brand = app(\App\Services\BrandResolver::class)->forJob($job);
         $revisionBody = \App\Models\MessageTemplate::render(
             'revision_requested',
             [
+                'company_name' => $brand,
                 'address' => $job->address ?? '',
                 'description' => $request->description,
             ],
             SmsMessageTemplates::revisionRequested($job->contractor, $job, $contractorPortalUrl)
         );
-        $this->sms->sendToUser(
-            $job->contractor,
-            $revisionBody,
-            'revision_requested',
-            $job->id
-        );
-        if ($job->pm) {
+        if ($revisionBody) {
             $this->sms->sendToUser(
-                $job->pm,
+                $job->contractor,
                 $revisionBody,
                 'revision_requested',
                 $job->id
             );
+            if ($job->pm) {
+                $this->sms->sendToUser(
+                    $job->pm,
+                    $revisionBody,
+                    'revision_requested',
+                    $job->id
+                );
+            }
         }
 
         if ($job->contractor?->email) {
