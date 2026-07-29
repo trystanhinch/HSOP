@@ -9,6 +9,7 @@ use App\Models\Message;
 use App\Models\User;
 use App\Mail\NewMessageMail;
 use App\Services\EmailService;
+use App\Services\Messaging\AssignmentMessageService;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
@@ -18,8 +19,10 @@ class MessageController extends Controller
 {
     public function __construct(
         protected SmsService $sms,
-        protected EmailService $email
+        protected EmailService $email,
+        protected AssignmentMessageService $assignmentMessages,
     ) {}
+
     public function index(Request $request, string $jobId): JsonResponse
     {
         $user = $request->user();
@@ -35,9 +38,34 @@ class MessageController extends Controller
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
+        if ($user->role === 'contractor') {
+            $messages = $this->assignmentMessages->threadForJob($job, $user);
+            Message::where(function ($q) use ($job) {
+                $q->where('job_id', $job->id);
+                if ($job->lead_id) {
+                    $q->orWhere('lead_id', $job->lead_id);
+                }
+            })
+                ->whereIn('channel', AssignmentMessageService::CONTRACTOR_VISIBLE_CHANNELS)
+                ->where('sender_id', '!=', $user->id)
+                ->where('is_read', false)
+                ->update(['is_read' => true]);
+
+            return response()->json($messages);
+        }
+
         $query = Message::where('job_id', $job->id)
             ->with('sender:id,name,role')
             ->oldest();
+
+        if ($job->lead_id && $this->assignmentMessages->leadSupportsMessages()) {
+            $query = Message::query()
+                ->where(function ($q) use ($job) {
+                    $q->where('job_id', $job->id)->orWhere('lead_id', $job->lead_id);
+                })
+                ->with('sender:id,name,role')
+                ->oldest();
+        }
 
         if ($request->visibility) {
             $query->where('visibility', $request->visibility);
@@ -45,9 +73,8 @@ class MessageController extends Controller
             $query->where('visibility', 'customer_visible');
         }
 
-        $messages = $query->get();
+        $messages = $query->get()->unique('id')->values();
 
-        // Mark messages as read for the current user (not sent by them)
         Message::where('job_id', $job->id)
             ->where('sender_id', '!=', $user->id)
             ->where('is_read', false)
@@ -79,25 +106,33 @@ class MessageController extends Controller
             'send_sms' => 'nullable|boolean',
         ]);
 
-        $channel = match (true) {
-            $user->role === 'customer' => 'customer_to_pm',
-            $user->role === 'contractor' => 'contractor_to_pm',
-            $request->visibility === 'customer_visible' => 'pm_to_customer',
-            default => 'pm_internal',
-        };
+        // Contractors messaging PM on a job use the assignment channel (not owner/PM internal notes).
+        if ($user->role === 'contractor') {
+            $channel = 'contractor_to_pm';
+            $visibility = 'internal';
+        } else {
+            $channel = match (true) {
+                $user->role === 'customer' => 'customer_to_pm',
+                $request->visibility === 'customer_visible' => 'pm_to_customer',
+                default => 'pm_internal',
+            };
+            $visibility = $request->visibility;
+        }
 
         $message = Message::create([
             'job_id' => $job->id,
+            'lead_id' => $job->lead_id,
             'sender_id' => $user->id,
+            'receiver_id' => $user->role === 'contractor' ? $job->pm_id : null,
             'sender_role' => $user->role,
             'content' => $request->content,
-            'visibility' => $request->visibility,
+            'visibility' => $visibility,
             'channel' => $channel,
         ]);
 
         $job->loadMissing(['customer', 'lead']);
 
-        if ($request->visibility === 'customer_visible' && $user->role !== 'customer') {
+        if ($visibility === 'customer_visible' && $user->role !== 'customer') {
             $customer = User::find($job->customer_id);
             $portalUrl = SmsMessageTemplates::customerPortalUrlForJob($job);
             $customerPhone = SmsService::phoneForUser($customer) ?? $job->lead?->phone;

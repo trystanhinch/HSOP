@@ -23,6 +23,7 @@ use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\InvoiceController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\JobUpdateController;
+use App\Http\Controllers\Api\LeadMessageController;
 use App\Http\Controllers\Api\LeadController;
 use App\Http\Controllers\Api\IntakeQuarantineController;
 use App\Http\Controllers\Api\LearningSnapshotController;
@@ -241,6 +242,8 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
 
     Route::get('/jobs/{job}/messages', [MessageController::class, 'index']);
     Route::post('/jobs/{job}/messages', [MessageController::class, 'store']);
+    Route::get('/leads/{lead}/messages', [LeadMessageController::class, 'index'])->middleware('role:owner,pm,contractor');
+    Route::post('/leads/{lead}/messages', [LeadMessageController::class, 'store'])->middleware('role:owner,pm,contractor');
 
     Route::get('/contractors', [ContractorController::class, 'index']);
     Route::get('/contractors/{id}', [ContractorController::class, 'show']);

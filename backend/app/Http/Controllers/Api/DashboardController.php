@@ -203,30 +203,12 @@ class DashboardController extends Controller
 
     public function contractor(): JsonResponse
     {
-        $id = auth()->id();
+        $user = auth()->user();
+        $id = $user->id;
+        $assignments = app(\App\Services\Contractors\ContractorAssignmentService::class);
         $contractor = \App\Models\Contractor::where('user_id', $id)->first();
         $jobs = Job::where('contractor_id', $id)->with(['customer:id,name', 'pm:id,name'])->latest()->get();
-
-        $siteVisits = SiteVisit::where('contractor_id', $id)
-            ->where('status', 'scheduled')
-            ->whereDate('visit_date', '>=', now()->toDateString())
-            ->with(['lead:id,contact_name,address,service_category,project_description,status'])
-            ->orderBy('visit_date')
-            ->get()
-            ->map(fn ($sv) => [
-                'type' => 'site_visit',
-                'id' => $sv->id,
-                'lead_id' => $sv->lead_id,
-                'address' => $sv->lead->address ?? '',
-                'customer_name' => $sv->lead->contact_name ?? '',
-                'service' => $sv->lead->service_category ?? '',
-                'description' => $sv->lead->project_description ?? '',
-                'visit_date' => $sv->visit_date,
-                'visit_time' => $sv->visit_time,
-                'status' => 'site_visit_scheduled',
-                'url' => '/leads/'.$sv->lead_id,
-            ])
-            ->values();
+        $siteVisits = $assignments->upcomingSiteVisitsFor($user);
 
         return response()->json([
             'assigned_jobs' => $jobs->count(),
@@ -243,14 +225,24 @@ class DashboardController extends Controller
                 ->sum('payout_amount'),
             'jobs_list' => $jobs,
             'site_visits' => $siteVisits,
+            'work_items' => $assignments->workItemsFor($user),
             'document_status' => [
                 'wcb' => $contractor->wcb_status ?? 'not_uploaded',
                 'insurance' => $contractor->liability_insurance_status ?? 'not_uploaded',
             ],
             'contractor_profile' => $contractor ? $contractor->only(['wcb_status', 'liability_insurance_status', 'approval_status']) : null,
             'recent_messages' => \App\Models\Message::where('sender_id', '!=', $id)
-                ->whereHas('job', fn ($q) => $q->where('contractor_id', $id))
-                ->with(['sender:id,name,role', 'job:id,address'])
+                ->where(function ($q) use ($id) {
+                    $q->whereHas('job', fn ($jq) => $jq->where('contractor_id', $id))
+                        ->orWhere(function ($lq) use ($id) {
+                            $lq->whereIn('channel', \App\Services\Messaging\AssignmentMessageService::CONTRACTOR_VISIBLE_CHANNELS)
+                                ->whereHas('lead', function ($leadQ) use ($id) {
+                                    $leadQ->where('assigned_contractor_id', $id)
+                                        ->orWhere('site_visit_contractor_id', $id);
+                                });
+                        });
+                })
+                ->with(['sender:id,name,role', 'job:id,address', 'lead:id,contact_name,address'])
                 ->latest()->take(5)->get(),
         ]);
     }

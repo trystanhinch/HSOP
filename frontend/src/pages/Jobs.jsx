@@ -23,6 +23,7 @@ const adminPmStatusChips = [
 
 const contractorStatusChips = [
   { label: 'All', value: '' },
+  { label: 'Site Visits', value: 'site_visit_scheduled' },
   { label: 'Price Needed', value: 'contractor_assigned' },
   { label: 'Scheduled', value: 'scheduled' },
   { label: 'In Progress', value: 'in_progress' },
@@ -176,7 +177,7 @@ export default function Jobs() {
                   <tr><td colSpan={5} className="px-4 py-12 text-center text-slate-500">No jobs or site visits found.</td></tr>
                 ) : contractorDisplayedJobs.map((item) => (
                   <tr
-                    key={item.id}
+                    key={`${item.type || 'job'}-${item.lead_id || item.id}`}
                     className="hover:bg-slate-50 cursor-pointer"
                     onClick={() => navigate(item.url)}
                   >

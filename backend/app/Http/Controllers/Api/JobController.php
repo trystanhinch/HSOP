@@ -30,6 +30,7 @@ use App\Services\UploadStorage;
 use App\Services\ActivityTimelineService;
 use App\Services\Authorization\PmAuthorizationService;
 use App\Services\Learning\ContractorPerformanceRecorder;
+use App\Services\Contractors\ContractorAssignmentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -51,6 +52,7 @@ class JobController extends Controller
         protected ActivityTimelineService $timeline,
         protected ContractorPerformanceRecorder $performance,
         protected PmAuthorizationService $authz,
+        protected ContractorAssignmentService $assignments,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -58,28 +60,11 @@ class JobController extends Controller
         $user = $request->user();
 
         if ($user->role === 'contractor') {
-            $jobs = Job::with(['customer:id,name', 'pm:id,name', 'company:id,name'])
-                ->where('contractor_id', $user->id)
-                ->latest()
-                ->get()
-                ->map(fn ($j) => [
-                    'type' => 'job',
-                    'id' => $j->id,
-                    'job_title' => $j->job_title,
-                    'address' => $j->address,
-                    'service_category' => $j->service_category,
-                    'status' => $j->status,
-                    'contractor_price_status' => $j->contractor_price_status,
-                    'contractor_submitted_price' => $j->contractor_submitted_price,
-                    'scheduled_start_date' => $j->scheduled_start_date,
-                    'customer' => $j->customer?->only(['id', 'name']),
-                    'pm' => $j->pm?->only(['id', 'name', 'phone']),
-                    'url' => '/jobs/'.$j->id,
-                ]);
+            $items = $this->assignments->workItemsFor($user);
 
             return response()->json([
-                'data' => $jobs->values(),
-                'meta' => ['total' => $jobs->count()],
+                'data' => $items,
+                'meta' => ['total' => $items->count()],
             ]);
         }
 

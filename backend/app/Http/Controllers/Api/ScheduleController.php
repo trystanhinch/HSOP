@@ -43,6 +43,38 @@ class ScheduleController extends Controller
             ]);
         }
 
+        if ($user->role === 'contractor') {
+            $assignments = app(\App\Services\Contractors\ContractorAssignmentService::class);
+            $siteVisits = $assignments->scheduleSiteVisitsForMonth($user, (int) $mon, (int) $year);
+
+            $jobsQuery = Job::with(['customer:id,name', 'pm:id,name', 'contractor:id,name'])
+                ->whereNotNull('scheduled_start_date')
+                ->whereMonth('scheduled_start_date', $mon)
+                ->whereYear('scheduled_start_date', $year)
+                ->where('contractor_id', $user->id);
+
+            $jobs = $jobsQuery->get()->map(fn ($j) => [
+                'type' => 'job',
+                'id' => $j->id,
+                'title' => $j->job_title ?? ($j->customer?->name ?? 'Job'),
+                'date' => $j->scheduled_start_date?->format('Y-m-d'),
+                'time' => $j->scheduled_start_time,
+                'status' => $j->status,
+                'address' => $j->address,
+                'customer_name' => $j->customer?->name ?? '',
+                'url' => '/jobs/'.$j->id,
+                'color' => in_array($j->status, ['in_progress', 'progress_updated'], true) ? 'blue' : 'yellow',
+            ]);
+
+            return response()->json([
+                'month' => $month,
+                'site_visits' => $siteVisits,
+                'jobs' => $jobs,
+                'meetings' => collect(),
+                'all' => $siteVisits->concat($jobs)->sortBy('date')->values(),
+            ]);
+        }
+
         $siteVisitsQuery = SiteVisit::with([
             'lead:id,contact_name,address,service_category,status',
             'pm:id,name',
@@ -54,9 +86,6 @@ class ScheduleController extends Controller
 
         if ($user->role === 'pm') {
             $siteVisitsQuery->where('pm_id', $user->id);
-        }
-        if ($user->role === 'contractor') {
-            $siteVisitsQuery->where('contractor_id', $user->id);
         }
 
         $siteVisits = $siteVisitsQuery->get()->map(fn ($sv) => [
@@ -82,9 +111,6 @@ class ScheduleController extends Controller
 
         if ($user->role === 'pm') {
             $jobsQuery->where('pm_id', $user->id);
-        }
-        if ($user->role === 'contractor') {
-            $jobsQuery->where('contractor_id', $user->id);
         }
 
         $jobs = $jobsQuery->get()->map(fn ($j) => [

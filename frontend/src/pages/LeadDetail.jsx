@@ -23,6 +23,95 @@ function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
 }
 
+function ContractorLeadMessageThread({ leadId, pm }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [messages, setMessages] = useState([]);
+  const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    api.get(`/leads/${leadId}/messages`)
+      .then(({ data }) => setMessages(data.messages || data || []))
+      .catch(() => setMessages([]))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    if (open) load();
+  }, [open, leadId]);
+
+  const send = async (e) => {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setSending(true);
+    try {
+      await api.post(`/leads/${leadId}/messages`, { content: text.trim() });
+      setText('');
+      load();
+      await showSuccess('Message sent to your PM.');
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to send message.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="mt-4 border-t border-slate-100 pt-4">
+      {!open ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg"
+        >
+          Message PM{pm?.name ? ` (${pm.name})` : ''}
+        </button>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-800">Message PM</p>
+            <button type="button" onClick={() => setOpen(false)} className="text-xs text-slate-500 hover:underline">Close</button>
+          </div>
+          <div className="max-h-56 overflow-y-auto space-y-2 bg-slate-50 rounded-lg p-3 border border-slate-100">
+            {loading && <p className="text-xs text-slate-500">Loading...</p>}
+            {!loading && messages.length === 0 && (
+              <p className="text-xs text-slate-500">No messages yet. Ask a question about this site visit.</p>
+            )}
+            {messages.map((m) => {
+              const mine = m.sender_id === user?.id;
+              return (
+                <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${mine ? 'bg-blue-600 text-white' : 'bg-white border border-slate-200 text-slate-800'}`}>
+                    {!mine && <p className="text-[10px] opacity-70 mb-0.5">{m.sender?.name || 'PM'}</p>}
+                    <p>{m.content}</p>
+                    <p className={`text-[10px] mt-1 ${mine ? 'text-blue-100' : 'text-slate-400'}`}>
+                      {m.created_at ? new Date(m.created_at).toLocaleString() : ''}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <form onSubmit={send} className="flex gap-2">
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder="Ask your PM about this visit..."
+              className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm"
+            />
+            <button type="submit" disabled={sending || !text.trim()} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-50">
+              Send
+            </button>
+          </form>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function LeadDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -449,6 +538,7 @@ export default function LeadDetail() {
                 )}
               </div>
             </div>
+            <ContractorLeadMessageThread leadId={lead.id} pm={lead.assigned_pm} />
           </div>
         )}
 

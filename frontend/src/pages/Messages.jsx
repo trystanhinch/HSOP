@@ -13,6 +13,7 @@ function JobMessagesPanel() {
   const [msgTab, setMsgTab] = useState('customer_visible');
   const [newMsg, setNewMsg] = useState('');
   const [jobsError, setJobsError] = useState(null);
+  const isContractor = user?.role === 'contractor';
 
   useEffect(() => {
     api.get('/jobs', { params: { per_page: 50 } })
@@ -27,28 +28,49 @@ function JobMessagesPanel() {
       });
   }, []);
 
+  const messagesPath = (item) => {
+    if (!item) return null;
+    if (item.type === 'site_visit' && item.lead_id) return `/leads/${item.lead_id}/messages`;
+    if (item.messages_path) return item.messages_path;
+    return `/jobs/${item.id}/messages`;
+  };
+
   useEffect(() => {
     if (!selectedJob) return;
-    api.get(`/jobs/${selectedJob.id}/messages`, { params: { visibility: msgTab } })
-      .then(({ data }) => setMessages(data)).catch(() => setMessages([]));
-  }, [selectedJob, msgTab]);
+    const path = messagesPath(selectedJob);
+    if (!path) return;
+    const params = isContractor || selectedJob.type === 'site_visit' ? {} : { visibility: msgTab };
+    api.get(path, { params })
+      .then(({ data }) => setMessages(data.messages || data))
+      .catch(() => setMessages([]));
+  }, [selectedJob, msgTab, isContractor]);
 
   const sendMessage = async (e) => {
     e.preventDefault();
     if (!newMsg.trim() || !selectedJob) return;
 
+    const isSiteVisit = selectedJob.type === 'site_visit';
     const ok = await confirmAction({
       title: 'Send message?',
-      text: msgTab === 'internal' ? 'Send this internal note?' : 'Send this message to the customer?',
+      text: isContractor || isSiteVisit
+        ? 'Send this message to your project manager?'
+        : (msgTab === 'internal' ? 'Send this internal note?' : 'Send this message to the customer?'),
       confirmText: 'Yes, send',
     });
     if (!ok) return;
 
     try {
-      await api.post(`/jobs/${selectedJob.id}/messages`, { content: newMsg, visibility: msgTab });
+      const path = messagesPath(selectedJob);
+      if (isContractor || isSiteVisit) {
+        await api.post(path, { content: newMsg });
+      } else {
+        await api.post(path, { content: newMsg, visibility: msgTab });
+      }
       setNewMsg('');
-      const { data } = await api.get(`/jobs/${selectedJob.id}/messages`, { params: { visibility: msgTab } });
-      setMessages(data);
+      const { data } = await api.get(path, {
+        params: isContractor || isSiteVisit ? {} : { visibility: msgTab },
+      });
+      setMessages(data.messages || data);
       await showSuccess('Message sent.');
     } catch (err) {
       await showError(err.response?.data?.message || 'Failed to send message.');
@@ -56,16 +78,24 @@ function JobMessagesPanel() {
   };
 
   const isCustomer = user?.role === 'customer';
+  const itemKey = (item) => `${item.type || 'job'}-${item.lead_id || item.id}`;
 
   return (
     <div className="flex flex-col md:flex-row gap-4" style={{ height: 'calc(100vh - 200px)' }}>
       <div className="md:w-72 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0">
-        <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-3">Jobs</p>
+        <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-3">
+          {isContractor ? 'Jobs & Site Visits' : 'Jobs'}
+        </p>
         {jobs.map((job) => (
-          <button key={job.id} onClick={() => setSelectedJob(job)}
-            className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${selectedJob?.id === job.id ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}>
-            <p className="text-sm font-medium text-slate-800 truncate">Job #{job.id}</p>
+          <button key={itemKey(job)} onClick={() => setSelectedJob(job)}
+            className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${itemKey(selectedJob) === itemKey(job) ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}>
+            <p className="text-sm font-medium text-slate-800 truncate">
+              {job.type === 'site_visit' ? (job.job_title || `Site Visit`) : `Job #${job.id}`}
+            </p>
             <p className="text-xs text-slate-500 truncate">{job.address}</p>
+            {job.type === 'site_visit' && (
+              <span className="inline-block mt-1 text-[10px] uppercase tracking-wide text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded">Site visit</span>
+            )}
           </button>
         ))}
         {jobs.length === 0 && (
@@ -78,12 +108,21 @@ function JobMessagesPanel() {
           <>
             <div className="px-4 py-3 border-b border-slate-200 flex items-center justify-between">
               <div>
-                <p className="font-medium text-slate-800">Job #{selectedJob.id}</p>
+                <p className="font-medium text-slate-800">
+                  {selectedJob.type === 'site_visit'
+                    ? (selectedJob.job_title || selectedJob.customer?.name || 'Site Visit')
+                    : `Job #${selectedJob.id}`}
+                </p>
                 <p className="text-xs text-slate-500">{selectedJob.address}</p>
+                {selectedJob.pm?.name && (
+                  <p className="text-xs text-slate-500 mt-0.5">PM: {selectedJob.pm.name}</p>
+                )}
               </div>
-              <Link to={`/jobs/${selectedJob.id}`} className="text-xs text-blue-600 hover:underline">View Job</Link>
+              <Link to={selectedJob.url || `/jobs/${selectedJob.id}`} className="text-xs text-blue-600 hover:underline">
+                View Details
+              </Link>
             </div>
-            {!isCustomer && (
+            {!isCustomer && !isContractor && selectedJob.type !== 'site_visit' && (
               <div className="flex border-b border-slate-200">
                 {['customer_visible', 'internal'].map((v) => (
                   <button key={v} onClick={() => setMsgTab(v)}
@@ -91,6 +130,11 @@ function JobMessagesPanel() {
                     {v === 'customer_visible' ? 'Customer Chat' : 'Internal Notes'}
                   </button>
                 ))}
+              </div>
+            )}
+            {(isContractor || selectedJob.type === 'site_visit') && (
+              <div className="px-4 py-2 border-b border-slate-100 bg-slate-50">
+                <p className="text-xs text-slate-600">Contractor ↔ PM thread (internal notes are not visible here)</p>
               </div>
             )}
             <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -107,7 +151,7 @@ function JobMessagesPanel() {
               })}
             </div>
             <form onSubmit={sendMessage} className="border-t border-slate-200 p-3 flex gap-2">
-              <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Type a message..."
+              <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder={isContractor || selectedJob.type === 'site_visit' ? 'Message your PM...' : 'Type a message...'}
                 className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
               <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">Send</button>
             </form>

@@ -9,6 +9,7 @@ class Message extends Model
 {
     protected $fillable = [
         'job_id',
+        'lead_id',
         'channel',
         'sender_id',
         'receiver_id',
@@ -31,6 +32,11 @@ class Message extends Model
     public function job(): BelongsTo
     {
         return $this->belongsTo(Job::class);
+    }
+
+    public function lead(): BelongsTo
+    {
+        return $this->belongsTo(Lead::class);
     }
 
     public function sender(): BelongsTo

@@ -450,6 +450,9 @@ class LeadController extends Controller
 
             $lead->update(['status' => 'converted']);
 
+            app(\App\Services\Messaging\AssignmentMessageService::class)
+                ->carryForwardOnConvert($lead->fresh(), $job);
+
             AuditLog::create([
                 'user_id' => $user->id,
                 'user_role' => $user->role,
