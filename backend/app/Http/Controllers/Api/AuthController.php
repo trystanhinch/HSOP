@@ -66,10 +66,24 @@ class AuthController extends Controller
             return response()->json(['message' => 'This account cannot be used for interactive login.'], 403);
         }
 
+        if (($user->status ?? 'active') !== 'active') {
+            Auth::logout();
+
+            return response()->json([
+                'message' => 'Account suspended. Contact an administrator.',
+                'code' => 'account_inactive',
+            ], 403);
+        }
+
         if ($user->role === 'content_editor' && ! $user->brand_id) {
             Auth::logout();
 
             return response()->json(['message' => 'Content editor account has no assigned brand.'], 403);
+        }
+
+        $user->forceFill(['last_login_at' => now()])->save();
+        if ($user->invitation_status === 'pending') {
+            $user->forceFill(['invitation_status' => 'accepted'])->save();
         }
 
         $user->load('brand:id,company_name,domain,slug');

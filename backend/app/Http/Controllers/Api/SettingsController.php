@@ -3,49 +3,60 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Brand;
 use App\Models\Company;
 use App\Models\Setting;
+use App\Models\Brand;
 use App\Services\BrandResolver;
+use App\Services\Company\CompanyIdentityService;
+use App\Services\Messaging\NotificationChannelHealthService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class SettingsController extends Controller
 {
+    public function __construct(
+        protected CompanyIdentityService $identity,
+        protected NotificationChannelHealthService $channelHealth,
+    ) {}
+
     public function index(): JsonResponse
     {
         $company = Company::withTestData()->orderBy('id')->first();
         $settings = Setting::all()->pluck('value', 'key');
+        $readiness = $this->identity->readiness($company);
+        $channels = $this->channelHealth->snapshot();
 
         return response()->json([
             'company' => $company,
             'settings' => $settings,
+            'identity_readiness' => $readiness,
             'notifications' => [
                 'sms_globally_enabled' => Setting::isGloballyEnabled('sms'),
                 'email_globally_enabled' => Setting::isGloballyEnabled('email'),
                 'sms_enabled' => Setting::isGloballyEnabled('sms'),
                 'email_enabled' => Setting::isGloballyEnabled('email'),
+                'sms_policy_enabled' => Setting::isGloballyEnabled('sms'),
+                'email_policy_enabled' => Setting::isGloballyEnabled('email'),
                 'email_new_lead' => true,
                 'email_quote_sent' => true,
                 'email_job_update' => true,
             ],
-            // A-03: customer payment destinations moved to /payment-destinations.
-            // Legacy settings keys retained for audit/history only — not used on customer surfaces.
+            'channel_health' => $channels,
             'payment' => [
                 'managed_via' => 'payment_destinations',
                 'legacy_instructions' => $settings['payment_instructions'] ?? null,
                 'legacy_company_email' => $settings['company_email'] ?? null,
                 'note' => 'Edit customer payment destinations under Settings → Payment (brand-scoped). Contractor payout uses Stripe Connect separately.',
             ],
-            // A-06/A-22: Branding is read-only here. The authoritative source is Brand Content.
-            // Legacy company_name setting is preserved for audit history only.
             'branding' => [
                 'primary_color' => '#3B82F6',
                 'company_name' => Brand::where('status', 'active')->value('company_name')
                     ?? $settings['company_name']
+                    ?? $company?->operating_name
                     ?? $company?->name
                     ?? BrandResolver::PLATFORM_NAME,
-                '_note' => 'Edit company name under Brand Content, not here. This tab is read-only for legacy audit purposes.',
+                '_note' => 'Operating brand name is managed via Brand Content. Legal entity fields are on the Company (Legal Identity) tab.',
                 '_authoritative_source' => 'Brand Content (Settings → Brand Content)',
                 '_legacy_setting' => $settings['company_name'] ?? null,
             ],
@@ -59,8 +70,6 @@ class SettingsController extends Controller
 
     public function update(Request $request): JsonResponse
     {
-        // A-06/A-22: company_name is now managed exclusively via Brand Content.
-        // Check before validation so we return a clear 422 rather than silently ignoring.
         if ($request->exists('company_name')) {
             return response()->json([
                 'message' => 'Company name is managed via Brand Content (Settings → Brand Content). The legacy Branding tab is read-only.',
@@ -77,10 +86,22 @@ class SettingsController extends Controller
             'sms_globally_enabled' => 'nullable|boolean',
             'email_globally_enabled' => 'nullable|boolean',
             'name' => 'nullable|string|max:255',
+            'legal_name' => 'nullable|string|max:255',
+            'operating_name' => 'nullable|string|max:255',
             'email' => 'nullable|email',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string',
+            'remittance_address' => 'nullable|string',
+            'province' => 'nullable|string|max:64',
+            'timezone' => 'nullable|string|max:64',
+            'currency' => 'nullable|string|max:8',
             'gst_number' => 'nullable|string|max:50',
+            'gst_verification_status' => 'nullable|string|max:32',
+            'invoice_prefix' => 'nullable|string|max:32',
+            'public_contact_email' => 'nullable|email',
+            'public_contact_phone' => 'nullable|string|max:32',
+            'current_password' => 'nullable|string',
+            'confirm_sensitive_change' => 'nullable|boolean',
         ]);
 
         if ($request->exists('payment_instructions') || $request->exists('company_email')) {
@@ -104,12 +125,24 @@ class SettingsController extends Controller
 
         $company = Company::withTestData()->orderBy('id')->first();
         if ($company) {
-            $companyData = array_filter($request->only(['name', 'email', 'phone', 'address', 'gst_number']), fn ($v) => $v !== null);
-            if ($companyData) {
-                $company->update($companyData);
+            try {
+                $prepared = $this->identity->validateAndPrepare($request->all());
+                $this->identity->assertSensitiveConfirmation(
+                    $request->user(),
+                    $prepared,
+                    $data['current_password'] ?? null,
+                    (bool) ($data['confirm_sensitive_change'] ?? false),
+                    $company
+                );
+                $this->identity->apply($company, $prepared, $request->user());
+            } catch (ValidationException $e) {
+                throw $e;
             }
         }
 
-        return response()->json(['message' => 'Settings updated']);
+        return response()->json([
+            'message' => 'Settings updated',
+            'identity_readiness' => $this->identity->readiness($company?->fresh()),
+        ]);
     }
 }

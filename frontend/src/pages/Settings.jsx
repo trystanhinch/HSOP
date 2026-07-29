@@ -9,8 +9,31 @@ import DatabaseStructure from './DatabaseStructure';
 import TestDataPanel from '../components/TestDataPanel';
 import AiActivityLogViewer from '../components/AiActivityLogViewer';
 import { confirmAction, confirmDanger, showError, showSuccess } from '../utils/swal';
+import { useAuth } from '../context/AuthContext';
+import Swal from 'sweetalert2';
 
-const tabs = ['Company', 'Users & Roles', 'Lead Inbox', 'Workflow', 'Message Templates', 'AI Settings', 'AI Activity Log', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure', 'Test Data'];
+const ALL_TABS = ['Company', 'Users & Roles', 'Lead Inbox', 'Workflow', 'Message Templates', 'AI Settings', 'AI Activity Log', 'Notifications', 'GST & Markup', 'Payouts & Split', 'Payment', 'SMS Log', 'Email Log', 'Branding', 'Database Structure', 'Test Data'];
+
+const COMPANY_PUBLIC_FIELDS = [
+  { key: 'operating_name', label: 'Operating name (internal label)' },
+  { key: 'name', label: 'Legacy display name' },
+  { key: 'email', label: 'Internal company email' },
+  { key: 'phone', label: 'Internal company phone' },
+  { key: 'address', label: 'Business address' },
+  { key: 'province', label: 'Province' },
+  { key: 'timezone', label: 'Timezone (e.g. America/Vancouver)' },
+  { key: 'currency', label: 'Currency (CAD / USD)' },
+  { key: 'invoice_prefix', label: 'Invoice prefix (e.g. ACU)' },
+  { key: 'public_contact_email', label: 'Public contact email' },
+  { key: 'public_contact_phone', label: 'Public contact phone' },
+];
+
+const COMPANY_SENSITIVE_FIELDS = [
+  { key: 'legal_name', label: 'Legal name (tax / contracts)' },
+  { key: 'gst_number', label: 'GST / HST number' },
+  { key: 'gst_verification_status', label: 'GST verification status' },
+  { key: 'remittance_address', label: 'Remittance address' },
+];
 
 const smsStatusColor = { sent: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-700', disabled: 'bg-slate-100 text-slate-600' };
 
@@ -93,14 +116,31 @@ function BrandingTab() {
 }
 
 export default function Settings() {
+  const { user: authUser } = useAuth();
+  const isDeveloper = Boolean(authUser?.is_developer);
+  const tabs = ALL_TABS.filter((t) => t !== 'Database Structure' || isDeveloper);
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState(
-    tabParam === 'database' ? 'Database Structure' : tabParam === 'test-data' ? 'Test Data' : 'Company'
+    tabParam === 'database' && isDeveloper
+      ? 'Database Structure'
+      : tabParam === 'test-data'
+        ? 'Test Data'
+        : 'Company'
   );
   const [settings, setSettings] = useState(null);
+  const [identityReadiness, setIdentityReadiness] = useState(null);
   const [companyForm, setCompanyForm] = useState({});
+  const [companyBaseline, setCompanyBaseline] = useState({});
   const [notifForm, setNotifForm] = useState({ sms_globally_enabled: false, email_globally_enabled: false });
+  const [channelHealth, setChannelHealth] = useState(null);
+  const [channelTestBusy, setChannelTestBusy] = useState(null);
+  const [smsLogFilters, setSmsLogFilters] = useState({ status: '', trigger_event: '' });
+  const [emailLogFilters, setEmailLogFilters] = useState({ status: '', trigger_event: '' });
+  const [smsMetrics, setSmsMetrics] = useState(null);
+  const [emailMetrics, setEmailMetrics] = useState(null);
+  const [templatePreview, setTemplatePreview] = useState({});
+  const [templateVersions, setTemplateVersions] = useState({});
   const [pricingForm, setPricingForm] = useState({ gst_rate: '5', markup_divisor: '0.80' });
   const [splitForm, setSplitForm] = useState({ split_contractor_pct: '80', split_pm_pct: '10', split_company_pct: '10' });
   const [paymentDestinations, setPaymentDestinations] = useState([]);
@@ -184,6 +224,9 @@ export default function Settings() {
     api.get('/settings').then(({ data }) => {
       setSettings(data);
       setCompanyForm(data.company || {});
+      setCompanyBaseline(data.company || {});
+      setIdentityReadiness(data.identity_readiness || null);
+      setChannelHealth(data.channel_health || null);
       setNotifForm({
         sms_globally_enabled: data.notifications?.sms_globally_enabled ?? data.notifications?.sms_enabled ?? false,
         email_globally_enabled: data.notifications?.email_globally_enabled ?? data.notifications?.email_enabled ?? false,
@@ -265,12 +308,24 @@ export default function Settings() {
   };
   useEffect(() => {
     if (activeTab === 'SMS Log') {
-      api.get('/sms-logs').then(({ data }) => setSmsLogs(data.data || data)).catch(() => setSmsLogs([]));
+      const params = {};
+      if (smsLogFilters.status) params.status = smsLogFilters.status;
+      if (smsLogFilters.trigger_event) params.trigger_event = smsLogFilters.trigger_event;
+      api.get('/sms-logs', { params }).then(({ data }) => {
+        setSmsLogs(data.data?.data || data.data || data);
+        setSmsMetrics(data.metrics || null);
+      }).catch(() => setSmsLogs([]));
     }
     if (activeTab === 'Email Log') {
-      api.get('/email-logs').then(({ data }) => setEmailLogs(data.data || data)).catch(() => setEmailLogs([]));
+      const params = {};
+      if (emailLogFilters.status) params.status = emailLogFilters.status;
+      if (emailLogFilters.trigger_event) params.trigger_event = emailLogFilters.trigger_event;
+      api.get('/email-logs', { params }).then(({ data }) => {
+        setEmailLogs(data.data?.data || data.data || data);
+        setEmailMetrics(data.metrics || null);
+      }).catch(() => setEmailLogs([]));
     }
-  }, [activeTab]);
+  }, [activeTab, smsLogFilters, emailLogFilters]);
 
   useEffect(() => {
     if (tabParam === 'database') setActiveTab('Database Structure');
@@ -328,12 +383,112 @@ export default function Settings() {
         label: tpl.label,
         is_active: tpl.is_active,
       });
-      setMessageTemplates((prev) => prev.map((t) => (t.id === data.id ? data : t)));
+      setMessageTemplates((prev) => prev.map((t) => (t.id === data.id ? { ...t, ...data } : t)));
       await showSuccess('Template saved.');
+      refreshTemplateMeta(data.id);
     } catch (err) {
-      await showError(err.response?.data?.message || 'Failed to save template.');
+      const unresolved = err.response?.data?.errors?.unresolved;
+      await showError(
+        unresolved
+          ? `Unresolved placeholders: {{${(unresolved || []).join('}}, {{')}}}`
+          : (err.response?.data?.errors?.body?.[0] || err.response?.data?.message || 'Failed to save template.')
+      );
     } finally {
       setTemplateSavingId(null);
+    }
+  };
+
+  const refreshTemplateMeta = async (id) => {
+    try {
+      const [{ data: preview }, { data: versions }] = await Promise.all([
+        api.post(`/message-templates/${id}/preview`, {}),
+        api.get(`/message-templates/${id}/versions`),
+      ]);
+      setTemplatePreview((p) => ({ ...p, [id]: preview }));
+      setTemplateVersions((p) => ({ ...p, [id]: versions.versions || [] }));
+    } catch {
+      // ignore
+    }
+  };
+
+  const previewTemplate = async (tpl) => {
+    try {
+      const { data } = await api.post(`/message-templates/${tpl.id}/preview`, { body: tpl.body });
+      setTemplatePreview((p) => ({ ...p, [tpl.id]: data }));
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Preview failed.');
+    }
+  };
+
+  const testSendTemplate = async (tpl) => {
+    const ok = await confirmAction({
+      title: 'Send test to yourself?',
+      text: 'Uses BrandResolver sample brand name and your owner phone/email.',
+      confirmText: 'Send test',
+    });
+    if (!ok) return;
+    try {
+      const { data } = await api.post(`/message-templates/${tpl.id}/test-send`, { body: tpl.body });
+      await showSuccess(
+        data.provider_response?.success
+          ? `Test sent via ${data.channel}. Brand: ${data.brand_name}`
+          : `Test attempted: ${data.provider_response?.plain || data.provider_response?.reason || 'see response'}`
+      );
+    } catch (err) {
+      await showError(err.response?.data?.errors?.body?.[0] || err.response?.data?.message || 'Test send failed.');
+    }
+  };
+
+  const restoreTemplateVersion = async (tpl, versionId) => {
+    const ok = await confirmAction({ title: 'Restore this version?', confirmText: 'Restore' });
+    if (!ok) return;
+    try {
+      const { data } = await api.post(`/message-templates/${tpl.id}/versions/${versionId}/restore`);
+      setMessageTemplates((prev) => prev.map((t) => (t.id === data.id ? { ...t, ...data } : t)));
+      await showSuccess('Version restored.');
+      refreshTemplateMeta(tpl.id);
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Restore failed.');
+    }
+  };
+
+  const runChannelTest = async (channel) => {
+    setChannelTestBusy(channel);
+    try {
+      const { data } = await api.post(`/notification-channels/test-${channel}`);
+      setChannelHealth((h) => ({ ...h, [channel]: data.health }));
+      await showSuccess(
+        data.provider_response?.success
+          ? `Test ${channel.toUpperCase()} succeeded.`
+          : `Test ${channel.toUpperCase()}: ${data.provider_response?.plain || data.provider_response?.blocking_error || data.provider_response?.reason || 'failed'}`
+      );
+    } catch (err) {
+      await showError(err.response?.data?.message || `Test ${channel} failed.`);
+    } finally {
+      setChannelTestBusy(null);
+    }
+  };
+
+  const retrySmsLog = async (log) => {
+    const ok = await confirmAction({ title: 'Retry this SMS?', text: log.correction_path || 'Idempotent retry — will not duplicate a prior success.', confirmText: 'Retry' });
+    if (!ok) return;
+    try {
+      const { data } = await api.post(`/sms-logs/${log.id}/retry`, {});
+      await showSuccess(data.deduplicated ? 'Already retried successfully (no duplicate).' : (data.success ? 'Retry sent.' : (data.provider_response?.plain || 'Retry failed.')));
+      setActiveTab('SMS Log');
+    } catch (err) {
+      await showError(err.response?.data?.errors?.phone?.[0] || err.response?.data?.message || 'Retry failed.');
+    }
+  };
+
+  const retryEmailLog = async (log) => {
+    const ok = await confirmAction({ title: 'Retry this email?', text: log.correction_path || 'Idempotent retry.', confirmText: 'Retry' });
+    if (!ok) return;
+    try {
+      const { data } = await api.post(`/email-logs/${log.id}/retry`, {});
+      await showSuccess(data.deduplicated ? 'Already retried successfully (no duplicate).' : (data.success ? 'Retry sent.' : (data.provider_response?.plain || 'Retry failed.')));
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Retry failed.');
     }
   };
 
@@ -413,9 +568,101 @@ export default function Settings() {
     }
   };
 
-  const saveCompany = (e) => {
+  const saveCompany = async (e) => {
     e.preventDefault();
-    saveSettings(companyForm, 'Company settings saved.');
+    const sensitiveKeys = COMPANY_SENSITIVE_FIELDS.map((f) => f.key);
+    const touchingSensitive = sensitiveKeys.some(
+      (k) => String(companyForm[k] ?? '') !== String(companyBaseline[k] ?? '')
+    );
+
+    const payload = { ...companyForm };
+    if (touchingSensitive) {
+      const ok = await confirmAction({
+        title: 'Confirm tax / remittance change?',
+        text: 'Legal name, GST number, and remittance address are higher-risk identity fields. You must re-enter your password.',
+        confirmText: 'Continue',
+      });
+      if (!ok) return;
+      const { value: password } = await Swal.fire({
+        title: 'Re-enter password',
+        input: 'password',
+        inputPlaceholder: 'Your password',
+        showCancelButton: true,
+        confirmButtonText: 'Confirm change',
+        confirmButtonColor: '#2563eb',
+      });
+      if (!password) return;
+      payload.confirm_sensitive_change = true;
+      payload.current_password = password;
+    }
+
+    setSaving(true);
+    try {
+      const { data } = await api.post('/settings', payload);
+      setIdentityReadiness(data.identity_readiness || null);
+      await showSuccess('Company identity saved.');
+      loadSettings();
+    } catch (err) {
+      const errors = err.response?.data?.errors;
+      await showError(
+        errors?.current_password?.[0]
+        || errors?.confirm_sensitive_change?.[0]
+        || errors?.gst_number?.[0]
+        || errors?.public_contact_email?.[0]
+        || err.response?.data?.message
+        || 'Failed to save company identity.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const suspendUser = async (userId) => {
+    const ok = await confirmDanger({
+      title: 'Suspend account?',
+      text: 'This immediately revokes their active sessions and API tokens.',
+      confirmText: 'Yes, suspend',
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/admin/users/${userId}/suspend`);
+      await showSuccess('Account suspended; sessions revoked.');
+      loadAdminUsers();
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to suspend account');
+    }
+  };
+
+  const reactivateUser = async (userId) => {
+    const ok = await confirmAction({
+      title: 'Reactivate account?',
+      text: 'This user will be able to log in again.',
+      confirmText: 'Yes, reactivate',
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/admin/users/${userId}/reactivate`);
+      await showSuccess('Account reactivated.');
+      loadAdminUsers();
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to reactivate');
+    }
+  };
+
+  const resendInvite = async (userId) => {
+    const ok = await confirmAction({
+      title: 'Resend invite?',
+      text: 'Generates a new temporary password and revokes existing sessions.',
+      confirmText: 'Yes, resend',
+    });
+    if (!ok) return;
+    try {
+      const { data } = await api.post(`/admin/users/${userId}/resend-invite`);
+      await showSuccess(data.password ? `Invite resent. Temp password: ${data.password}` : 'Invite resent.');
+      loadAdminUsers();
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Failed to resend invite');
+    }
   };
 
   const saveNotifications = (e) => {
@@ -531,22 +778,6 @@ export default function Settings() {
     }
   };
 
-  const deactivateUser = async (userId) => {
-    const ok = await confirmDanger({
-      title: 'Deactivate account?',
-      text: 'This user will no longer be able to log in.',
-      confirmText: 'Yes, deactivate',
-    });
-    if (!ok) return;
-    try {
-      await api.delete(`/admin/users/${userId}`);
-      await showSuccess('Account deactivated');
-      loadAdminUsers();
-    } catch (err) {
-      await showError(err.response?.data?.message || 'Failed to deactivate account');
-    }
-  };
-
   const filteredUsers = users.filter((u) => roleFilter === 'all' || u.role === roleFilter);
 
   return (
@@ -562,49 +793,115 @@ export default function Settings() {
         ))}
       </div>
 
-      {activeTab === 'Database Structure' && <DatabaseStructure />}
+      {activeTab === 'Database Structure' && isDeveloper && <DatabaseStructure />}
       {activeTab === 'Test Data' && <TestDataPanel />}
 
       {activeTab === 'Company' && (
-        <form onSubmit={saveCompany} className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
-          {['name', 'email', 'phone', 'address', 'gst_number'].map((f) => (
-            <div key={f}>
-              <label className="block text-sm font-medium text-slate-700 mb-1 capitalize">{f.replace('_', ' ')}</label>
-              <input value={companyForm[f] || ''} onChange={(e) => setCompanyForm({ ...companyForm, [f]: e.target.value })}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+        <div className="space-y-4 max-w-3xl">
+          {identityReadiness?.blocking && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-amber-900">Production identity incomplete</p>
+              <p className="text-sm text-amber-800 mt-1">
+                Missing: {(identityReadiness.missing || []).join(', ')}. This is a readiness flag — it does not block the app.
+              </p>
             </div>
-          ))}
-          <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
-            {saving ? 'Saving...' : 'Save Company Settings'}
-          </button>
-        </form>
+          )}
+          <div className="flex flex-wrap gap-2 text-xs">
+            <span className={`px-2 py-1 rounded-full font-medium ${
+              (identityReadiness?.environment || '').toLowerCase() === 'production'
+                ? 'bg-emerald-100 text-emerald-800'
+                : 'bg-amber-100 text-amber-800'
+            }`}
+            >
+              Env: {(identityReadiness?.environment || 'unknown').toUpperCase()}
+            </span>
+            <span className={`px-2 py-1 rounded-full font-medium ${
+              identityReadiness?.is_test_data ? 'bg-violet-100 text-violet-800' : 'bg-slate-100 text-slate-700'
+            }`}
+            >
+              {identityReadiness?.is_test_data ? 'Company row: TEST DATA' : 'Company row: PRODUCTION'}
+            </span>
+            <span className={`px-2 py-1 rounded-full font-medium ${
+              identityReadiness?.complete ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+            }`}
+            >
+              {identityReadiness?.complete ? 'Identity ready' : 'Identity incomplete'}
+            </span>
+          </div>
+
+          <form onSubmit={saveCompany} className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
+            <div>
+              <h3 className="font-semibold text-slate-800">Public &amp; operating identity</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Customer-facing brand name stays in Brand Content. These fields are legal entity / remittance / public contact.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                {COMPANY_PUBLIC_FIELDS.map((f) => (
+                  <div key={f.key} className={f.key === 'address' ? 'sm:col-span-2' : ''}>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
+                    <input
+                      value={companyForm[f.key] || ''}
+                      onChange={(e) => setCompanyForm({ ...companyForm, [f.key]: e.target.value })}
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-slate-100 pt-4">
+              <h3 className="font-semibold text-slate-800">Tax identity &amp; remittance</h3>
+              <p className="text-xs text-amber-700 mt-1">Changes here require password re-confirmation and are audited.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                {COMPANY_SENSITIVE_FIELDS.map((f) => (
+                  <div key={f.key} className={f.key === 'remittance_address' ? 'sm:col-span-2' : ''}>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">{f.label}</label>
+                    {f.key === 'gst_verification_status' ? (
+                      <select
+                        value={companyForm[f.key] || 'unverified'}
+                        onChange={(e) => setCompanyForm({ ...companyForm, [f.key]: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                      >
+                        <option value="unverified">unverified</option>
+                        <option value="pending">pending</option>
+                        <option value="verified">verified</option>
+                        <option value="failed">failed</option>
+                      </select>
+                    ) : (
+                      <input
+                        value={companyForm[f.key] || ''}
+                        onChange={(e) => setCompanyForm({ ...companyForm, [f.key]: e.target.value })}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm"
+                      />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
+              {saving ? 'Saving...' : 'Save Company Identity'}
+            </button>
+          </form>
+        </div>
       )}
 
       {activeTab === 'Users & Roles' && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setRoleFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${roleFilter === 'all' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}
-              >
-                All
-              </button>
-              <button
-                type="button"
-                onClick={() => setRoleFilter('pm')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${roleFilter === 'pm' ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}
-              >
-                Project Managers
-              </button>
-              <button
-                type="button"
-                onClick={() => setRoleFilter('contractor')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${roleFilter === 'contractor' ? 'bg-orange-600 text-white' : 'bg-slate-100 text-slate-600'}`}
-              >
-                Contractors
-              </button>
+            <div className="flex gap-2 flex-wrap">
+              {['all', 'pm', 'contractor', 'owner'].map((role) => (
+                <button
+                  key={role}
+                  type="button"
+                  onClick={() => setRoleFilter(role)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                    roleFilter === role ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {role === 'all' ? 'All' : role === 'pm' ? 'Project Managers' : role === 'contractor' ? 'Contractors' : 'Owners'}
+                </button>
+              ))}
             </div>
             <button
               type="button"
@@ -612,82 +909,102 @@ export default function Settings() {
               className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium flex items-center gap-2 hover:bg-blue-700"
             >
               <Plus className="w-4 h-4" />
-              Add User
+              Invite User
             </button>
           </div>
 
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
+              <table className="w-full min-w-[960px] text-sm">
                 <thead className="bg-slate-50 border-b border-slate-200">
                   <tr>
-                    <th className="px-4 py-3 text-left font-medium text-slate-500">Name</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-500">Email</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-500">Phone</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-500">Role</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-500">Brands</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-500">Status</th>
-                    <th className="px-4 py-3 text-left font-medium text-slate-500">Action</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">Name</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">Role</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">Brand scope</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">Invite</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">Last active</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">Status</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">2FA</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">Linked</th>
+                    <th className="px-3 py-3 text-left font-medium text-slate-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-slate-500">No users found.</td>
+                      <td colSpan={9} className="px-4 py-12 text-center text-slate-500">No users found.</td>
                     </tr>
-                  ) : filteredUsers.map((user) => (
-                    <tr key={user.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3 font-medium text-slate-800">{user.name}</td>
-                      <td className="px-4 py-3 text-slate-600">{user.email}</td>
-                      <td className="px-4 py-3 text-slate-600">{user.phone || '—'}</td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                          user.role === 'pm'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-orange-100 text-orange-700'
-                        }`}
-                        >
-                          {user.role === 'pm' ? 'Project Manager' : 'Contractor'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-600 text-xs max-w-[180px]">
-                        {user.role === 'pm' ? (
-                          <button
-                            type="button"
-                            onClick={() => openBrandEditor(user)}
-                            className="text-left text-blue-600 hover:text-blue-800"
+                  ) : filteredUsers.map((user) => {
+                    const scope = user.brand_scope?.length
+                      ? user.brand_scope.map((b) => b.company_name).filter(Boolean).join(', ')
+                      : (user.role === 'pm'
+                        ? (() => {
+                          const row = pmBrandAssignments.find((a) => a.user_id === user.id);
+                          const names = (row?.brands || []).map((b) => b.company_name);
+                          return names.length ? names.join(', ') : 'No brands (no access)';
+                        })()
+                        : '—');
+                    const linked = [];
+                    if (user.linked_profiles?.contractor?.id) linked.push(`Contractor #${user.linked_profiles.contractor.id}`);
+                    if (user.linked_profiles?.stripe_account_id) linked.push('Stripe Connect');
+                    if (user.is_developer) linked.push('Developer');
+                    return (
+                      <tr key={user.id} className="hover:bg-slate-50">
+                        <td className="px-3 py-3">
+                          <div className="font-medium text-slate-800">{user.name}</div>
+                          <div className="text-xs text-slate-500">{user.email}</div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className="text-xs px-2 py-1 rounded-full font-medium bg-slate-100 text-slate-700">
+                            {user.role}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-600 max-w-[160px]">
+                          {user.role === 'pm' ? (
+                            <button type="button" onClick={() => openBrandEditor(user)} className="text-left text-blue-600 hover:text-blue-800">
+                              {scope}
+                            </button>
+                          ) : scope}
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-600">{user.invitation_status || '—'}</td>
+                        <td className="px-3 py-3 text-xs text-slate-600">
+                          {user.last_active_at || user.last_login_at
+                            ? formatDate(user.last_active_at || user.last_login_at)
+                            : 'Never'}
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className={`text-xs px-2 py-1 rounded-full ${
+                            user.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                          }`}
                           >
-                            {(() => {
-                              const row = pmBrandAssignments.find((a) => a.user_id === user.id);
-                              const names = (row?.brands || []).map((b) => b.company_name);
-                              return names.length ? names.join(', ') : 'No brands (no access)';
-                            })()}
-                          </button>
-                        ) : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-1 rounded-full ${
-                          user.status === 'active'
-                            ? 'bg-green-100 text-green-700'
-                            : 'bg-red-100 text-red-700'
-                        }`}
-                        >
-                          {user.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {user.status === 'active' && (
-                          <button
-                            type="button"
-                            onClick={() => deactivateUser(user.id)}
-                            className="text-red-500 hover:text-red-700 text-xs"
-                          >
-                            Deactivate
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                            {user.account_status || user.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 text-xs text-slate-500">{user.two_factor_status || 'not_yet_implemented'}</td>
+                        <td className="px-3 py-3 text-xs text-slate-600">{linked.length ? linked.join(' · ') : '—'}</td>
+                        <td className="px-3 py-3">
+                          <div className="flex flex-col gap-1 items-start">
+                            {user.role !== 'owner' && (
+                              <>
+                                <button type="button" onClick={() => resendInvite(user.id)} className="text-blue-600 hover:text-blue-800 text-xs">
+                                  Resend invite
+                                </button>
+                                {user.status === 'active' ? (
+                                  <button type="button" onClick={() => suspendUser(user.id)} className="text-red-500 hover:text-red-700 text-xs">
+                                    Suspend
+                                  </button>
+                                ) : (
+                                  <button type="button" onClick={() => reactivateUser(user.id)} className="text-green-600 hover:text-green-800 text-xs">
+                                    Reactivate
+                                  </button>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -743,21 +1060,59 @@ export default function Settings() {
       )}
 
       {activeTab === 'Notifications' && (
-        <form onSubmit={saveNotifications} className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl space-y-4">
-          <h3 className="font-semibold text-slate-800">Notification Channels</h3>
-          <label className="flex items-center gap-3">
-            <input type="checkbox" checked={notifForm.sms_globally_enabled} onChange={(e) => setNotifForm({ ...notifForm, sms_globally_enabled: e.target.checked })} className="rounded" />
-            <span className="text-sm text-slate-700">SMS notifications enabled (global)</span>
-          </label>
-          <label className="flex items-center gap-3">
-            <input type="checkbox" checked={notifForm.email_globally_enabled} onChange={(e) => setNotifForm({ ...notifForm, email_globally_enabled: e.target.checked })} className="rounded" />
-            <span className="text-sm text-slate-700">Email notifications enabled (global)</span>
-          </label>
-          <p className="text-xs text-slate-500">Keep disabled until Twilio and SMTP credentials are configured in the server .env file.</p>
-          <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
-            {saving ? 'Saving...' : 'Save Notification Settings'}
-          </button>
-        </form>
+        <div className="space-y-4 max-w-3xl">
+          {(channelHealth?.sms?.blocking_error || channelHealth?.email?.blocking_error) && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <p className="text-sm font-medium text-red-900">Enabled-but-unavailable channel</p>
+              {channelHealth?.sms?.blocking_error && <p className="text-sm text-red-800 mt-1">{channelHealth.sms.blocking_error}</p>}
+              {channelHealth?.email?.blocking_error && <p className="text-sm text-red-800 mt-1">{channelHealth.email.blocking_error}</p>}
+            </div>
+          )}
+
+          <form onSubmit={saveNotifications} className="bg-white rounded-xl border border-slate-200 p-6 space-y-4">
+            <h3 className="font-semibold text-slate-800">Desired policy (owner intent)</h3>
+            <label className="flex items-center gap-3">
+              <input type="checkbox" checked={notifForm.sms_globally_enabled} onChange={(e) => setNotifForm({ ...notifForm, sms_globally_enabled: e.target.checked })} className="rounded" />
+              <span className="text-sm text-slate-700">SMS policy enabled</span>
+            </label>
+            <label className="flex items-center gap-3">
+              <input type="checkbox" checked={notifForm.email_globally_enabled} onChange={(e) => setNotifForm({ ...notifForm, email_globally_enabled: e.target.checked })} className="rounded" />
+              <span className="text-sm text-slate-700">Email policy enabled</span>
+            </label>
+            <p className="text-xs text-slate-500">Policy is separate from provider readiness. Turning policy on without Twilio/mail credentials shows a blocking error — sends will not fail silently.</p>
+            <button type="submit" disabled={saving} className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60">
+              {saving ? 'Saving...' : 'Save policy'}
+            </button>
+          </form>
+
+          {['sms', 'email'].map((ch) => {
+            const h = channelHealth?.[ch];
+            if (!h) return null;
+            return (
+              <div key={ch} className="bg-white rounded-xl border border-slate-200 p-5 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="font-semibold text-slate-800 uppercase text-sm">{ch} provider</h3>
+                  <span className={`text-xs px-2 py-1 rounded-full ${h.provider_ready ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
+                    {h.connection_status}
+                  </span>
+                </div>
+                <p className="text-sm text-slate-600">Policy: {h.policy_enabled ? 'ON' : 'OFF'} · Ready: {h.provider_ready ? 'yes' : 'no'}</p>
+                <p className="text-xs text-slate-500">Verified sender: {h.verified_sender || '—'}</p>
+                <p className="text-xs text-slate-500">Last success: {h.last_successful_send_at || '—'} · Delivery rate 30d: {h.delivery_rate_30d_pct != null ? `${h.delivery_rate_30d_pct}%` : '—'}</p>
+                {h.last_error && <p className="text-xs text-red-600">Last error: {h.last_error.plain}</p>}
+                {h.blocking_error && <p className="text-sm text-red-700 font-medium">{h.blocking_error}</p>}
+                <button
+                  type="button"
+                  disabled={channelTestBusy === ch}
+                  onClick={() => runChannelTest(ch)}
+                  className="text-sm px-3 py-1.5 bg-slate-800 text-white rounded-lg disabled:opacity-60"
+                >
+                  {channelTestBusy === ch ? 'Testing…' : `Test ${ch.toUpperCase()}`}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {activeTab === 'GST & Markup' && (
@@ -948,71 +1303,155 @@ export default function Settings() {
       )}
 
       {activeTab === 'SMS Log' && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm divide-y divide-slate-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">To</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">Trigger</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">Job</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {smsLogs.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No SMS logs yet.</td></tr>
-                ) : smsLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50" title={log.error_message || ''}>
-                    <td className="px-4 py-3">{log.to_phone}</td>
-                    <td className="px-4 py-3">{log.trigger_event?.replace(/_/g, ' ')}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${smsStatusColor[log.status] || 'bg-slate-100'}`}>
-                        {log.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{log.job?.address || log.related_job_id || '—'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{formatDate(log.created_at)}</td>
+        <div className="space-y-3">
+          {smsMetrics && (
+            <p className="text-xs text-slate-500">
+              Production 30d: {smsMetrics.production_sent_30d} sent / {smsMetrics.production_failed_30d} failed
+              {smsMetrics.test_excluded ? ' · test traffic excluded from metrics' : ''}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <select value={smsLogFilters.status} onChange={(e) => setSmsLogFilters({ ...smsLogFilters, status: e.target.value })} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+              <option value="">All statuses</option>
+              {['sent', 'failed', 'disabled', 'provider_unavailable', 'blocked_test_data', 'blocked_do_not_contact'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <input
+              value={smsLogFilters.trigger_event}
+              onChange={(e) => setSmsLogFilters({ ...smsLogFilters, trigger_event: e.target.value })}
+              placeholder="Trigger event"
+              className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[960px] text-sm divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Recipient</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Trigger</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Status</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Error / fix</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Linked</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Provider ID</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Attempts</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {smsLogs.length === 0 ? (
+                    <tr><td colSpan={8} className="px-4 py-8 text-center text-slate-500">No SMS logs yet.</td></tr>
+                  ) : smsLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50 align-top">
+                      <td className="px-3 py-3">
+                        <div>{log.recipient_normalized || log.to_phone}</div>
+                        <div className="text-xs text-slate-400">{formatDate(log.created_at)}</div>
+                      </td>
+                      <td className="px-3 py-3">{log.trigger_event?.replace(/_/g, ' ')}</td>
+                      <td className="px-3 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${smsStatusColor[log.status] || 'bg-slate-100'}`}>
+                          {log.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-xs max-w-[220px]">
+                        <div className="text-slate-700">{log.error_plain || log.error_message || '—'}</div>
+                        {log.correction_path && <div className="text-amber-700 mt-1">{log.correction_path}</div>}
+                      </td>
+                      <td className="px-3 py-3 text-xs">
+                        {log.job ? `Job #${log.related_job_id}` : ''}
+                        {log.lead ? ` Lead #${log.related_lead_id}` : ''}
+                        {log.user ? ` · ${log.user.name}` : ''}
+                        {!log.job && !log.lead && !log.user ? '—' : ''}
+                      </td>
+                      <td className="px-3 py-3 text-xs font-mono">{log.provider_message_id || '—'}</td>
+                      <td className="px-3 py-3">{log.attempt_count ?? 1}</td>
+                      <td className="px-3 py-3">
+                        {log.status !== 'sent' && (
+                          <button type="button" onClick={() => retrySmsLog(log)} className="text-xs text-blue-600 hover:text-blue-800">Retry</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
       {activeTab === 'Email Log' && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm divide-y divide-slate-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">To</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">Trigger</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">Job</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500">Date</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {emailLogs.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No email logs yet.</td></tr>
-                ) : emailLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50" title={log.error_message || ''}>
-                    <td className="px-4 py-3">{log.to_email}</td>
-                    <td className="px-4 py-3">{log.trigger_event?.replace(/_/g, ' ')}</td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${log.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {log.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">{log.job?.address || log.related_job_id || '—'}</td>
-                    <td className="px-4 py-3 whitespace-nowrap">{formatDate(log.created_at)}</td>
+        <div className="space-y-3">
+          {emailMetrics && (
+            <p className="text-xs text-slate-500">
+              Production 30d: {emailMetrics.production_sent_30d} sent / {emailMetrics.production_failed_30d} failed
+              {emailMetrics.test_excluded ? ' · test traffic excluded from metrics' : ''}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
+            <select value={emailLogFilters.status} onChange={(e) => setEmailLogFilters({ ...emailLogFilters, status: e.target.value })} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
+              <option value="">All statuses</option>
+              {['sent', 'failed', 'provider_unavailable', 'blocked_test_data', 'blocked_do_not_contact'].map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <input
+              value={emailLogFilters.trigger_event}
+              onChange={(e) => setEmailLogFilters({ ...emailLogFilters, trigger_event: e.target.value })}
+              placeholder="Trigger event"
+              className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm"
+            />
+          </div>
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[960px] text-sm divide-y divide-slate-200">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Recipient</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Trigger</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Status</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Error / fix</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Linked</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Attempts</th>
+                    <th className="text-left px-3 py-3 font-medium text-slate-500">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {emailLogs.length === 0 ? (
+                    <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No email logs yet.</td></tr>
+                  ) : emailLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-50 align-top">
+                      <td className="px-3 py-3">
+                        <div>{log.recipient_normalized || log.to_email}</div>
+                        <div className="text-xs text-slate-400">{formatDate(log.created_at)}</div>
+                      </td>
+                      <td className="px-3 py-3">{log.trigger_event?.replace(/_/g, ' ')}</td>
+                      <td className="px-3 py-3">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${log.status === 'sent' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {log.status}
+                        </span>
+                      </td>
+                      <td className="px-3 py-3 text-xs max-w-[220px]">
+                        <div>{log.error_plain || log.error_message || '—'}</div>
+                        {log.correction_path && <div className="text-amber-700 mt-1">{log.correction_path}</div>}
+                      </td>
+                      <td className="px-3 py-3 text-xs">
+                        {log.job ? `Job #${log.related_job_id}` : ''}
+                        {log.lead ? ` Lead #${log.related_lead_id}` : ''}
+                        {log.user ? ` · ${log.user.name}` : ''}
+                        {!log.job && !log.lead && !log.user ? '—' : ''}
+                      </td>
+                      <td className="px-3 py-3">{log.attempt_count ?? 1}</td>
+                      <td className="px-3 py-3">
+                        {log.status !== 'sent' && (
+                          <button type="button" onClick={() => retryEmailLog(log)} className="text-xs text-blue-600 hover:text-blue-800">Retry</button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
@@ -1094,35 +1533,78 @@ export default function Settings() {
 
       {activeTab === 'Message Templates' && (
         <div className="space-y-4 max-w-3xl">
-          <p className="text-sm text-slate-500">Edit automated SMS copy. Use {'{{variable}}'} placeholders shown on each template.</p>
+          <p className="text-sm text-slate-500">
+            Edit automated copy. Placeholders use {'{{variable}}'}. Brand names resolve via BrandResolver (never hardcode ServiceOP).
+            Inactive templates cannot be triggered — no fallback send.
+          </p>
           {messageTemplates.length === 0 ? (
             <p className="text-sm text-slate-400">No templates yet — run MessageTemplateSeeder.</p>
-          ) : messageTemplates.map((tpl) => (
-            <div key={tpl.id} className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
-              <div className="flex justify-between gap-2">
-                <div>
-                  <p className="font-medium text-slate-800">{tpl.label}</p>
-                  <p className="text-xs text-slate-400 font-mono">{tpl.event_key}</p>
+          ) : messageTemplates.map((tpl) => {
+            const preview = templatePreview[tpl.id]?.preview || tpl.sample_preview;
+            const versions = templateVersions[tpl.id] || [];
+            return (
+              <div key={tpl.id} className="bg-white rounded-xl border border-slate-200 p-4 space-y-2">
+                <div className="flex justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-slate-800">{tpl.label}</p>
+                    <p className="text-xs text-slate-400 font-mono">{tpl.event_key}</p>
+                    {tpl.last_changed_by && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        Last changed by {tpl.last_changed_by.name} {tpl.last_changed_at ? `· ${formatDate(tpl.last_changed_at)}` : ''}
+                      </p>
+                    )}
+                  </div>
+                  <label className="text-xs flex items-center gap-1">
+                    <input type="checkbox" checked={!!tpl.is_active}
+                      onChange={(e) => setMessageTemplates((prev) => prev.map((t) => t.id === tpl.id ? { ...t, is_active: e.target.checked } : t))} />
+                    Active
+                  </label>
                 </div>
-                <label className="text-xs flex items-center gap-1">
-                  <input type="checkbox" checked={!!tpl.is_active}
-                    onChange={(e) => setMessageTemplates((prev) => prev.map((t) => t.id === tpl.id ? { ...t, is_active: e.target.checked } : t))} />
-                  Active
-                </label>
+                <textarea
+                  rows={3}
+                  className="w-full border border-slate-300 rounded-lg p-2 text-sm"
+                  value={tpl.body}
+                  onChange={(e) => setMessageTemplates((prev) => prev.map((t) => t.id === tpl.id ? { ...t, body: e.target.value } : t))}
+                />
+                <p className="text-xs text-slate-400">Variables: {(tpl.variables || []).join(', ') || '—'}</p>
+                {preview && (
+                  <div className="bg-slate-50 border border-slate-100 rounded-lg p-3 text-sm space-y-1">
+                    <p className="text-xs font-medium text-slate-500 uppercase">Sample preview</p>
+                    <p className="text-slate-800 whitespace-pre-wrap">{preview.rendered}</p>
+                    <p className="text-xs text-slate-500">
+                      {preview.char_count} chars
+                      {preview.sms_segments != null ? ` · ${preview.sms_segments} SMS segment(s)` : ''}
+                    </p>
+                    {preview.sms_segment_warning && (
+                      <p className="text-xs text-amber-700">{preview.sms_segment_note}</p>
+                    )}
+                    {preview.unresolved?.length > 0 && (
+                      <p className="text-xs text-red-600">Unresolved: {preview.unresolved.map((u) => `{{${u}}}`).join(', ')}</p>
+                    )}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" disabled={templateSavingId === tpl.id} onClick={() => saveTemplate(tpl)}
+                    className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg disabled:opacity-60">
+                    {templateSavingId === tpl.id ? 'Saving…' : 'Save'}
+                  </button>
+                  <button type="button" onClick={() => previewTemplate(tpl)} className="text-sm px-3 py-1.5 border border-slate-200 rounded-lg">Preview</button>
+                  <button type="button" onClick={() => testSendTemplate(tpl)} className="text-sm px-3 py-1.5 border border-slate-200 rounded-lg">Test send</button>
+                  <button type="button" onClick={() => refreshTemplateMeta(tpl.id)} className="text-sm px-3 py-1.5 border border-slate-200 rounded-lg">Versions</button>
+                </div>
+                {versions.length > 0 && (
+                  <div className="text-xs text-slate-500 space-y-1 border-t border-slate-100 pt-2">
+                    {versions.slice(0, 5).map((v) => (
+                      <div key={v.id} className="flex justify-between gap-2">
+                        <span>v{v.version} · {v.changed_by_user?.name || '—'} · {formatDate(v.created_at)}</span>
+                        <button type="button" className="text-blue-600" onClick={() => restoreTemplateVersion(tpl, v.id)}>Restore</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <textarea
-                rows={3}
-                className="w-full border border-slate-300 rounded-lg p-2 text-sm"
-                value={tpl.body}
-                onChange={(e) => setMessageTemplates((prev) => prev.map((t) => t.id === tpl.id ? { ...t, body: e.target.value } : t))}
-              />
-              <p className="text-xs text-slate-400">Variables: {(tpl.variables || []).join(', ') || '—'}</p>
-              <button type="button" disabled={templateSavingId === tpl.id} onClick={() => saveTemplate(tpl)}
-                className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg disabled:opacity-60">
-                {templateSavingId === tpl.id ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

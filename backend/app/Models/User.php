@@ -29,6 +29,11 @@ class User extends Authenticatable
         'stripe_onboarding_status',
         'stripe_requirements_due',
         'stripe_payout_ready',
+        'last_login_at',
+        'invited_at',
+        'invitation_status',
+        'suspended_at',
+        'is_developer',
     ];
 
     protected $hidden = [
@@ -43,6 +48,10 @@ class User extends Authenticatable
             'sms_enabled' => 'boolean',
             'stripe_requirements_due' => 'array',
             'stripe_payout_ready' => 'boolean',
+            'last_login_at' => 'datetime',
+            'invited_at' => 'datetime',
+            'suspended_at' => 'datetime',
+            'is_developer' => 'boolean',
         ];
     }
 
@@ -93,6 +102,16 @@ class User extends Authenticatable
         return $this->role === 'owner';
     }
 
+    public function isDeveloper(): bool
+    {
+        return $this->isOwner() && (bool) $this->is_developer;
+    }
+
+    public function isActive(): bool
+    {
+        return ($this->status ?? 'active') === 'active';
+    }
+
     public function isContentEditor(): bool
     {
         return $this->role === 'content_editor';
@@ -120,7 +139,9 @@ class User extends Authenticatable
             'name' => $this->name,
             'email' => $this->email,
             'role' => $this->role,
+            'status' => $this->status,
             'brand_id' => $this->brand_id,
+            'is_developer' => (bool) $this->is_developer,
             'brand' => $this->relationLoaded('brand') && $this->brand
                 ? [
                     'id' => $this->brand->id,

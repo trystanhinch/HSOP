@@ -1,18 +1,132 @@
 import { useEffect, useState } from 'react';
-import { Database, Table2 } from 'lucide-react';
+import { Database, Table2, Lock } from 'lucide-react';
 import api from '../api/axios';
+import { showError, showSuccess, confirmAction } from '../utils/swal';
+import Swal from 'sweetalert2';
 
+/**
+ * A-23 — Developer-only diagnostics. Requires is_developer + password unlock.
+ * Default view: health/structure metadata only (no raw customer samples).
+ */
 export default function DatabaseStructure() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(0);
+  const [unlocked, setUnlocked] = useState(false);
+  const [isDeveloper, setIsDeveloper] = useState(false);
+  const [reauthBusy, setReauthBusy] = useState(false);
+  const [gateCode, setGateCode] = useState(null);
+
+  const loadStatus = async () => {
+    try {
+      const { data: st } = await api.get('/admin/developer/status');
+      setIsDeveloper(Boolean(st.is_developer));
+      setUnlocked(Boolean(st.unlocked));
+      return st;
+    } catch {
+      setIsDeveloper(false);
+      setUnlocked(false);
+      return null;
+    }
+  };
+
+  const loadOverview = async (includeSamples = false) => {
+    setLoading(true);
+    setGateCode(null);
+    try {
+      const { data: overview } = await api.get('/admin/database-overview', {
+        params: includeSamples ? { include_samples: 1 } : undefined,
+      });
+      setData(overview);
+      setUnlocked(true);
+    } catch (err) {
+      const code = err.response?.data?.code;
+      setGateCode(code || 'error');
+      setData(null);
+      if (code === 'developer_reauth_required') {
+        setUnlocked(false);
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    api.get('/admin/database-overview').then((r) => {
-      setData(r.data);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    (async () => {
+      const st = await loadStatus();
+      if (st?.is_developer && st?.unlocked) {
+        await loadOverview(false);
+      } else {
+        setLoading(false);
+      }
+    })();
   }, []);
+
+  const unlock = async () => {
+    const { value: password } = await Swal.fire({
+      title: 'Re-authenticate',
+      text: 'Enter your password to unlock developer diagnostics (15 minutes).',
+      input: 'password',
+      inputPlaceholder: 'Password',
+      showCancelButton: true,
+      confirmButtonText: 'Unlock',
+      confirmButtonColor: '#2563eb',
+    });
+    if (!password) return;
+    setReauthBusy(true);
+    try {
+      await api.post('/admin/developer/unlock', { password });
+      setUnlocked(true);
+      await showSuccess('Diagnostics unlocked.');
+      await loadOverview(false);
+    } catch (err) {
+      await showError(err.response?.data?.errors?.password?.[0] || err.response?.data?.message || 'Unlock failed.');
+    } finally {
+      setReauthBusy(false);
+    }
+  };
+
+  const requestSamples = async () => {
+    const ok = await confirmAction({
+      title: 'Load redacted samples?',
+      text: 'Samples are PII-redacted and still logged. Prefer health metadata when possible.',
+      confirmText: 'Yes, load redacted samples',
+    });
+    if (!ok) return;
+    await loadOverview(true);
+  };
+
+  if (!isDeveloper && !loading) {
+    return (
+      <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-xl p-8 text-center">
+        <Lock className="w-8 h-8 text-slate-400 mx-auto mb-3" />
+        <h2 className="text-lg font-semibold text-slate-800">Developer permission required</h2>
+        <p className="text-sm text-slate-500 mt-2">
+          Database Structure is a developer diagnostics tool. Standard owners cannot browse raw schema or samples without an elevated developer flag.
+        </p>
+      </div>
+    );
+  }
+
+  if (!unlocked || gateCode === 'developer_reauth_required') {
+    return (
+      <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-xl p-8 text-center">
+        <Lock className="w-8 h-8 text-amber-500 mx-auto mb-3" />
+        <h2 className="text-lg font-semibold text-slate-800">Re-authentication required</h2>
+        <p className="text-sm text-slate-500 mt-2 mb-4">
+          Even with developer permission, password re-entry is required before viewing diagnostics.
+        </p>
+        <button
+          type="button"
+          disabled={reauthBusy}
+          onClick={unlock}
+          className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg disabled:opacity-60"
+        >
+          {reauthBusy ? 'Unlocking…' : 'Re-enter password'}
+        </button>
+      </div>
+    );
+  }
 
   if (loading) {
     return (
@@ -32,8 +146,18 @@ export default function DatabaseStructure() {
           <h1 className="text-2xl font-bold text-slate-900">Database Structure</h1>
         </div>
         <p className="text-slate-500 text-sm">
-          {tables.length} tables · Multi-company ready · Role-based data access
+          {tables.length} tables · mode: {data?.mode || 'health'} · engine: {data?.schema_engine || '—'}
         </p>
+        <p className="text-xs text-amber-700 mt-1">{data?.samples_note}</p>
+        {!data?.include_samples && (
+          <button
+            type="button"
+            onClick={requestSamples}
+            className="mt-3 text-sm text-blue-600 hover:text-blue-800"
+          >
+            Request redacted sample rows…
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
@@ -53,7 +177,7 @@ export default function DatabaseStructure() {
               </span>
             </div>
             <p className="text-lg font-bold text-slate-800">{t.count ?? 0}</p>
-            <p className="text-xs text-slate-400">rows</p>
+            <p className="text-xs text-slate-400">rows · {t.health || 'ok'}</p>
           </button>
         ))}
       </div>
@@ -72,16 +196,12 @@ export default function DatabaseStructure() {
           </div>
 
           <div className="mb-4">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Columns</p>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Columns (metadata)</p>
             <div className="flex flex-wrap gap-2">
-              {tables[active].columns.map((col) => (
+              {(tables[active].columns || []).map((col) => (
                 <span
                   key={col}
-                  className={`text-xs px-2.5 py-1 rounded-full font-mono border ${
-                    col.includes('hidden') ? 'bg-red-50 border-red-200 text-red-700'
-                    : col === 'id' ? 'bg-slate-100 border-slate-300 text-slate-600'
-                    : 'bg-slate-50 border-slate-200 text-slate-700'
-                  }`}
+                  className="text-xs px-2.5 py-1 rounded-full font-mono border bg-slate-50 border-slate-200 text-slate-700"
                 >
                   {col}
                 </span>
@@ -117,7 +237,9 @@ export default function DatabaseStructure() {
 
           {tables[active].sample && (
             <div className="mt-4">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">Sample Record</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+                Sample Record {tables[active].sample_redacted ? '(PII redacted)' : ''}
+              </p>
               <pre className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-700 overflow-x-auto">
                 {JSON.stringify(tables[active].sample, null, 2)}
               </pre>

@@ -24,6 +24,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \App\Http\Middleware\RoleMiddleware::class,
             'public.brand' => \App\Http\Middleware\ResolvePublicBrand::class,
             'restrict.content_editor' => \App\Http\Middleware\RestrictContentEditor::class,
+            'active.user' => \App\Http\Middleware\EnsureActiveUser::class,
+            'developer' => \App\Http\Middleware\EnsureDeveloper::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

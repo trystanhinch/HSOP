@@ -83,6 +83,24 @@ export default function AdminDashboard() {
         {refreshed && <p>Last refreshed: {refreshed}</p>}
       </div>
 
+      {data.identity_readiness?.blocking && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium text-amber-900">Production legal identity incomplete</p>
+            <p className="text-sm text-amber-800 mt-1">
+              Missing: {(data.identity_readiness.missing || []).join(', ')}. Visible readiness flag — does not block the app.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigate('/settings')}
+            className="text-sm px-3 py-1.5 rounded-lg bg-amber-100 text-amber-900 hover:bg-amber-200"
+          >
+            Open Company settings
+          </button>
+        </div>
+      )}
+
       <section>
         <h3 className="text-sm font-semibold text-slate-700 mb-3">Pipeline</h3>
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">

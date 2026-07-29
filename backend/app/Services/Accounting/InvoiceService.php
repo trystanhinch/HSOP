@@ -14,10 +14,14 @@ class InvoiceService
 {
     public function __construct(private PricingService $pricing) {}
 
-    public function nextInvoiceNumber(): string
+    public function nextInvoiceNumber(?\App\Models\Company $company = null): string
     {
-        return DB::transaction(function () {
-            $format = Setting::get('invoice_number_format', config('payment.invoice.number_format', 'INV-{XXXX}'));
+        return DB::transaction(function () use ($company) {
+            $prefix = $company?->invoice_prefix
+                ? rtrim((string) $company->invoice_prefix, '-').'-{XXXX}'
+                : null;
+            $format = $prefix
+                ?? Setting::get('invoice_number_format', config('payment.invoice.number_format', 'INV-{XXXX}'));
             $next = (int) Setting::get('invoice_number_next', '1');
             $pad = (int) config('payment.invoice.number_pad', 4);
 
@@ -71,8 +75,10 @@ class InvoiceService
         }
 
         $source = $job->lead?->companySource;
+        $company = $job->company;
         $sourceName = $source?->company_name
-            ?? $job->company?->name
+            ?? $company?->operating_name
+            ?? $company?->name
             ?? null;
 
         // A-06/A-22: snapshot brand name at creation time; never overwritten by later brand edits.
@@ -85,7 +91,7 @@ class InvoiceService
             'customer_id' => $job->customer_id,
             'company_source_id' => $source?->id,
             'source_company' => $sourceName,
-            'invoice_number' => $this->nextInvoiceNumber(),
+            'invoice_number' => $this->nextInvoiceNumber($company),
             'scope_of_work' => $scope,
             'subtotal' => $subtotal,
             'gst' => $gst,

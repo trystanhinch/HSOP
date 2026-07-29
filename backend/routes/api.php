@@ -7,12 +7,14 @@ use App\Http\Controllers\Api\ActivityTimelineController;
 use App\Http\Controllers\Api\AiSettingsController;
 use App\Http\Controllers\Api\GmailOAuthController;
 use App\Http\Controllers\Api\MessageTemplateController;
+use App\Http\Controllers\Api\NotificationChannelController;
 use App\Http\Controllers\Api\WorkflowAssistController;
 use App\Http\Controllers\Api\CompanySourceController;
 use App\Http\Controllers\Api\PricingRuleController;
 use App\Http\Controllers\Api\CustomerPortalController;
 use App\Http\Controllers\Api\AdminUserController;
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\DeveloperUnlockController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CompanyController;
 use App\Http\Controllers\Api\ContractorLeadController;
@@ -70,7 +72,7 @@ Route::post('/portal/{token}/review', [\App\Http\Controllers\Api\ReviewFeedbackC
 Route::post('/portal/{token}/stripe/checkout', [\App\Http\Controllers\Api\StripeCheckoutController::class, 'portalCheckout']);
 Route::post('/stripe/webhook', \App\Http\Controllers\Api\StripeWebhookController::class);
 
-Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function () {
+Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('api.logout');
     Route::get('/me', [AuthController::class, 'me'])->name('api.me');
 
@@ -120,7 +122,10 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     Route::get('/dashboard/customer/summary', [DashboardController::class, 'customer'])->middleware('role:customer');
     Route::get('/dashboard/kpis', [DashboardController::class, 'kpis'])->middleware('role:owner');
 
-    Route::get('/admin/database-overview', [AdminController::class, 'databaseOverview'])->middleware('role:owner');
+    // A-23 — diagnostics require developer permission + password unlock (not mere owner).
+    Route::get('/admin/developer/status', [DeveloperUnlockController::class, 'status'])->middleware('role:owner');
+    Route::post('/admin/developer/unlock', [DeveloperUnlockController::class, 'unlock'])->middleware('role:owner');
+    Route::get('/admin/database-overview', [AdminController::class, 'databaseOverview'])->middleware(['role:owner', 'developer']);
     Route::get('/admin/test-data', [\App\Http\Controllers\Api\TestDataController::class, 'summary'])->middleware('role:owner');
     Route::post('/admin/test-data/dry-run', [\App\Http\Controllers\Api\TestDataController::class, 'dryRun'])->middleware('role:owner');
     Route::post('/admin/test-data/apply', [\App\Http\Controllers\Api\TestDataController::class, 'apply'])->middleware('role:owner');
@@ -344,6 +349,10 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
         Route::get('/message-templates', [MessageTemplateController::class, 'index']);
         Route::post('/message-templates', [MessageTemplateController::class, 'store']);
         Route::put('/message-templates/{messageTemplate}', [MessageTemplateController::class, 'update']);
+
+        Route::get('/notification-channels/health', [NotificationChannelController::class, 'health']);
+        Route::post('/notification-channels/test-sms', [NotificationChannelController::class, 'testSms']);
+        Route::post('/notification-channels/test-email', [NotificationChannelController::class, 'testEmail']);
     });
 
     Route::middleware('role:owner,pm')->group(function () {
@@ -369,7 +378,11 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
         Route::get('/users', [AdminUserController::class, 'index']);
         Route::post('/users', [AdminUserController::class, 'store']);
         Route::delete('/users/{user}', [AdminUserController::class, 'destroy']);
+        Route::post('/users/{user}/suspend', [AdminUserController::class, 'suspend']);
+        Route::post('/users/{user}/reactivate', [AdminUserController::class, 'reactivate']);
+        Route::post('/users/{user}/resend-invite', [AdminUserController::class, 'resendInvite']);
         Route::post('/users/{user}/reset-password', [AdminUserController::class, 'resetPassword']);
+        Route::post('/users/{user}/developer', [AdminUserController::class, 'setDeveloper']);
 
         Route::get('/pm-brand-assignments', [PmBrandAssignmentController::class, 'index']);
         Route::get('/pm-brand-assignments/{user}', [PmBrandAssignmentController::class, 'show']);

@@ -225,6 +225,7 @@ class DashboardMetricsService
             'total_pending_payouts' => ($ledger['contractor_liability'] ?? 0) + ($ledger['pm_liability'] ?? 0),
 
             'pipeline' => $pipeline,
+            'identity_readiness' => app(\App\Services\Company\CompanyIdentityService::class)->readiness(),
             'lead_status_counts' => $this->leadsQuery($brandId)
                 ->select('status', DB::raw('count(*) as total'))
                 ->groupBy('status')

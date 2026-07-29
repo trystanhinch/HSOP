@@ -12,12 +12,22 @@ class Company extends Model
 
     protected $fillable = [
         'name',
+        'legal_name',
+        'operating_name',
         'slug',
         'service_type',
         'email',
         'phone',
         'address',
+        'remittance_address',
+        'province',
+        'timezone',
+        'currency',
         'gst_number',
+        'gst_verification_status',
+        'invoice_prefix',
+        'public_contact_email',
+        'public_contact_phone',
         'is_active',
     ];
 
