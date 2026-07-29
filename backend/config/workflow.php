@@ -33,12 +33,18 @@ return [
     ],
 
     'job' => [
+        /*
+         | A-08: jobs.status is LIFECYCLE only.
+         | Activity (progress_updated / update_posted) is timeline + job_updates — never status.
+         | Payment (paid / paid_completed) is invoices + ledger (A-01) — never status.
+         | Enforced by App\Services\Workflow\JobLifecycleService.
+         */
         'canonical' => [
             'created', 'waiting_to_schedule', 'scheduled', 'in_progress',
-            'update_posted', 'completion_requested', 'revision_requested',
+            'completion_requested', 'revision_requested',
             'revision_in_progress', 'completion_accepted', 'closed',
         ],
-        // Full Milestone 3 set remains valid on the jobs table
+        // Full Milestone 3 set remains valid on the jobs table (legacy rows / transitions)
         'legacy' => [
             'new_job', 'contractor_assigned', 'site_visit_scheduled', 'site_visit_completed',
             'contractor_pricing_pending', 'quote_sent', 'estimate_sent', 'quote_approved',
@@ -46,12 +52,15 @@ return [
             'ready_for_review', 'pending_customer_approval', 'corrections_required',
             'completed_by_contractor', 'final_review', 'completed', 'payment_pending',
             'etransfer_pending_confirmation', 'paid_completed', 'invoiced', 'paid', 'cancelled',
+            'update_posted',
         ],
         'aliases' => [
             'new_job' => 'created',
             'quote_approved' => 'waiting_to_schedule',
             'estimate_accepted' => 'waiting_to_schedule',
-            'progress_updated' => 'update_posted',
+            // Activity aliases collapse to in_progress for customer labels / reporting
+            'progress_updated' => 'in_progress',
+            'update_posted' => 'in_progress',
             'pending_customer_approval' => 'completion_requested',
             'corrections_required' => 'revision_in_progress',
             'payment_pending' => 'completion_accepted',
@@ -66,6 +75,7 @@ return [
             'scheduled' => 'Scheduled',
             'in_progress' => 'Your project is underway',
             'update_posted' => 'Your project is underway',
+            'progress_updated' => 'Your project is underway',
             'completion_requested' => 'Work complete — please review',
             'revision_requested' => 'Revision requested',
             'revision_in_progress' => 'Revision in progress',
@@ -73,7 +83,6 @@ return [
             'closed' => 'Project closed',
             // legacy passthroughs
             'quote_approved' => 'Waiting to schedule',
-            'progress_updated' => 'Your project is underway',
             'pending_customer_approval' => 'Work complete — please review',
             'payment_pending' => 'Awaiting payment',
             'paid_completed' => 'Completed',

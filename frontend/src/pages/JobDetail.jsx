@@ -17,7 +17,13 @@ import EventTimeline from '../components/EventTimeline';
 
 const roleLabel = { owner: 'Admin', pm: 'PM', contractor: 'Contractor', customer: 'Customer' };
 
-const jobStatuses = ['new_job','contractor_assigned','site_visit_scheduled','quote_sent','quote_approved','scheduled','in_progress','progress_updated','waiting_on_customer','ready_for_review','pending_customer_approval','corrections_required','revision_requested','payment_pending','etransfer_pending_confirmation','paid_completed','completed','invoiced','paid','cancelled'];
+const jobStatuses = [
+  'new_job', 'contractor_assigned', 'site_visit_scheduled', 'quote_sent', 'quote_approved',
+  'waiting_to_schedule', 'scheduled', 'in_progress', 'waiting_on_customer', 'ready_for_review',
+  'pending_customer_approval', 'corrections_required', 'revision_requested', 'revision_in_progress',
+  'payment_pending', 'completed', 'cancelled',
+];
+// A-08: progress_updated / paid / paid_completed are not selectable lifecycle statuses.
 
 function formatCategory(cat) {
   return (cat || '').replace(/_/g, ' ');
@@ -80,9 +86,9 @@ export default function JobDetail() {
   const isContractor = user?.role === 'contractor';
   const isMyJob = Number(job?.contractor_id) === Number(user?.id);
   const canPostUpdate = job && ((isContractor && isMyJob) || canManage)
-    && !['cancelled', 'paid_completed'].includes(job.status);
+    && !['cancelled', 'completed', 'closed', 'paid_completed', 'paid'].includes(job.status);
   const canMarkComplete = isContractor && isMyJob
-    && ['in_progress', 'scheduled', 'contractor_assigned', 'progress_updated', 'revision_requested', 'corrections_required'].includes(job?.status);
+    && ['in_progress', 'scheduled', 'contractor_assigned', 'progress_updated', 'update_posted', 'revision_requested', 'corrections_required', 'revision_in_progress'].includes(job?.status);
   const needsPricing = job && ['pending', 'not_requested', null, undefined].includes(job.contractor_price_status);
   const priceSubmitted = job?.contractor_price_status === 'submitted';
   const priceApproved = job?.contractor_price_status === 'approved';

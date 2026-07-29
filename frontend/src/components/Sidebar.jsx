@@ -103,7 +103,10 @@ export default function Sidebar({ onNavClick }) {
               <Icon size={18} />
               <span className="flex-1">{item.label}</span>
               {item.label === 'Leads' && reviewCount > 0 && (
-                <span className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center">
+                <span
+                  title="Needs Review: production leads with needs_manual_review=true (same as Admin Dashboard)"
+                  className="bg-amber-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[1.25rem] text-center"
+                >
                   {reviewCount}
                 </span>
               )}

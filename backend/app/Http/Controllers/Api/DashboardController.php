@@ -8,65 +8,24 @@ use App\Models\Job;
 use App\Models\Lead;
 use App\Models\Payout;
 use App\Models\Quote;
-use App\Models\SiteVisit;
+use App\Services\Dashboard\DashboardMetricsService;
+use App\Services\Workflow\JobLifecycleService;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
+use Illuminate\Http\Request;
 
 class DashboardController extends Controller
 {
-    public function admin(): JsonResponse
+    public function __construct(
+        protected DashboardMetricsService $metrics,
+    ) {}
+
+    public function admin(Request $request): JsonResponse
     {
-        $ledger = app(\App\Services\Finance\FinancialLedgerService::class)->summary();
+        $filters = array_filter([
+            'brand_id' => $request->query('brand_id'),
+        ], fn ($v) => $v !== null && $v !== '');
 
-        return response()->json([
-            'new_leads' => Lead::productionOnly()->where('status', 'new')->count(),
-            'leads_needing_review' => Lead::productionOnly()->where('needs_manual_review', true)->count(),
-            'leads_needing_followup' => Lead::productionOnly()->where('status', 'contacted')->where('updated_at', '<', now()->subDays(2))->count(),
-            'jobs_awaiting_price' => Job::productionOnly()->where('contractor_price_status', 'pending')->count(),
-            'quotes_needing_review' => Quote::productionOnly()->where('status', 'draft')->count(),
-            'quotes_sent' => Quote::productionOnly()->where('status', 'sent')->count(),
-            'approved_needing_schedule' => Job::productionOnly()->where('status', 'quote_approved')->count(),
-            'scheduled_jobs' => Job::productionOnly()->where('status', 'scheduled')->count(),
-            'jobs_in_progress' => Job::productionOnly()->where('status', 'in_progress')->count(),
-            'jobs_ready_for_review' => Job::productionOnly()->where('status', 'ready_for_review')->count(),
-            'pending_approval' => Job::productionOnly()->where('status', 'pending_customer_approval')->count(),
-            'revision_requested' => Job::productionOnly()->where('status', 'revision_requested')->count(),
-            'payment_pending' => Job::productionOnly()->where('status', 'payment_pending')->count(),
-            'etransfer_to_confirm' => Job::productionOnly()->where('status', 'etransfer_pending_confirmation')->count(),
-            'compliance_pending_review' => \App\Models\ContractorDocument::where('status', 'pending_review')->count(),
-            'site_visits_today' => \App\Models\SiteVisit::productionOnly()->where('visit_date', today())->count(),
-            'site_visits_this_week' => \App\Models\SiteVisit::productionOnly()->whereBetween('visit_date', [now()->startOfWeek(), now()->endOfWeek()])->count(),
-            'completed_jobs' => Job::productionOnly()->whereIn('status', ['completed', 'paid_completed'])->count(),
-            'jobs_awaiting_payment' => $ledger['counts']['unpaid_invoices'],
-            'payouts_pending' => $ledger['counts']['open_payouts'],
-
-            'total_leads' => Lead::productionOnly()->count(),
-            'active_jobs' => Job::productionOnly()->whereIn('status', ['new_job', 'contractor_assigned', 'quote_sent', 'quote_approved', 'scheduled', 'in_progress', 'ready_for_review'])->count(),
-            'total_contractors' => app(\App\Services\Contractors\ContractorDirectoryService::class)->directoryCount(),
-            'total_customers' => \App\Models\User::productionOnly()->where('role', 'customer')->count(),
-
-            'projected_profit_month' => $ledger['projected_profit_month'],
-            'projected_profit_all_time' => $ledger['projected_profit'],
-            'realized_profit_month' => $ledger['realized_profit_month'],
-            'realized_profit_all_time' => $ledger['realized_profit'],
-            'total_collected_revenue' => $ledger['collected_revenue'],
-            'accounts_receivable' => $ledger['accounts_receivable'],
-            'gst_collected' => $ledger['gst_collected'],
-            'incomplete_cost_quote_count' => $ledger['incomplete_cost_quote_count'],
-            'financial_refreshed_at' => $ledger['refreshed_at'],
-            'financial_filters' => $ledger['filters'],
-            'financial_labels' => $ledger['labels'],
-
-            // Deprecated aliases — same ledger values
-            'total_profit_month' => $ledger['projected_profit_month'],
-            'total_profit_all_time' => $ledger['projected_profit'],
-            'revenue_month' => $ledger['collected_revenue'],
-            'total_pending_payouts' => $ledger['contractor_liability'] + $ledger['pm_liability'],
-
-            'lead_status_counts' => Lead::productionOnly()->select('status', DB::raw('count(*) as total'))->groupBy('status')->get(),
-            'recent_leads' => Lead::productionOnly()->with(['assignedPm:id,name', 'company:id,name'])->latest()->take(8)->get(),
-            'recent_jobs' => Job::productionOnly()->with(['customer:id,name', 'contractor:id,name', 'pm:id,name'])->latest()->take(8)->get(),
-        ]);
+        return response()->json($this->metrics->adminKpis($filters));
     }
 
     public function pm(): JsonResponse
@@ -122,14 +81,17 @@ class DashboardController extends Controller
             ->get();
 
         $approvedNeedingSchedule = Job::where('pm_id', $id)
-            ->whereIn('status', ['quote_approved', 'waiting_to_schedule', 'estimate_accepted'])
+            ->whereIn('status', JobLifecycleService::NEEDS_SCHEDULE_STATUSES)
             ->with(['customer:id,name'])
             ->latest()
             ->take(10)
             ->get(['id', 'address', 'status', 'customer_id']);
 
         $missingUpdates = Job::where('pm_id', $id)
-            ->whereIn('status', ['in_progress', 'progress_updated', 'update_posted', 'scheduled'])
+            ->whereIn('status', array_values(array_unique([
+                ...JobLifecycleService::IN_PROGRESS_STATUSES,
+                'scheduled',
+            ])))
             ->whereDoesntHave('updates', fn ($q) => $q->where('created_at', '>=', now()->subDays($missingDays)))
             ->with(['customer:id,name'])
             ->take(10)
@@ -157,14 +119,19 @@ class DashboardController extends Controller
             ->take(10)
             ->get();
 
+        $activeJobs = $this->metrics->countPmActiveJobs($id);
+        $inProgress = $this->metrics->countPmInProgress($id);
+        $quotesToSend = Quote::where('status', 'draft')->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count();
+
         return response()->json([
             'my_leads' => Lead::where('assigned_pm_id', $id)->whereNotIn('status', ['converted', 'disqualified', 'lost'])->count(),
-            'my_active_jobs' => Job::where('pm_id', $id)->whereIn('status', ['new_job', 'created', 'contractor_assigned', 'in_progress', 'scheduled', 'ready_for_review', 'update_posted', 'waiting_to_schedule'])->count(),
-            'active_jobs' => Job::where('pm_id', $id)->whereIn('status', ['new_job', 'created', 'contractor_assigned', 'in_progress', 'scheduled', 'update_posted'])->count(),
-            'quotes_to_send' => Quote::where('status', 'draft')->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count(),
-            'pending_quotes' => Quote::where('status', 'draft')->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count(),
+            // A-09: single active definition (same ACTIVE set as admin, PM-scoped)
+            'my_active_jobs' => $activeJobs,
+            'active_jobs' => $activeJobs,
+            'quotes_to_send' => $quotesToSend,
+            'pending_quotes' => $quotesToSend,
             'awaiting_approval' => Quote::whereIn('status', ['sent', 'viewed', 'follow_up'])->whereHas('job', fn ($q) => $q->where('pm_id', $id))->count(),
-            'jobs_in_progress' => Job::where('pm_id', $id)->whereIn('status', ['in_progress', 'update_posted', 'progress_updated'])->count(),
+            'jobs_in_progress' => $inProgress,
             'jobs_needing_quote_approval' => Job::where('pm_id', $id)
                 ->where('contractor_price_status', 'submitted')
                 ->with(['customer:id,name'])
@@ -187,7 +154,6 @@ class DashboardController extends Controller
                 ->with(['job:id,address', 'postedBy:id,name,role'])
                 ->latest()->take(5)->get(),
 
-            // Phase 3 workflow sections
             'customers_needing_contact' => $contactNeeded,
             'scheduled_calls_and_visits' => $scheduledCalls,
             'contractor_pricing_waiting' => $pricingWaiting,
@@ -199,6 +165,16 @@ class DashboardController extends Controller
             'customer_feedback_follow_up' => $feedbackFollowUp,
             'payout_status_note' => 'Payout eligibility + scheduling live (Stripe transfer still mocked until keys).',
             'workflow_thresholds' => app(\App\Services\Workflow\WorkflowSettings::class)->all(),
+            'refreshed_at' => now()->toIso8601String(),
+            'filters' => [
+                'pm_id' => $id,
+                'date_range' => 'all_time',
+                'scope' => 'pm_assigned',
+            ],
+            'metric_definitions' => [
+                'active_jobs' => $this->metrics->definitions()['active_jobs'],
+                'jobs_in_progress' => $this->metrics->definitions()['jobs_in_progress'],
+            ],
         ]);
     }
 
@@ -213,8 +189,9 @@ class DashboardController extends Controller
 
         return response()->json([
             'assigned_jobs' => $jobs->count(),
-            'active_jobs' => $jobs->where('status', 'in_progress')->count(),
-            'upcoming_jobs' => $jobs->whereIn('status', ['scheduled', 'contractor_assigned'])->count(),
+            // A-09: same in-progress bucket as admin/PM
+            'active_jobs' => $this->metrics->countContractorActiveJobs($id),
+            'upcoming_jobs' => $jobs->whereIn('status', ['scheduled', 'contractor_assigned', 'start_date_scheduled'])->count(),
             'needs_pricing' => $jobs->where('contractor_price_status', 'pending')->count(),
             'pending_payout' => (float) Payout::where('contractor_id', $id)
                 ->whereIn('status', ['pending', 'ready_for_payout', 'approved'])
@@ -246,6 +223,7 @@ class DashboardController extends Controller
                 })
                 ->with(['sender:id,name,role', 'job:id,address', 'lead:id,contact_name,address'])
                 ->latest()->take(5)->get(),
+            'refreshed_at' => now()->toIso8601String(),
         ]);
     }
 
@@ -259,7 +237,10 @@ class DashboardController extends Controller
             'quotes' => Quote::where('customer_id', $id)
                 ->with('job:id,address,service_category,status')
                 ->get(['id', 'job_id', 'customer_total', 'gst', 'customer_price_before_gst', 'subtotal', 'status', 'sent_at', 'accepted_at', 'customer_token', 'quote_number']),
-            'active_jobs' => Job::where('customer_id', $id)->whereNotIn('status', ['completed', 'cancelled', 'paid'])->get(),
+            // A-08: exclude completed lifecycle bucket (payment is invoice-side)
+            'active_jobs' => Job::where('customer_id', $id)
+                ->whereNotIn('status', array_merge(JobLifecycleService::COMPLETED_STATUSES, ['cancelled']))
+                ->get(),
             'jobs' => Job::where('customer_id', $id)->get(['id', 'address', 'service_category', 'status', 'scheduled_start_date', 'scheduled_end_date', 'estimated_completion_date']),
             'invoices' => Invoice::where('customer_id', $id)->get(),
             'recent_updates' => \App\Models\JobUpdate::where('visibility', 'customer_visible')
@@ -293,8 +274,8 @@ class DashboardController extends Controller
         return $status;
     }
 
-    public function kpis(): JsonResponse
+    public function kpis(Request $request): JsonResponse
     {
-        return $this->admin();
+        return $this->admin($request);
     }
 }

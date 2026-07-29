@@ -78,7 +78,37 @@ class JobController extends Controller
 
         if ($request->status && $request->status !== 'All') {
             $status = str_replace(' ', '_', strtolower($request->status));
-            $query->where('status', $status);
+            $expanded = app(\App\Services\Workflow\JobLifecycleService::class)->expandFilterStatus($status);
+            if (count($expanded) === 1) {
+                $query->where('status', $expanded[0]);
+            } else {
+                $query->whereIn('status', $expanded);
+            }
+        }
+
+        if ($request->status_in) {
+            $parts = is_array($request->status_in)
+                ? $request->status_in
+                : preg_split('/\s*,\s*/', (string) $request->status_in);
+            $expanded = [];
+            $lifecycle = app(\App\Services\Workflow\JobLifecycleService::class);
+            foreach ($parts as $part) {
+                if ($part === '' || $part === null) {
+                    continue;
+                }
+                $expanded = array_merge($expanded, $lifecycle->expandFilterStatus((string) $part));
+            }
+            if ($expanded !== []) {
+                $query->whereIn('status', array_values(array_unique($expanded)));
+            }
+        }
+
+        if ($request->contractor_price_status) {
+            $query->where('contractor_price_status', $request->contractor_price_status);
+        }
+
+        if ($request->brand_id) {
+            $query->whereHas('lead', fn ($lq) => $lq->where('brand_id', $request->brand_id));
         }
 
         if ($request->q) {
@@ -133,7 +163,19 @@ class JobController extends Controller
         }
 
         if ($request->status) {
-            $query->where('status', $request->status);
+            $expanded = app(\App\Services\Workflow\JobLifecycleService::class)
+                ->expandFilterStatus((string) $request->status);
+            if (count($expanded) === 1) {
+                $query->where('status', $expanded[0]);
+            } else {
+                $query->whereIn('status', $expanded);
+            }
+        }
+        if ($request->contractor_price_status) {
+            $query->where('contractor_price_status', $request->contractor_price_status);
+        }
+        if ($request->brand_id) {
+            $query->whereHas('lead', fn ($lq) => $lq->where('brand_id', $request->brand_id));
         }
         if ($request->contractor_id) {
             $query->where('contractor_id', $request->contractor_id);
@@ -240,7 +282,23 @@ class JobController extends Controller
             'contractor_submitted_price' => 'nullable|numeric|min:0',
         ]);
 
-        $job->update($data);
+        $status = $data['status'] ?? null;
+        unset($data['status']);
+
+        if ($status !== null && $status !== '') {
+            try {
+                app(\App\Services\Workflow\JobLifecycleService::class)
+                    ->transition($job, $status, $data, 'manual_job_update');
+            } catch (\InvalidArgumentException $e) {
+                return response()->json(['message' => $e->getMessage()], 422);
+            }
+
+            return response()->json($job->fresh());
+        }
+
+        if ($data !== []) {
+            $job->update($data);
+        }
 
         return response()->json($job->fresh());
     }
@@ -527,7 +585,10 @@ class JobController extends Controller
             abort(403);
         }
 
-        if (! in_array($job->status, ['in_progress', 'progress_updated', 'scheduled', 'contractor_assigned', 'revision_requested', 'corrections_required'], true)) {
+        if (! in_array($job->status, [
+            'in_progress', 'progress_updated', 'update_posted', 'scheduled',
+            'contractor_assigned', 'revision_requested', 'corrections_required', 'revision_in_progress',
+        ], true)) {
             return response()->json(['message' => 'Job cannot be marked complete in its current status.'], 422);
         }
 
@@ -540,14 +601,17 @@ class JobController extends Controller
             'materials_used.*.note' => 'nullable|string|max:255',
         ]);
 
-        $job->update([
-            'status' => 'pending_customer_approval',
-            'pending_customer_approval_at' => now(),
-            'actual_labour_hours' => $data['actual_labour_hours'] ?? $job->actual_labour_hours,
-            'materials_used' => array_key_exists('materials_used', $data)
-                ? $data['materials_used']
-                : $job->materials_used,
-        ]);
+        try {
+            app(\App\Services\Workflow\JobLifecycleService::class)->transition($job, 'pending_customer_approval', [
+                'pending_customer_approval_at' => now(),
+                'actual_labour_hours' => $data['actual_labour_hours'] ?? $job->actual_labour_hours,
+                'materials_used' => array_key_exists('materials_used', $data)
+                    ? $data['materials_used']
+                    : $job->materials_used,
+            ], 'contractor_complete');
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
 
         $this->timeline->record(
             $job,
@@ -791,14 +855,27 @@ class JobController extends Controller
         $this->ensureInvoiceForJob($job);
         $job->refresh();
 
-        $job->update([
-            'status' => 'paid_completed',
-            'payment_confirmed_at' => now(),
-            'payment_confirmed_by' => auth()->id(),
-            'payment_reference' => $request->payment_reference,
-            'payment_method' => 'e_transfer',
-            'completed_at' => now(),
-        ]);
+        // A-08: payment confirmation updates lifecycle to completed; Paid lives on the invoice (A-01).
+        try {
+            app(\App\Services\Workflow\JobLifecycleService::class)->transition($job, 'completed', [
+                'payment_confirmed_at' => now(),
+                'payment_confirmed_by' => auth()->id(),
+                'payment_reference' => $request->payment_reference,
+                'payment_method' => 'e_transfer',
+                'completed_at' => now(),
+            ], 'owner_confirm_payment');
+        } catch (\InvalidArgumentException $e) {
+            // Already completed / closed — still stamp payment metadata.
+            $job->update([
+                'payment_confirmed_at' => now(),
+                'payment_confirmed_by' => auth()->id(),
+                'payment_reference' => $request->payment_reference,
+                'payment_method' => 'e_transfer',
+                'completed_at' => $job->completed_at ?? now(),
+            ]);
+        }
+
+        $job->refresh();
 
         if ($job->invoice && $job->invoice->status !== 'paid') {
             $owner = auth()->user();
@@ -842,7 +919,7 @@ class JobController extends Controller
             'action_type' => 'payment_confirmed',
         ]);
 
-        return response()->json(['message' => 'Payment confirmed. Job marked as Paid/Completed.']);
+        return response()->json(['message' => 'Payment confirmed. Invoice marked paid; job lifecycle set to Completed.']);
     }
 
     public function paymentDetails(Job $job): JsonResponse
@@ -907,7 +984,17 @@ class JobController extends Controller
             abort(403, 'Only the assigned contractor can mark this job ready for review.');
         }
 
-        $job->update(['status' => 'ready_for_review', 'ready_for_review_at' => now()]);
+        try {
+            app(\App\Services\Workflow\JobLifecycleService::class)->transition(
+                $job,
+                'ready_for_review',
+                ['ready_for_review_at' => now()],
+                'mark_ready_for_review'
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
         $this->notifications->audit('marked_ready_for_review', 'job', $job->id);
         $this->notifications->readyForReview($job->fresh());
 
@@ -922,7 +1009,17 @@ class JobController extends Controller
 
         $this->authz->assertJobAccess(auth()->user(), $job);
 
-        $job->update(['status' => 'completed', 'completed_at' => now()]);
+        try {
+            app(\App\Services\Workflow\JobLifecycleService::class)->transition(
+                $job,
+                'completed',
+                ['completed_at' => now()],
+                'mark_complete'
+            );
+        } catch (\InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
         $this->notifications->audit('marked_complete', 'job', $job->id);
         $this->notifications->jobComplete($job->fresh());
         $this->payouts->syncPayoutReadiness($job->fresh(['invoice']));

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Trash2 } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
@@ -13,10 +13,12 @@ const adminPmStatusChips = [
   { label: 'New', value: 'new_job' },
   { label: 'Contractor Assigned', value: 'contractor_assigned' },
   { label: 'Quote Sent', value: 'quote_sent' },
-  { label: 'Quote Approved', value: 'quote_approved' },
+  { label: 'Needs Schedule', value: 'needs_schedule' },
   { label: 'Scheduled', value: 'scheduled' },
   { label: 'In Progress', value: 'in_progress' },
-  { label: 'Ready for Review', value: 'ready_for_review' },
+  { label: 'Ready for Review', value: 'completion_pending' },
+  { label: 'Revisions', value: 'revision_requested' },
+  { label: 'Active', value: 'active' },
   { label: 'Completed', value: 'completed' },
   { label: 'Cancelled', value: 'cancelled' },
 ];
@@ -41,24 +43,38 @@ function needsPrice(item) {
 export default function Jobs() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const isContractor = user?.role === 'contractor';
   const isPm = user?.role === 'pm';
   const isOwner = user?.role === 'owner';
 
   const [jobs, setJobs] = useState([]);
   const [allContractorJobs, setAllContractorJobs] = useState([]);
-  const [activeTab, setActiveTab] = useState('');
-  const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const initialStatus = searchParams.get('status') || '';
+  const [activeTab, setActiveTab] = useState(initialStatus);
+  const [search, setSearch] = useState(searchParams.get('q') || '');
+  const [statusFilter, setStatusFilter] = useState(initialStatus);
   const [contractorId, setContractorId] = useState('');
   const [pmId, setPmId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [paymentStatus, setPaymentStatus] = useState('');
   const [payoutStatus, setPayoutStatus] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const [priceStatus, setPriceStatus] = useState(searchParams.get('contractor_price_status') || '');
+  const [brandId, setBrandId] = useState(searchParams.get('brand_id') || '');
+  const [showFilters, setShowFilters] = useState(Boolean(searchParams.get('contractor_price_status') || searchParams.get('brand_id')));
   const [contractors, setContractors] = useState([]);
   const [pms, setPms] = useState([]);
+
+  useEffect(() => {
+    const s = searchParams.get('status') || '';
+    const cps = searchParams.get('contractor_price_status') || '';
+    const b = searchParams.get('brand_id') || '';
+    setActiveTab(s);
+    setStatusFilter(s);
+    setPriceStatus(cps);
+    setBrandId(b);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!isContractor) {
@@ -86,14 +102,25 @@ export default function Jobs() {
     if (dateTo) params.date_to = dateTo;
     if (paymentStatus) params.payment_status = paymentStatus;
     if (payoutStatus) params.payout_status = payoutStatus;
+    if (priceStatus) params.contractor_price_status = priceStatus;
+    if (brandId) params.brand_id = brandId;
 
-    const hasAdvanced = contractorId || pmId || dateFrom || dateTo || paymentStatus || payoutStatus || search;
+    const hasAdvanced = contractorId || pmId || dateFrom || dateTo || paymentStatus || payoutStatus || search || priceStatus || brandId;
     const endpoint = !isContractor && hasAdvanced ? '/jobs/search' : '/jobs';
 
     api.get(endpoint, { params }).then(({ data }) => setJobs(data.data || data)).catch(() => setJobs([]));
   };
 
-  useEffect(() => { loadJobs(); }, [activeTab, isContractor]);
+  useEffect(() => { loadJobs(); }, [activeTab, isContractor, priceStatus, brandId]);
+
+  const setLifecycleTab = (value) => {
+    setActiveTab(value);
+    setStatusFilter(value);
+    const next = new URLSearchParams(searchParams);
+    if (value) next.set('status', value);
+    else next.delete('status');
+    setSearchParams(next);
+  };
 
   const statusChips = isContractor ? contractorStatusChips : adminPmStatusChips;
 
@@ -151,7 +178,7 @@ export default function Jobs() {
             <button
               key={label}
               type="button"
-              onClick={() => setActiveTab(value)}
+              onClick={() => setLifecycleTab(value)}
               className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
                 activeTab === value ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
               }`}
@@ -272,7 +299,7 @@ export default function Jobs() {
       </div>
       <div className="flex flex-wrap gap-2 mb-4">
         {statusChips.map(({ label, value }) => (
-          <button key={label} type="button" onClick={() => { setActiveTab(value); setStatusFilter(''); }}
+          <button key={label} type="button" onClick={() => setLifecycleTab(value)}
             className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
               activeTab === value && !statusFilter ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
             }`}>
@@ -280,6 +307,22 @@ export default function Jobs() {
           </button>
         ))}
       </div>
+      {(priceStatus || brandId) && (
+        <p className="text-xs text-slate-500 mb-3">
+          Active list filters:
+          {priceStatus ? ` contractor_price_status=${priceStatus}` : ''}
+          {brandId ? ` brand_id=${brandId}` : ''}
+          {' · '}
+          <button type="button" className="text-blue-600 underline" onClick={() => {
+            setPriceStatus('');
+            setBrandId('');
+            const next = new URLSearchParams(searchParams);
+            next.delete('contractor_price_status');
+            next.delete('brand_id');
+            setSearchParams(next);
+          }}>Clear</button>
+        </p>
+      )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">

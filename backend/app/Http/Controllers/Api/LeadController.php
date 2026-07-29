@@ -62,6 +62,10 @@ class LeadController extends Controller
             $query->where('company_id', $request->company_id);
         }
 
+        if ($request->brand_id) {
+            $query->where('brand_id', $request->brand_id);
+        }
+
         if ($request->needs_review === 'true') {
             $query->where('needs_manual_review', true);
         }
@@ -86,7 +90,8 @@ class LeadController extends Controller
         }
 
         return response()->json([
-            'count' => Lead::where('needs_manual_review', true)->count(),
+            'count' => app(\App\Services\Dashboard\DashboardMetricsService::class)->countLeadsNeedingReview(),
+            'definition' => 'productionOnly leads where needs_manual_review = true (same as Admin Dashboard "Needs Review")',
             'quarantine_pending' => \App\Models\IntakeQuarantine::query()->where('status', 'pending')->count(),
         ]);
     }

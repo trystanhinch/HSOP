@@ -82,7 +82,8 @@ class InvoicePaymentService
             ]);
 
             if ($fullyPaid && $invoice->job) {
-                $invoice->job->update(['status' => 'paid']);
+                // A-08 / A-01: payment state lives on the invoice/ledger — never write "paid" onto jobs.status.
+                app(\App\Services\Workflow\JobLifecycleService::class)->onInvoiceFullyPaid($invoice->job);
                 $this->eligibility->evaluateForJob($invoice->job->fresh([
                     'invoice', 'quote', 'revisionRequests', 'contractor', 'pm', 'lead.companySource',
                 ]));

@@ -50,10 +50,13 @@ export default function PMDashboard() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard title="My Leads" value={data.my_leads} icon={Users} color="#3B82F6" to="/leads" />
-        <KPICard title="My Active Jobs" value={data.active_jobs} icon={Briefcase} color="#22C55E" to="/jobs" />
+        <KPICard title="My Active Jobs" value={data.active_jobs} icon={Briefcase} color="#22C55E" to="/jobs?status=active" />
         <KPICard title="Quotes to Send" value={data.pending_quotes} icon={FileText} color="#EAB308" to="/quotes?status=draft" />
         <KPICard title="Awaiting Approval" value={data.awaiting_approval} icon={Clock} color="#8B5CF6" to="/quotes?status=sent" />
       </div>
+      {data.refreshed_at && (
+        <p className="text-xs text-slate-400">Last refreshed: {new Date(data.refreshed_at).toLocaleString()} · scope: my assigned jobs</p>
+      )}
 
       <div className="flex flex-wrap gap-3">
         <Link to="/leads" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700">+ New Lead</Link>

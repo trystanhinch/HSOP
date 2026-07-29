@@ -127,17 +127,15 @@ class JobUpdateController extends Controller
                 return $update;
             });
 
-            if (in_array($job->status, ['scheduled', 'contractor_assigned', 'created', 'waiting_to_schedule'], true)) {
-                $job->update(['status' => 'in_progress']);
-                $this->performance->onJobStarted($job->fresh());
-                if ($user->role === 'contractor') {
-                    $this->performance->onContractorFirstAction($job->fresh(), 'progress_update');
-                }
-            } elseif (in_array($job->status, ['in_progress', 'progress_updated', 'update_posted'], true)) {
-                $job->update(['status' => 'progress_updated']);
-                if ($user->role === 'contractor') {
-                    $this->performance->onContractorFirstAction($job->fresh(), 'progress_update');
-                }
+            // A-08: progress notes/photos are activity (job_updates + timeline), never jobs.status.
+            // Only advance Scheduled → In Progress when work actually starts.
+            $beforeStatus = (string) $job->status;
+            $job = app(\App\Services\Workflow\JobLifecycleService::class)->onProgressPosted($job);
+            if ($beforeStatus !== (string) $job->status && $job->status === 'in_progress') {
+                $this->performance->onJobStarted($job);
+            }
+            if ($user->role === 'contractor') {
+                $this->performance->onContractorFirstAction($job->fresh(), 'progress_update');
             }
 
             $this->timeline->record(
