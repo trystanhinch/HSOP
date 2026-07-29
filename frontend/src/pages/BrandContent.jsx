@@ -21,6 +21,10 @@ const emptyLocationForm = () => ({
   seo_title: '',
   seo_description: '',
   status: 'draft',
+  canonical_url: '',
+  robots_noindex: false,
+  sitemap_include: true,
+  sections_json: '[]',
 });
 
 const emptyPageForm = () => ({
@@ -32,7 +36,27 @@ const emptyPageForm = () => ({
   seo_title: '',
   seo_description: '',
   status: 'draft',
+  canonical_url: '',
+  robots_noindex: false,
+  sitemap_include: true,
 });
+
+const WORKFLOW_LABELS = {
+  draft: 'Draft',
+  review: 'In review',
+  approved: 'Approved',
+  scheduled: 'Scheduled',
+  published: 'Published',
+};
+
+function pageKeyLabel(page) {
+  if (page?.label) return page.label;
+  const key = page?.page_key || page || '';
+  if (key === 'home') return 'Home page';
+  if (key === 'quote') return 'Quote page';
+  if (String(key).startsWith('service:')) return `Service: ${String(key).slice(8)}`;
+  return key;
+}
 
 /**
  * Agency-scoped brand content editor.
@@ -327,6 +351,13 @@ export default function BrandContent() {
 
   const saveLocation = async (e) => {
     e.preventDefault();
+    let sections = [];
+    try {
+      sections = locationForm.sections_json ? JSON.parse(locationForm.sections_json) : [];
+    } catch {
+      await showError('Sections must be valid JSON (array of {type, title, items}).');
+      return;
+    }
     const payload = {
       city_name: locationForm.city_name,
       region: locationForm.region || null,
@@ -336,23 +367,58 @@ export default function BrandContent() {
         body: locationForm.body,
         cta_label: locationForm.cta_label,
       },
+      sections,
       seo_title: locationForm.seo_title || null,
       seo_description: locationForm.seo_description || null,
-      status: locationForm.status,
+      canonical_url: locationForm.canonical_url || null,
+      robots_noindex: !!locationForm.robots_noindex,
+      sitemap_include: locationForm.sitemap_include !== false,
+      status: 'draft',
     };
     try {
       if (editingLocationId) {
         const { data } = await api.put(`/brand-content/locations/${editingLocationId}`, payload);
         setLocations((prev) => prev.map((row) => (row.id === editingLocationId ? data.location : row)));
+        await showSuccess('Location saved as draft. Use workflow to submit / publish.');
       } else {
         const { data } = await api.post('/brand-content/locations', payload);
         setLocations((prev) => [...prev, data.location].sort((a, b) => a.city_name.localeCompare(b.city_name)));
+        setEditingLocationId(data.location.id);
+        setLocationForm((prev) => ({ ...prev, status: 'draft', slug: data.location.slug }));
+        await showSuccess('Location created as draft.');
       }
-      setLocationForm(emptyLocationForm());
-      setEditingLocationId(null);
-      await showSuccess(editingLocationId ? 'Location updated.' : 'Location created.');
     } catch (err) {
       await showError(err.response?.data?.message || 'Failed to save location page.');
+    }
+  };
+
+  const runLocationWorkflow = async (id, action, extra = {}) => {
+    try {
+      const { data } = await api.post(`/brand-content/locations/${id}/workflow`, { action, ...extra });
+      setLocations((prev) => prev.map((row) => (row.id === id ? data.location : row)));
+      if (editingLocationId === id) {
+        setLocationForm((prev) => ({ ...prev, status: data.location.status }));
+      }
+      await showSuccess(`Now ${WORKFLOW_LABELS[data.to] || data.to}. Preview matches publish payload.`);
+      return data;
+    } catch (err) {
+      const body = err.response?.data;
+      if (body?.duplicate_warning) {
+        const ok = window.confirm(`${body.message}\n\nPublish anyway?`);
+        if (ok) return runLocationWorkflow(id, action, { ...extra, acknowledge_duplicate: true });
+        return null;
+      }
+      await showError(body?.message || 'Workflow action failed.');
+      return null;
+    }
+  };
+
+  const previewLocation = async (id) => {
+    try {
+      const { data } = await api.get(`/brand-content/locations/${id}/preview`);
+      await showSuccess(`Preview OK — ${data.preview?.city_name || ''} (same shape as public).`);
+    } catch (err) {
+      await showError(err.response?.data?.message || 'Preview failed.');
     }
   };
 
@@ -368,6 +434,10 @@ export default function BrandContent() {
       seo_title: row.seo_title || '',
       seo_description: row.seo_description || '',
       status: row.status || 'draft',
+      canonical_url: row.canonical_url || '',
+      robots_noindex: !!row.robots_noindex,
+      sitemap_include: row.sitemap_include !== false,
+      sections_json: JSON.stringify(row.sections || [], null, 2),
     });
   };
 
@@ -676,11 +746,11 @@ export default function BrandContent() {
 
         <section>
           <h2 className="text-sm font-semibold text-slate-800 uppercase tracking-wide mb-3">Per-page SEO overrides</h2>
-          <p className="text-xs text-slate-500 mb-3">Leave blank to use the brand-level SEO defaults above. No schema or redirects are managed here.</p>
+          <p className="text-xs text-slate-500 mb-3">Brand-level SEO defaults. Technical fields (canonical, redirects, schema, robots) are on each location/page.</p>
           <div className="space-y-3">
             {form.seo_pages.map((page, i) => (
               <div key={page.page_key} className="grid gap-3 border border-slate-100 rounded-md p-3 bg-slate-50">
-                <p className="text-sm font-mono text-slate-700">{page.page_key}</p>
+                <p className="text-sm font-medium text-slate-800">{pageKeyLabel(page)}</p>
                 <label className="text-sm text-slate-600">
                   Page title
                   <input className={inputClass} value={page.title} onChange={(e) => updateSeoPage(i, 'title', e.target.value)} />
@@ -770,7 +840,7 @@ export default function BrandContent() {
       <section className="mt-8 space-y-4 bg-white border border-slate-200 rounded-lg p-6">
         <h2 className="text-sm font-semibold text-slate-800 uppercase tracking-wide">Location pages</h2>
         <p className="text-xs text-slate-500">
-          One template at <span className="font-mono">/locations/[slug]</span>. Publish to show in the public site footer and sitemap.
+          Workflow: Draft → In review → Approved → Published. Empty or near-duplicate location copy is blocked at publish.
         </p>
         <form onSubmit={saveLocation} className="grid gap-3 sm:grid-cols-2 border border-slate-100 rounded-md p-3 bg-slate-50">
           <label className="text-sm text-slate-600">
@@ -782,16 +852,13 @@ export default function BrandContent() {
             <input className={inputClass} value={locationForm.region} onChange={(e) => setLocationForm({ ...locationForm, region: e.target.value })} />
           </label>
           <label className="text-sm text-slate-600">
-            Slug (optional)
+            URL slug (optional)
             <input className={inputClass} value={locationForm.slug} onChange={(e) => setLocationForm({ ...locationForm, slug: e.target.value })} placeholder="auto from city" />
           </label>
-          <label className="text-sm text-slate-600">
+          <div className="text-sm text-slate-600">
             Status
-            <select className={inputClass} value={locationForm.status} onChange={(e) => setLocationForm({ ...locationForm, status: e.target.value })}>
-              <option value="draft">draft</option>
-              <option value="published">published</option>
-            </select>
-          </label>
+            <p className="mt-2 font-medium text-slate-800">{WORKFLOW_LABELS[locationForm.status] || locationForm.status || 'Draft'}</p>
+          </div>
           <label className="text-sm text-slate-600 sm:col-span-2">
             Headline
             <input className={inputClass} value={locationForm.headline} onChange={(e) => setLocationForm({ ...locationForm, headline: e.target.value })} />
@@ -812,22 +879,46 @@ export default function BrandContent() {
             SEO description
             <textarea className={inputClass} rows={2} value={locationForm.seo_description} onChange={(e) => setLocationForm({ ...locationForm, seo_description: e.target.value })} />
           </label>
-          <div className="sm:col-span-2 flex gap-2">
+          <label className="text-sm text-slate-600 sm:col-span-2">
+            Canonical URL
+            <input className={inputClass} value={locationForm.canonical_url || ''} onChange={(e) => setLocationForm({ ...locationForm, canonical_url: e.target.value })} />
+          </label>
+          <label className="text-sm text-slate-600 inline-flex items-center gap-2">
+            <input type="checkbox" checked={!!locationForm.robots_noindex} onChange={(e) => setLocationForm({ ...locationForm, robots_noindex: e.target.checked })} />
+            No-index (robots)
+          </label>
+          <label className="text-sm text-slate-600 inline-flex items-center gap-2">
+            <input type="checkbox" checked={locationForm.sitemap_include !== false} onChange={(e) => setLocationForm({ ...locationForm, sitemap_include: e.target.checked })} />
+            Include in sitemap
+          </label>
+          <label className="text-sm text-slate-600 sm:col-span-2">
+            Sections JSON (FAQ, gallery, before/after, testimonials, trust, service areas, internal links)
+            <textarea className={inputClass} rows={3} value={locationForm.sections_json || '[]'} onChange={(e) => setLocationForm({ ...locationForm, sections_json: e.target.value })} />
+          </label>
+          <div className="sm:col-span-2 flex flex-wrap gap-2">
             <button type="submit" className="inline-flex items-center gap-1 rounded-md bg-slate-800 text-white px-3 py-1.5 text-sm">
               <Plus size={14} />
-              {editingLocationId ? 'Update location' : 'Add location'}
+              {editingLocationId ? 'Save draft' : 'Add location'}
             </button>
             {editingLocationId ? (
-              <button
-                type="button"
-                className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-                onClick={() => {
-                  setEditingLocationId(null);
-                  setLocationForm(emptyLocationForm());
-                }}
-              >
-                Cancel
-              </button>
+              <>
+                <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm" onClick={() => previewLocation(editingLocationId)}>Preview</button>
+                <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm" onClick={() => runLocationWorkflow(editingLocationId, 'submit_review')}>Submit for review</button>
+                {user?.role === 'owner' && (
+                  <button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm" onClick={() => runLocationWorkflow(editingLocationId, 'approve')}>Approve</button>
+                )}
+                <button type="button" className="rounded-md bg-emerald-700 text-white px-3 py-1.5 text-sm" onClick={() => runLocationWorkflow(editingLocationId, 'publish')}>Publish</button>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+                  onClick={() => {
+                    setEditingLocationId(null);
+                    setLocationForm(emptyLocationForm());
+                  }}
+                >
+                  Cancel
+                </button>
+              </>
             ) : null}
           </div>
         </form>
@@ -836,11 +927,15 @@ export default function BrandContent() {
             <li key={row.id} className="flex flex-wrap items-center justify-between gap-2 border border-slate-100 rounded-md px-3 py-2 text-sm">
               <div>
                 <span className="font-medium">{row.city_name}{row.region ? `, ${row.region}` : ''}</span>
-                <span className="text-slate-400 font-mono ml-2">/{row.slug}</span>
-                <span className={`ml-2 text-xs ${row.status === 'published' ? 'text-emerald-700' : 'text-amber-700'}`}>{row.status}</span>
+                <span className="text-slate-400 ml-2">/{row.slug}</span>
+                <span className={`ml-2 text-xs ${row.status === 'published' ? 'text-emerald-700' : 'text-amber-700'}`}>
+                  {WORKFLOW_LABELS[row.status] || row.status}
+                </span>
+                <span className="ml-2 text-xs text-slate-400">v{row.revision_number || 1}</span>
               </div>
               <div className="flex gap-2">
                 <button type="button" className="text-slate-700 underline" onClick={() => editLocation(row)}>Edit</button>
+                <button type="button" className="text-slate-700 underline" onClick={() => previewLocation(row.id)}>Preview</button>
                 <button type="button" className="text-red-700 underline" onClick={() => deleteLocation(row)}>Delete</button>
               </div>
             </li>

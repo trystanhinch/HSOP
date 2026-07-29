@@ -306,8 +306,13 @@ class ContentEditorAccessTest extends TestCase
         $roofingId = Brand::query()->where('domain', 'example-roofing.test')->value('id');
         $this->assertNotNull($roofingId);
 
+        // A-36: cross-brand query is hard-blocked (PM-01/PM-02 style), not silently rewritten.
         $this->actingAs($editor, 'sanctum')
             ->getJson('/api/brand-content?brand_id='.$roofingId)
+            ->assertForbidden();
+
+        $this->actingAs($editor, 'sanctum')
+            ->getJson('/api/brand-content')
             ->assertOk()
             ->assertJsonPath('id', $editor->brand_id)
             ->assertJsonPath('domain', 'acuteradrywall.ca');

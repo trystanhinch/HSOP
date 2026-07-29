@@ -47,8 +47,10 @@ use App\Http\Controllers\Api\SmsLogController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\BrandContentController;
 use App\Http\Controllers\Api\BrandContentImageController;
+use App\Http\Controllers\Api\BrandContentWorkflowController;
 use App\Http\Controllers\Api\BrandCustomPageController;
 use App\Http\Controllers\Api\BrandLocationPageController;
+use App\Http\Controllers\Api\ContentEditorBrandAssignmentController;
 use Illuminate\Support\Facades\Route;
 
 Route::post('/login', [AuthController::class, 'login']);
@@ -114,7 +116,39 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
             ->name('api.brand-content.pages.update');
         Route::delete('/brand-content/pages/{brandPage}', [BrandCustomPageController::class, 'destroy'])
             ->name('api.brand-content.pages.destroy');
+
+        // A-36 workflow / preview / revisions / redirects
+        Route::get('/brand-content/section-types', [BrandContentWorkflowController::class, 'sectionTypes'])
+            ->name('api.brand-content.section-types');
+        Route::get('/brand-content/page-key-labels', [BrandContentWorkflowController::class, 'pageKeyLabels'])
+            ->name('api.brand-content.page-key-labels');
+        Route::get('/brand-content/redirects', [BrandContentWorkflowController::class, 'redirects'])
+            ->name('api.brand-content.redirects.index');
+        Route::post('/brand-content/redirects', [BrandContentWorkflowController::class, 'storeRedirect'])
+            ->name('api.brand-content.redirects.store');
+
+        Route::post('/brand-content/locations/{locationPage}/workflow', [BrandContentWorkflowController::class, 'transitionLocation'])
+            ->name('api.brand-content.locations.workflow');
+        Route::get('/brand-content/locations/{locationPage}/preview', [BrandContentWorkflowController::class, 'previewLocation'])
+            ->name('api.brand-content.locations.preview');
+        Route::get('/brand-content/locations/{locationPage}/revisions', [BrandContentWorkflowController::class, 'revisionsLocation'])
+            ->name('api.brand-content.locations.revisions');
+        Route::post('/brand-content/locations/{locationPage}/revisions/{revision}/rollback', [BrandContentWorkflowController::class, 'rollbackLocation'])
+            ->name('api.brand-content.locations.rollback');
+
+        Route::post('/brand-content/pages/{brandPage}/workflow', [BrandContentWorkflowController::class, 'transitionPage'])
+            ->name('api.brand-content.pages.workflow');
+        Route::get('/brand-content/pages/{brandPage}/preview', [BrandContentWorkflowController::class, 'previewPage'])
+            ->name('api.brand-content.pages.preview');
+        Route::get('/brand-content/pages/{brandPage}/revisions', [BrandContentWorkflowController::class, 'revisionsPage'])
+            ->name('api.brand-content.pages.revisions');
+        Route::post('/brand-content/pages/{brandPage}/revisions/{revision}/rollback', [BrandContentWorkflowController::class, 'rollbackPage'])
+            ->name('api.brand-content.pages.rollback');
     });
+
+    Route::get('/me/content-editor-brands', [ContentEditorBrandAssignmentController::class, 'mine'])
+        ->middleware('role:content_editor,owner')
+        ->name('api.me.content-editor-brands');
 
     Route::get('/dashboard/admin/kpis', [DashboardController::class, 'admin'])->middleware('role:owner');
     Route::get('/dashboard/pm/kpis', [DashboardController::class, 'pm'])->middleware('role:pm');
@@ -423,5 +457,8 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
         Route::get('/pm-brand-assignments', [PmBrandAssignmentController::class, 'index']);
         Route::get('/pm-brand-assignments/{user}', [PmBrandAssignmentController::class, 'show']);
         Route::put('/pm-brand-assignments/{user}', [PmBrandAssignmentController::class, 'sync']);
+
+        Route::get('/content-editor-brand-assignments/{user}', [ContentEditorBrandAssignmentController::class, 'show']);
+        Route::put('/content-editor-brand-assignments/{user}', [ContentEditorBrandAssignmentController::class, 'update']);
     });
 });

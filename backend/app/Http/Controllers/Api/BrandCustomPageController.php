@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Concerns\ResolvesEditableBrand;
 use App\Http\Controllers\Controller;
 use App\Models\Brand;
 use App\Models\BrandPage;
+use App\Services\Content\ContentWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -14,6 +15,8 @@ use Illuminate\Validation\Rule;
 class BrandCustomPageController extends Controller
 {
     use ResolvesEditableBrand;
+
+    public function __construct(private ContentWorkflowService $workflow) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -24,6 +27,8 @@ class BrandCustomPageController extends Controller
             'pages' => $rows,
             'templates' => BrandPage::TEMPLATE_TYPES,
             'duplicable_sources' => $this->duplicableSources($brand),
+            'workflow_statuses' => ContentWorkflowService::STATUSES,
+            'section_types' => ContentWorkflowService::SECTION_TYPES,
         ]);
     }
 
@@ -31,9 +36,13 @@ class BrandCustomPageController extends Controller
     {
         $brand = $this->resolveEditableBrand($request);
         $data = $this->validated($request, $brand->id);
+        $data['status'] = 'draft';
+        $data['author_id'] = $request->user()->id;
+        $data['revision_number'] = 1;
         $page = $brand->customPages()->create($data);
+        $this->workflow->recordRevision($page, $request->user(), 'created');
 
-        return response()->json(['page' => $page->publicPayload()], 201);
+        return response()->json(['page' => $page->fresh()->publicPayload()], 201);
     }
 
     public function duplicate(Request $request): JsonResponse
@@ -78,6 +87,10 @@ class BrandCustomPageController extends Controller
         $brand = $this->resolveEditableBrand($request);
         $this->assertOwns($brand->id, $brandPage->brand_id);
         $data = $this->validated($request, $brand->id, $brandPage->id);
+        if ($request->user()->role === 'content_editor') {
+            unset($data['status']);
+        }
+        $this->workflow->recordRevision($brandPage, $request->user(), 'updated');
         $brandPage->update($data);
 
         return response()->json(['page' => $brandPage->fresh()->publicPayload()]);
@@ -113,8 +126,16 @@ class BrandCustomPageController extends Controller
             'seo_title' => ['nullable', 'string', 'max:255'],
             'seo_description' => ['nullable', 'string', 'max:1000'],
             'og_image' => ['nullable', 'string', 'max:2048'],
-            'status' => ['sometimes', 'in:draft,published'],
+            'canonical_url' => ['nullable', 'string', 'max:2048'],
+            'schema_markup' => ['nullable', 'array'],
+            'sitemap_include' => ['sometimes', 'boolean'],
+            'robots_noindex' => ['sometimes', 'boolean'],
+            'image_meta' => ['nullable', 'array'],
+            'sections' => ['sometimes', 'array'],
+            'sections.*.type' => ['required_with:sections', Rule::in(ContentWorkflowService::SECTION_TYPES)],
+            'status' => ['sometimes', Rule::in(ContentWorkflowService::STATUSES)],
             'source_key' => ['nullable', 'string', 'max:160'],
+            'scheduled_at' => ['nullable', 'date'],
         ]);
 
         $slug = $data['slug'] ?? Str::slug($data['title']);
@@ -124,6 +145,9 @@ class BrandCustomPageController extends Controller
         $data['slug'] = $slug;
         $data['status'] = $data['status'] ?? 'draft';
         $data['content'] = $data['content'] ?? [];
+        if (! array_key_exists('sitemap_include', $data)) {
+            $data['sitemap_include'] = true;
+        }
 
         return $data;
     }

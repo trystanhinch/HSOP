@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Concerns;
 
 use App\Models\Brand;
+use App\Services\Authorization\ContentEditorAuthorizationService;
 use Illuminate\Http\Request;
 
 trait ResolvesEditableBrand
@@ -12,11 +13,21 @@ trait ResolvesEditableBrand
         $user = $request->user();
 
         if ($user->role === 'content_editor') {
-            if (! $user->brand_id) {
+            $authz = app(ContentEditorAuthorizationService::class);
+            $requested = $request->query('brand_id');
+
+            if ($requested) {
+                $authz->assertBrandAccess($user, (int) $requested, 'brand_content_resolve');
+
+                return Brand::query()->findOrFail((int) $requested);
+            }
+
+            $brand = $authz->primaryBrand($user);
+            if (! $brand) {
                 abort(403, 'Content editor has no assigned brand.');
             }
 
-            return Brand::query()->findOrFail($user->brand_id);
+            return $brand;
         }
 
         if ($user->role === 'owner') {

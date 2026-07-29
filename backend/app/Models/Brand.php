@@ -248,25 +248,29 @@ class Brand extends Model
             ->all();
 
         $locations = $this->locationPages()
-            ->where('status', 'published')
             ->orderBy('city_name')
-            ->get(['slug', 'city_name', 'region'])
+            ->get()
+            ->filter(fn (LocationPage $page) => $page->isPublished() && ! $page->robots_noindex)
             ->map(fn (LocationPage $page) => [
                 'slug' => $page->slug,
                 'city_name' => $page->city_name,
                 'region' => $page->region,
+                'sitemap_include' => $page->sitemap_include ?? true,
+                'canonical_url' => $page->canonical_url,
             ])
             ->values()
             ->all();
 
         $pages = $this->customPages()
-            ->where('status', 'published')
             ->orderBy('title')
-            ->get(['slug', 'title', 'template_type'])
+            ->get()
+            ->filter(fn (BrandPage $page) => $page->isPublished() && ! $page->robots_noindex)
             ->map(fn (BrandPage $page) => [
                 'slug' => $page->slug,
                 'title' => $page->title,
                 'template_type' => $page->template_type,
+                'sitemap_include' => $page->sitemap_include ?? true,
+                'canonical_url' => $page->canonical_url,
             ])
             ->values()
             ->all();

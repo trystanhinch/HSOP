@@ -124,17 +124,19 @@ class BrandContentCmsTest extends TestCase
 
         $this->getJson('/api/public/locations/'.$slug)->assertNotFound();
 
-        $this->putJson('/api/brand-content/locations/'.$id, [
-            'city_name' => 'Burnaby',
-            'region' => 'BC',
-            'slug' => $slug,
-            'content' => [
-                'headline' => 'Drywall in Burnaby',
-                'body' => 'Local finishing crew for Burnaby homes.',
-                'cta_label' => 'Request Burnaby quote',
-            ],
-            'status' => 'published',
-        ])->assertOk()->assertJsonPath('location.status', 'published');
+        // A-36: content editors publish via approval workflow, not status select.
+        $this->postJson("/api/brand-content/locations/{$id}/workflow", ['action' => 'submit_review'])
+            ->assertOk()
+            ->assertJsonPath('to', 'review');
+
+        $owner = User::query()->where('role', 'owner')->orderBy('id')->firstOrFail();
+        $this->actingAs($owner, 'sanctum');
+        $this->postJson("/api/brand-content/locations/{$id}/workflow", ['action' => 'approve'])
+            ->assertOk();
+        $this->actingAs($editor, 'sanctum');
+        $this->postJson("/api/brand-content/locations/{$id}/workflow", ['action' => 'publish'])
+            ->assertOk()
+            ->assertJsonPath('to', 'published');
 
         $this->getJson('/api/public/locations/'.$slug)
             ->assertOk()
@@ -177,6 +179,11 @@ class BrandContentCmsTest extends TestCase
 
         $this->getJson('/api/public/pages/'.$slug)->assertNotFound();
 
+        $this->postJson("/api/brand-content/pages/{$pageId}/workflow", ['action' => 'submit_review'])->assertOk();
+        $owner = User::query()->where('role', 'owner')->orderBy('id')->firstOrFail();
+        $this->actingAs($owner, 'sanctum');
+        $this->postJson("/api/brand-content/pages/{$pageId}/workflow", ['action' => 'approve'])->assertOk();
+        $this->actingAs($editor, 'sanctum');
         $this->putJson('/api/brand-content/pages/'.$pageId, [
             'title' => 'Ceiling Repair Focus',
             'slug' => $slug,
@@ -187,8 +194,10 @@ class BrandContentCmsTest extends TestCase
                 'lede' => 'Agency-authored ceiling repair page.',
                 'points' => ['Point one', 'Point two'],
             ],
-            'status' => 'published',
-        ])->assertOk()->assertJsonPath('page.status', 'published');
+        ])->assertOk();
+        $this->postJson("/api/brand-content/pages/{$pageId}/workflow", ['action' => 'publish'])
+            ->assertOk()
+            ->assertJsonPath('to', 'published');
 
         $this->getJson('/api/public/pages/'.$slug)
             ->assertOk()
@@ -211,12 +220,15 @@ class BrandContentCmsTest extends TestCase
 
         $this->actingAs($owner, 'sanctum');
 
-        $this->postJson('/api/brand-content/locations?brand_id='.$roofing->id, [
+        $created = $this->postJson('/api/brand-content/locations?brand_id='.$roofing->id, [
             'city_name' => 'Kelowna',
             'region' => 'BC',
-            'content' => ['headline' => 'Roofing in Kelowna', 'body' => 'Roofing service area copy.'],
+            'content' => ['headline' => 'Roofing in Kelowna', 'body' => 'Roofing service area copy for Kelowna homeowners with clear next steps.'],
             'status' => 'published',
         ])->assertCreated()->assertJsonPath('location.city_name', 'Kelowna');
+        $locId = $created->json('location.id');
+        $this->postJson("/api/brand-content/locations/{$locId}/workflow?brand_id={$roofing->id}", ['action' => 'approve'])->assertOk();
+        $this->postJson("/api/brand-content/locations/{$locId}/workflow?brand_id={$roofing->id}", ['action' => 'publish'])->assertOk();
 
         $this->postJson('/api/brand-content/pages/duplicate?brand_id='.$roofing->id, [
             'source_key' => 'system:service:roofing',
@@ -229,8 +241,9 @@ class BrandContentCmsTest extends TestCase
             'slug' => $page->slug,
             'template_type' => $page->template_type,
             'content' => $page->content,
-            'status' => 'published',
         ])->assertOk();
+        $this->postJson("/api/brand-content/pages/{$page->id}/workflow?brand_id={$roofing->id}", ['action' => 'approve'])->assertOk();
+        $this->postJson("/api/brand-content/pages/{$page->id}/workflow?brand_id={$roofing->id}", ['action' => 'publish'])->assertOk();
 
         $this->withHeaders(['X-Brand-Domain' => 'example-roofing.test'])
             ->getJson('/api/public/brand')

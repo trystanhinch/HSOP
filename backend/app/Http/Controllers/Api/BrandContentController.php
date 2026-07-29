@@ -317,11 +317,14 @@ class BrandContentController extends Controller
 
                 return [
                     'page_key' => $pageKey,
+                    'label' => $this->friendlyPageKeyLabel($pageKey, $brand),
                     'title' => $override?->title,
                     'description' => $override?->description,
                     'og_image' => $override?->og_image,
                 ];
             }, $this->allowedSeoPageKeys($brand)),
+            'workflow_statuses' => \App\Services\Content\ContentWorkflowService::STATUSES,
+            'section_types' => \App\Services\Content\ContentWorkflowService::SECTION_TYPES,
             'editable_fields' => [
                 'branding',
                 'contact_info',
@@ -334,5 +337,23 @@ class BrandContentController extends Controller
                 'pages',
             ],
         ];
+    }
+
+    private function friendlyPageKeyLabel(string $pageKey, Brand $brand): string
+    {
+        if ($pageKey === 'home') {
+            return 'Home page';
+        }
+        if ($pageKey === 'quote') {
+            return 'Quote page';
+        }
+        if (str_starts_with($pageKey, 'service:')) {
+            $key = substr($pageKey, 8);
+            $service = collect($brand->serviceCatalog())->firstWhere('key', $key);
+
+            return 'Service: '.($service['label'] ?? $key);
+        }
+
+        return $pageKey;
     }
 }
