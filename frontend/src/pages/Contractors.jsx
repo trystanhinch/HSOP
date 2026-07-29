@@ -52,8 +52,34 @@ export default function Contractors() {
             : `Authoritative directory (${total})`}
         </span>
       </PageHeader>
-      <div className="overflow-x-auto rounded-lg border border-[#E2E8F0] bg-white shadow-sm">
-        <table className="w-full min-w-[640px] text-sm divide-y divide-[#E2E8F0]">
+
+      <div className="md:hidden space-y-3 mb-4">
+        {contractors.length === 0 ? (
+          <p className="text-center text-slate-500 py-8">
+            {isPm ? 'No contractors assigned to your jobs yet.' : 'No contractors in the directory.'}
+          </p>
+        ) : contractors.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className="mobile-data-card w-full text-left cursor-pointer hover:border-slate-300"
+            onClick={() => navigate(`/contractors/${c.id}`)}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="mobile-data-card-title">{c.name || c.legal_name || c.operating_name || `#${c.id}`}</span>
+              <StatusBadge status={c.state || c.approval_status} />
+            </div>
+            <p className="mobile-data-card-meta">{c.phone || '—'}{c.email ? ` · ${c.email}` : ''}</p>
+            <p className="mobile-data-card-meta">WCB: {complianceLabel(c.wcb_status)} · Ins: {complianceLabel(c.liability_insurance_status)}</p>
+            {(c.missing_steps || []).length > 0 && (
+              <p className="text-xs text-amber-700">Missing: {(c.missing_steps || []).map((s) => s.label || s).join('; ')}</p>
+            )}
+          </button>
+        ))}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto rounded-lg border border-[#E2E8F0] bg-white shadow-sm">
+        <table className="w-full text-sm divide-y divide-[#E2E8F0]">
           <thead className="bg-slate-50">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-[#64748B]">#</th>

@@ -1,11 +1,13 @@
 import { useEffect, useState, useRef } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Upload, MapPin, Phone, Mail, Camera, Save, Send, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Mail, Camera, Save, Send, CheckCircle, XCircle, RefreshCw } from 'lucide-react';
 import api, { storageUrl } from '../api/axios';
 import { useAuth } from '../context/AuthContext';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
 import { formatDate, formatTime } from '../utils/formatDate';
 import StatusBadge from '../components/StatusBadge';
+import FieldQuickActions from '../components/FieldQuickActions';
+import StickyActionBar from '../components/StickyActionBar';
 
 export default function SiteVisitWorkflow() {
   const { id } = useParams();
@@ -145,9 +147,9 @@ export default function SiteVisitWorkflow() {
   const isDeclined = sv.status === 'declined';
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
+    <div className="space-y-6 max-w-3xl mx-auto pb-28">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate(-1)} className="text-slate-500 hover:text-slate-700"><ArrowLeft size={20} /></button>
+        <button type="button" onClick={() => navigate(-1)} className="text-slate-500 hover:text-slate-700 p-2 min-h-[44px] min-w-[44px]"><ArrowLeft size={20} /></button>
         <h1 className="text-xl font-bold text-slate-900">Site Visit Details</h1>
         <StatusBadge status={sv.status} />
       </div>
@@ -168,18 +170,11 @@ export default function SiteVisitWorkflow() {
         </div>
         <div>
           <p className="text-xs text-slate-500">Address</p>
-          <p className="text-sm font-medium text-slate-900">{lead.address}</p>
-          {data.directions_url && (
-            <a href={data.directions_url} target="_blank" rel="noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1 mt-1">
-              <MapPin size={12} /> Get Directions
-            </a>
-          )}
+          <p className="text-sm font-medium text-slate-900 break-words">{lead.address}</p>
         </div>
-        {(lead.phone || lead.email) && (
-          <div className="flex flex-wrap gap-4">
-            {lead.phone && <a href={`tel:${lead.phone}`} className="text-xs text-blue-600 flex items-center gap-1"><Phone size={12} /> {lead.phone}</a>}
-            {lead.email && <a href={`mailto:${lead.email}`} className="text-xs text-blue-600 flex items-center gap-1"><Mail size={12} /> {lead.email}</a>}
-          </div>
+        <FieldQuickActions phone={lead.phone} address={lead.address} />
+        {lead.email && (
+          <a href={`mailto:${lead.email}`} className="text-sm text-blue-600 flex items-center gap-1"><Mail size={14} /> {lead.email}</a>
         )}
         {lead.description && (
           <div>
@@ -190,7 +185,8 @@ export default function SiteVisitWorkflow() {
         {data.pm && (
           <div>
             <p className="text-xs text-slate-500">Project Manager</p>
-            <p className="text-sm text-slate-700">{data.pm.name} · {data.pm.phone || data.pm.email}</p>
+            <p className="text-sm text-slate-700">{data.pm.name}</p>
+            <FieldQuickActions phone={data.pm.phone} className="mt-2" />
           </div>
         )}
         {sv.notes && <div><p className="text-xs text-slate-500">Visit Notes</p><p className="text-sm text-slate-700">{sv.notes}</p></div>}
@@ -215,8 +211,8 @@ export default function SiteVisitWorkflow() {
         <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
           <p className="text-sm font-medium text-blue-800">Accept this site visit to begin your assessment.</p>
           <div className="flex gap-2">
-            <button onClick={acceptVisit} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg flex items-center gap-1"><CheckCircle size={14} /> Accept</button>
-            <button onClick={declineVisit} className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg flex items-center gap-1"><XCircle size={14} /> Decline</button>
+            <button type="button" onClick={acceptVisit} className="btn-primary-action px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg flex items-center gap-1"><CheckCircle size={14} /> Accept</button>
+            <button type="button" onClick={declineVisit} className="btn-primary-action px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm rounded-lg flex items-center gap-1"><XCircle size={14} /> Decline</button>
           </div>
         </div>
       )}
@@ -258,11 +254,12 @@ export default function SiteVisitWorkflow() {
               </div>
             )}
             {!isLocked && (
-              <div className="flex gap-2 items-end flex-wrap">
-                <input ref={photoRef} type="file" accept="image/*" className="text-xs" />
-                <button onClick={uploadPhoto} disabled={uploading} className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg flex items-center gap-1 disabled:opacity-50">
-                  <Camera size={12} /> {uploading ? 'Uploading...' : 'Upload'}
-                </button>
+              <div className="flex gap-2 items-center flex-wrap">
+                <label className="btn-primary-action inline-flex items-center gap-2 px-4 py-2 bg-slate-100 border border-slate-200 rounded-lg text-sm font-medium text-slate-800 cursor-pointer hover:bg-slate-200">
+                  <Camera size={16} /> Take / Choose Photo
+                  <input ref={photoRef} type="file" accept="image/*" capture="environment" className="sr-only" onChange={uploadPhoto} />
+                </label>
+                {uploading && <span className="text-xs text-slate-500">Uploading…</span>}
               </div>
             )}
           </div>
@@ -313,21 +310,21 @@ export default function SiteVisitWorkflow() {
             </div>
           </div>
 
-          {/* Actions */}
+          {/* Actions — sticky above browser chrome + bottom tabs (PM-12/CT-06) */}
           {!isLocked && (
-            <div className="flex flex-wrap gap-3 pt-2">
-              <button onClick={saveDraft} disabled={saving} className="px-4 py-2 border border-slate-300 text-slate-700 text-sm rounded-lg flex items-center gap-1 hover:bg-slate-50 disabled:opacity-50">
+            <StickyActionBar>
+              <button type="button" onClick={saveDraft} disabled={saving} className="btn-primary-action flex-1 sm:flex-none px-4 py-2 border border-slate-300 text-slate-700 text-sm rounded-lg flex items-center justify-center gap-1 hover:bg-slate-50 disabled:opacity-50">
                 <Save size={14} /> {saving ? 'Saving...' : 'Save Draft'}
               </button>
-              <button onClick={submitPrice} disabled={submitting} className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg flex items-center gap-1 disabled:opacity-50">
+              <button type="button" onClick={submitPrice} disabled={submitting} className="btn-primary-action flex-1 sm:flex-none px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg flex items-center justify-center gap-1 disabled:opacity-50">
                 <Send size={14} /> {submitting ? 'Submitting...' : (isRevisionRequested ? 'Resubmit Price' : 'Submit Price')}
               </button>
               {sv.accepted_at && !sv.completed_at && (
-                <button onClick={markComplete} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg flex items-center gap-1">
-                  <CheckCircle size={14} /> Mark Visit Complete
+                <button type="button" onClick={markComplete} className="btn-primary-action flex-1 sm:flex-none px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg flex items-center justify-center gap-1">
+                  <CheckCircle size={14} /> Mark Complete
                 </button>
               )}
-            </div>
+            </StickyActionBar>
           )}
         </div>
       )}

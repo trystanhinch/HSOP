@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader';
 import { useAuth } from '../context/AuthContext';
 import { channelLabel, looksLikeInternalContent } from '../utils/messageSafety';
 import { confirmAction, showError, showSuccess } from '../utils/swal';
+import { usesBottomTabs } from '../nav/navConfig';
 
 /**
  * CT-02: site-visit + job threads for contractors (lead messages path).
@@ -13,6 +14,7 @@ import { confirmAction, showError, showSuccess } from '../utils/swal';
  */
 function JobMessagesPanel() {
   const { user } = useAuth();
+  const fieldTabs = usesBottomTabs(user?.role);
   const [jobs, setJobs] = useState([]);
   const [selectedJob, setSelectedJob] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -21,6 +23,8 @@ function JobMessagesPanel() {
   const [internalDraft, setInternalDraft] = useState('');
   const [pmDraft, setPmDraft] = useState('');
   const [jobsError, setJobsError] = useState(null);
+
+  const [mobileShowThread, setMobileShowThread] = useState(false);
 
   const isContractor = user?.role === 'contractor';
   const isCustomer = user?.role === 'customer';
@@ -152,9 +156,17 @@ function JobMessagesPanel() {
     ? 'bg-slate-50 border-slate-200'
     : (msgTab === 'internal' ? 'bg-amber-100/70 border-amber-200' : 'bg-sky-100/60 border-sky-200');
 
+  // Field roles reserve bottom-tab height so the composer stays tappable above the bar.
+  const panelHeight = fieldTabs
+    ? 'h-[calc(100dvh-14.5rem)] md:h-[calc(100vh-200px)]'
+    : 'h-[calc(100dvh-8.5rem)] md:h-[calc(100vh-200px)]';
+
   return (
-    <div className="flex flex-col md:flex-row gap-4" style={{ height: 'calc(100vh - 200px)' }}>
-      <div className="md:w-72 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0">
+    <div className={`flex flex-col md:flex-row gap-0 md:gap-4 min-h-[320px] ${panelHeight}`}>
+      {/* Job list — full screen on mobile until a thread is opened */}
+      <div className={`md:w-72 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0 ${
+        mobileShowThread ? 'hidden md:block' : 'block flex-1 md:flex-none'
+      }`}>
         <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-3">
           {isContractor ? 'Jobs & Site Visits' : 'Jobs'}
         </p>
@@ -162,8 +174,8 @@ function JobMessagesPanel() {
           <button
             key={itemKey(job)}
             type="button"
-            onClick={() => setSelectedJob(job)}
-            className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${itemKey(selectedJob) === itemKey(job) ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}
+            onClick={() => { setSelectedJob(job); setMobileShowThread(true); }}
+            className={`w-full text-left px-4 py-3 min-h-[56px] border-b border-slate-100 hover:bg-slate-50 ${itemKey(selectedJob) === itemKey(job) ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}
           >
             <p className="text-sm font-medium text-slate-800 truncate">
               {job.type === 'site_visit' ? (job.job_title || 'Site Visit') : `Job #${job.id}`}
@@ -179,23 +191,33 @@ function JobMessagesPanel() {
         )}
       </div>
 
-      <div className={`flex-1 rounded-xl border flex flex-col min-w-0 ${panelTone}`}>
+      <div className={`flex-1 rounded-xl border flex flex-col min-w-0 min-h-0 ${panelTone} ${
+        mobileShowThread ? 'flex' : 'hidden md:flex'
+      }`}>
         {selectedJob ? (
           <>
-            <div className="px-4 py-3 border-b border-slate-200/80 flex items-center justify-between bg-white/70 rounded-t-xl">
-              <div>
-                <p className="font-medium text-slate-800">
+            <div className="px-3 sm:px-4 py-3 border-b border-slate-200/80 flex items-center gap-2 bg-white/70 rounded-t-xl">
+              <button
+                type="button"
+                className="md:hidden p-2 -ml-1 text-slate-600 min-h-[44px] min-w-[44px]"
+                onClick={() => setMobileShowThread(false)}
+                aria-label="Back to list"
+              >
+                ←
+              </button>
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-slate-800 truncate">
                   {selectedJob.type === 'site_visit'
                     ? (selectedJob.job_title || selectedJob.customer?.name || 'Site Visit')
                     : `Job #${selectedJob.id}`}
                 </p>
-                <p className="text-xs text-slate-500">{selectedJob.address}</p>
+                <p className="text-xs text-slate-500 truncate">{selectedJob.address}</p>
                 {selectedJob.pm?.name && (
                   <p className="text-xs text-slate-500 mt-0.5">PM: {selectedJob.pm.name}</p>
                 )}
               </div>
-              <Link to={selectedJob.url || `/jobs/${selectedJob.id}`} className="text-xs text-blue-600 hover:underline">
-                View Details
+              <Link to={selectedJob.url || `/jobs/${selectedJob.id}`} className="text-xs text-blue-600 hover:underline flex-shrink-0">
+                Details
               </Link>
             </div>
 
@@ -265,11 +287,11 @@ function JobMessagesPanel() {
                       ? 'Message your PM…'
                       : (msgTab === 'internal' ? 'Write an internal note…' : 'Message the customer…')
                   }
-                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  className="flex-1 border border-slate-300 rounded-lg px-3 py-2.5 text-sm bg-white min-h-[44px]"
                 />
                 <button
                   type="submit"
-                  className={`px-4 py-2 text-white text-sm rounded-lg ${
+                  className={`btn-primary-action px-4 py-2 text-white text-sm rounded-lg font-medium ${
                     isAssignmentThread
                       ? 'bg-blue-600 hover:bg-blue-700'
                       : (msgTab === 'internal' ? 'bg-amber-800 hover:bg-amber-900' : 'bg-sky-700 hover:bg-sky-800')
@@ -290,6 +312,7 @@ function JobMessagesPanel() {
 
 function AdminPmMessagesPanel() {
   const { user } = useAuth();
+  const fieldTabs = usesBottomTabs(user?.role);
   const [conversations, setConversations] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -330,9 +353,10 @@ function AdminPmMessagesPanel() {
   };
 
   const listLabel = user?.role === 'owner' ? 'Project Managers' : 'Admin';
+  const panelHeight = fieldTabs ? 'calc(100dvh - 14.5rem)' : 'calc(100vh - 200px)';
 
   return (
-    <div className="flex flex-col md:flex-row gap-4" style={{ height: 'calc(100vh - 200px)' }}>
+    <div className="flex flex-col md:flex-row gap-4" style={{ height: panelHeight }}>
       <div className="md:w-72 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0">
         <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-3">{listLabel}</p>
         {conversations.map((c) => (
@@ -372,8 +396,8 @@ function AdminPmMessagesPanel() {
             </div>
             <form onSubmit={sendMessage} className="border-t border-slate-200 p-3 flex gap-2">
               <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)} placeholder="Message your PM..."
-                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-              <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">Send</button>
+                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm min-h-[44px]" />
+              <button type="submit" className="btn-primary-action px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">Send</button>
             </form>
           </>
         ) : (
@@ -386,6 +410,7 @@ function AdminPmMessagesPanel() {
 
 function PmContractorMessagesPanel() {
   const { user } = useAuth();
+  const fieldTabs = usesBottomTabs(user?.role);
   const [conversations, setConversations] = useState([]);
   const [selectedUser, setSelectedUser] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -426,9 +451,10 @@ function PmContractorMessagesPanel() {
   };
 
   const listLabel = user?.role === 'pm' ? 'Contractors' : 'Project Managers';
+  const panelHeight = fieldTabs ? 'calc(100dvh - 14.5rem)' : 'calc(100vh - 200px)';
 
   return (
-    <div className="flex flex-col md:flex-row gap-4" style={{ height: 'calc(100vh - 200px)' }}>
+    <div className="flex flex-col md:flex-row gap-4" style={{ height: panelHeight }}>
       <div className="md:w-72 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0">
         <p className="text-xs font-semibold text-slate-400 uppercase px-4 py-3">{listLabel}</p>
         {conversations.map((c) => (
@@ -469,8 +495,8 @@ function PmContractorMessagesPanel() {
             <form onSubmit={sendMessage} className="border-t border-slate-200 p-3 flex gap-2">
               <input value={newMsg} onChange={(e) => setNewMsg(e.target.value)}
                 placeholder={user?.role === 'pm' ? 'Message contractor...' : 'Message your PM...'}
-                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm" />
-              <button type="submit" className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">Send</button>
+                className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm min-h-[44px]" />
+              <button type="submit" className="btn-primary-action px-4 py-2 bg-blue-600 text-white text-sm rounded-lg">Send</button>
             </form>
           </>
         ) : (

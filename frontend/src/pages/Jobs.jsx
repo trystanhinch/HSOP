@@ -188,14 +188,41 @@ export default function Jobs() {
           ))}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm divide-y divide-slate-200">
+          <div className="md:hidden p-3 space-y-3">
+            {contractorDisplayedJobs.length === 0 ? (
+              <p className="text-center text-slate-500 py-8">No jobs or site visits found.</p>
+            ) : contractorDisplayedJobs.map((item) => (
+              <button
+                key={`${item.type || 'job'}-${item.lead_id || item.id}`}
+                type="button"
+                className="mobile-data-card w-full text-left cursor-pointer hover:border-slate-300"
+                onClick={() => navigate(item.url)}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <span className="mobile-data-card-title">{item.job_title}</span>
+                  <StatusBadge status={item.status} />
+                </div>
+                <p className="mobile-data-card-meta">{item.customer?.name || '—'}</p>
+                <p className="mobile-data-card-meta">{item.address}</p>
+                {item.type === 'site_visit' && item.visit_date && (
+                  <p className="text-xs text-indigo-600">
+                    {formatDate(item.visit_date)}{item.visit_time && ` at ${formatTime(item.visit_time)}`}
+                  </p>
+                )}
+                {needsPrice(item) && (
+                  <span className="inline-block mt-1 bg-orange-500 text-white text-xs px-3 py-1.5 rounded-lg font-medium">Submit Price</span>
+                )}
+              </button>
+            ))}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm divide-y divide-slate-200">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-slate-500">Job / Visit</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-500">Customer</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-500">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-slate-500 hidden sm:table-cell">Date</th>
+                  <th className="text-left px-4 py-3 font-medium text-slate-500">Date</th>
                   <th className="text-left px-4 py-3 font-medium text-slate-500">Pricing</th>
                 </tr>
               </thead>
@@ -325,8 +352,41 @@ export default function Jobs() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm divide-y divide-slate-200">
+        <div className="md:hidden p-3 space-y-3">
+          {jobs.length === 0 ? (
+            <p className="text-center text-slate-500 py-8">No jobs found.</p>
+          ) : jobs.map((job) => (
+            <div key={job.id} className="mobile-data-card">
+              <div className="flex items-start justify-between gap-2">
+                <button
+                  type="button"
+                  className="flex-1 text-left min-w-0"
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                >
+                  <span className="mobile-data-card-title text-blue-600 block">{job.job_title || `Job #${job.id}`}</span>
+                  <p className="mobile-data-card-meta">{job.customer?.name || '—'}</p>
+                  <p className="mobile-data-card-meta">Contractor: {job.contractor?.name || '—'}</p>
+                  <p className="mobile-data-card-meta">{formatDate(job.scheduled_start_date)}</p>
+                </button>
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <StatusBadge status={job.status} />
+                  {user?.role === 'owner' && (
+                    <button
+                      type="button"
+                      onClick={() => confirmDeleteJob(job.id)}
+                      className="text-red-400 hover:text-red-600 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                      title="Delete job"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-slate-500">Job Title</th>

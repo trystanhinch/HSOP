@@ -144,8 +144,33 @@ export default function Customers() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-[#E2E8F0] bg-white shadow-sm">
-        <table className="w-full min-w-[900px] text-sm divide-y divide-[#E2E8F0]">
+      <div className="md:hidden space-y-3 mb-4">
+        {customers.length === 0 ? (
+          <p className="text-center text-slate-500 py-8">No customers in this view.</p>
+        ) : customers.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            className="mobile-data-card w-full text-left cursor-pointer hover:border-slate-300"
+            onClick={() => navigate(`/customers/${c.id}`)}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="mobile-data-card-title">{c.name}</span>
+              {c.do_not_contact && (
+                <span className="text-xs font-medium bg-red-100 text-red-800 px-2 py-0.5 rounded flex-shrink-0">DNC</span>
+              )}
+            </div>
+            <p className="mobile-data-card-meta">{c.phone || '—'}{c.email ? ` · ${c.email}` : ''}</p>
+            {flagSummary(c.data_quality_flags) !== '—' && (
+              <p className="text-xs text-amber-800">{flagSummary(c.data_quality_flags)}</p>
+            )}
+            {c.has_active_work && <StatusBadge status="in_progress" />}
+          </button>
+        ))}
+      </div>
+
+      <div className="hidden md:block overflow-x-auto rounded-lg border border-[#E2E8F0] bg-white shadow-sm">
+        <table className="w-full text-sm divide-y divide-[#E2E8F0]">
           <thead className="bg-slate-50">
             <tr>
               <th className="text-left px-4 py-3 font-medium text-[#64748B]">#</th>

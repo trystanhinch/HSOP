@@ -11,6 +11,7 @@ import { confirmAction, showError, showSuccess } from '../utils/swal';
 import NextActionCard from '../components/NextActionCard';
 import EventTimeline from '../components/EventTimeline';
 import LeadReviewPanel from '../components/LeadReviewPanel';
+import FieldQuickActions from '../components/FieldQuickActions';
 import { formatDate, formatTime, formatDateTime, toDateInputValue } from '../utils/formatDate';
 
 const statuses = [
@@ -483,6 +484,7 @@ export default function LeadDetail() {
 
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h2 className="font-semibold text-slate-800 mb-4">Customer Contact</h2>
+          <FieldQuickActions phone={lead.phone} address={lead.address} className="mb-4" />
           <div className="space-y-2 text-sm">
             <div className="flex justify-between gap-4">
               <span className="text-slate-400">Name</span>

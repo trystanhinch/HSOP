@@ -254,8 +254,26 @@ export default function Leads() {
               {qMeta.total ?? quarantine.length} pending
             </span>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm divide-y divide-slate-200">
+          <div className="md:hidden p-3 space-y-3">
+            {quarantine.length === 0 ? (
+              <p className="text-center text-slate-500 py-6 text-sm">No quarantined Gmail messages pending review.</p>
+            ) : quarantine.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className="mobile-data-card w-full text-left cursor-pointer hover:border-amber-300"
+                onClick={() => openQuarantine(item)}
+              >
+                <p className="mobile-data-card-title line-clamp-2">{item.subject || '(no subject)'}</p>
+                <p className="mobile-data-card-meta line-clamp-1">{item.from_header || '—'}</p>
+                <p className="mobile-data-card-meta">{item.parsed_fields?.contact_name || '—'} · {item.parsed_fields?.phone || 'no phone'}</p>
+                <p className="text-xs text-amber-800">{item.quarantine_reason || '—'}</p>
+                <p className="mobile-data-card-meta">{formatDate(item.created_at)}</p>
+              </button>
+            ))}
+          </div>
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm divide-y divide-slate-200">
               <thead className="bg-slate-50">
                 <tr>
                   <th className="text-left px-4 py-3 font-medium text-slate-500">Subject / From</th>
@@ -309,8 +327,47 @@ export default function Leads() {
             Leads flagged needs_manual_review
           </div>
         )}
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm divide-y divide-slate-200">
+
+        <div className="md:hidden p-3 space-y-3">
+          {leads.length === 0 ? (
+            <p className="text-center text-slate-500 py-8">No leads found.</p>
+          ) : leads.map((lead) => (
+            <div
+              key={lead.id}
+              role="button"
+              tabIndex={0}
+              className="mobile-data-card w-full text-left cursor-pointer hover:border-slate-300"
+              onClick={() => navigate(`/leads/${lead.id}`)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/leads/${lead.id}`); } }}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="mobile-data-card-title text-blue-600 flex-1 min-w-0 pr-1">{lead.contact_name}</span>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <StatusBadge status={lead.status} />
+                  {canDelete && (
+                    <button
+                      type="button"
+                      onClick={(e) => confirmDelete(lead.id, e)}
+                      className="text-red-500 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center -mr-2"
+                      title="Delete lead"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+              <p className="mobile-data-card-meta">{lead.phone || '—'}</p>
+              {lead.address && <p className="mobile-data-card-meta">{lead.address}</p>}
+              <p className="mobile-data-card-meta capitalize">{formatCategory(lead.service_category)} · {formatDate(lead.created_at)}</p>
+              {lead.needs_manual_review && (
+                <span className="text-xs font-medium bg-amber-100 text-amber-800 px-2 py-0.5 rounded w-fit">Review</span>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-sm divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
                 <th className="text-left px-4 py-3 font-medium text-slate-500">Contact</th>
