@@ -45,6 +45,8 @@ class Quote extends Model
         'company_pct',
         'pm_amount',
         'company_amount',
+        // A-06/A-22: snapshotted at creation time; never changes with Brand edits.
+        'brand_name_snapshot',
     ];
 
     protected function casts(): array

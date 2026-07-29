@@ -21,6 +21,7 @@ use App\Services\LeadQuoteWorkflowService;
 use App\Services\Payments\PaymentDestinationService;
 use App\Services\PayoutEligibilityService;
 use App\Services\PayoutWorkflowService;
+use App\Services\BrandResolver;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use App\Services\UploadStorage;
@@ -90,7 +91,11 @@ class CustomerPortalController extends Controller
                 ->values()
             : collect();
 
+        $brandName = app(BrandResolver::class)->forLead($lead);
+
         return response()->json([
+            // A-06/A-22: resolved brand name for this lead's operating brand.
+            'brand_name' => $brandName,
             'lead' => [
                 'contact_name' => $lead->contact_name,
                 'address' => $lead->address,

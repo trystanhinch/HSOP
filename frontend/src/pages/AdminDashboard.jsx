@@ -42,10 +42,7 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-6">
       <PageHeader title="Admin Dashboard">
-        <select className="px-3 py-2 border border-[#E2E8F0] rounded-md text-sm bg-white text-[#64748B]">
-          <option>All Companies</option>
-          <option>HSOP Drywall & Paint</option>
-        </select>
+        {/* Brand filter placeholder — brand list is managed in Brand Content settings */}
       </PageHeader>
 
       <section>

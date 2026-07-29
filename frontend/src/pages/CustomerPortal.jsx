@@ -15,7 +15,7 @@ const ISSUE_LABELS = {
   other: 'Other',
 };
 
-function PortalReviewSection({ token }) {
+function PortalReviewSection({ token, brandName = 'Your Service Provider' }) {
   const [review, setReview] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stars, setStars] = useState(0);
@@ -96,7 +96,7 @@ function PortalReviewSection({ token }) {
               </a>
             ) : (
               <p className="text-sm text-green-700">
-                We appreciate you choosing ServiceOP.
+                We appreciate you choosing {brandName}.
               </p>
             )}
           </div>
@@ -119,7 +119,7 @@ function PortalReviewSection({ token }) {
       <div>
         <h2 className="font-semibold text-slate-800">Rate your experience</h2>
         <p className="text-sm text-slate-500 mt-1">
-          How was your ServiceOP project{review.job?.address ? ` at ${review.job.address}` : ''}?
+          How was your {brandName} project{review.job?.address ? ` at ${review.job.address}` : ''}?
         </p>
       </div>
       <div className="flex gap-2 justify-center">
@@ -378,6 +378,8 @@ export default function CustomerPortal() {
   const statusLabel = job?.status_label;
   const updates = data.updates || [];
   const quoteApproved = quote?.status === 'approved';
+  // A-06/A-22: use operating brand name from API, never hardcoded
+  const brandName = data.brand_name || 'Your Service Provider';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -386,7 +388,7 @@ export default function CustomerPortal() {
           <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-sm">SO</span>
           </div>
-          <h1 className="text-white font-bold text-lg">ServiceOP</h1>
+          <h1 className="text-white font-bold text-lg">{brandName}</h1>
         </div>
         <p className="text-slate-300 text-sm">
           Hi {data.lead.contact_name} · {data.lead.address}
@@ -395,7 +397,7 @@ export default function CustomerPortal() {
 
       <main className="max-w-2xl mx-auto px-4 py-6 space-y-5">
         {(showReviewTab || ['paid_completed', 'paid', 'completed', 'closed'].includes(jobStatus)) && (
-          <PortalReviewSection token={token} />
+          <PortalReviewSection token={token} brandName={brandName} />
         )}
 
         {job && (
@@ -649,7 +651,7 @@ export default function CustomerPortal() {
             <p className="text-2xl mb-2">🎉</p>
             <p className="font-semibold text-green-800">Project Complete</p>
             <p className="text-sm text-green-700 mt-1">
-              Thank you for choosing ServiceOP. Your project is finished and payment confirmed.
+              Thank you for choosing {brandName}. Your project is finished and payment confirmed.
             </p>
           </section>
         )}

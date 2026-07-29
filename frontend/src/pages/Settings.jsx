@@ -14,6 +14,84 @@ const tabs = ['Company', 'Users & Roles', 'Lead Inbox', 'Workflow', 'Message Tem
 
 const smsStatusColor = { sent: 'bg-green-100 text-green-700', failed: 'bg-red-100 text-red-700', disabled: 'bg-slate-100 text-slate-600' };
 
+/**
+ * A-06/A-22: Brand identity preview tab.
+ * Shows read-only resolved values for each active brand.
+ * Company name is managed via Brand Content — this tab is intentionally read-only.
+ */
+function BrandingTab() {
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/brand-preview')
+      .then(({ data }) => setPreview(data))
+      .catch(() => setPreview(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="space-y-6 max-w-3xl">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+        <p className="text-sm font-medium text-amber-800">⚠ This tab is read-only</p>
+        <p className="text-sm text-amber-700 mt-1">
+          Company name and branding are managed under <strong>Brand Content</strong>. Changing them there
+          updates all customer-facing channels (quotes, invoices, SMS, email, portals, Stripe payments).
+        </p>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <h3 className="font-semibold text-slate-800 mb-1">Platform Identity</h3>
+        <p className="text-sm text-slate-500 mb-3">
+          The platform name is shown only on internal pages (admin portal, contractor/PM accounts, Stripe Connect).
+          It is never shown to customers.
+        </p>
+        <div className="text-sm bg-slate-50 border border-slate-100 rounded-lg px-4 py-3 font-mono text-slate-700">
+          {preview?.platform_name ?? 'ServiceOP'}
+        </div>
+      </div>
+
+      {loading && <p className="text-slate-500 text-sm">Loading brand preview…</p>}
+
+      {!loading && preview?.brands?.map((brand) => (
+        <div key={brand.id} className="bg-white rounded-xl border border-slate-200 p-5 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-slate-800">{brand.operating_name}</h3>
+            <span className="text-xs text-slate-400 font-mono">{brand.domain}</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Invoice / Quote Header</p>
+              <p className="text-slate-700 font-medium">{brand.invoice_name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">SMS / Email Sender</p>
+              <p className="text-slate-700 font-medium">{brand.sender_name}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Portal Header</p>
+              <p className="text-slate-700 font-medium">{brand.portal_brand}</p>
+            </div>
+            <div>
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Stripe Payment Descriptor</p>
+              <p className="text-slate-700 font-medium font-mono">{brand.payment_descriptor}</p>
+            </div>
+            <div className="sm:col-span-2">
+              <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Review Request Destination</p>
+              <p className="text-slate-700 font-medium">{brand.review_destination}</p>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 italic">{brand.platform_note}</p>
+        </div>
+      ))}
+
+      {!loading && preview?.brands?.length === 0 && (
+        <p className="text-sm text-slate-500">No active brands found. Add brands under Brand Content.</p>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -1195,11 +1273,7 @@ export default function Settings() {
       )}
 
       {activeTab === 'Branding' && (
-        <div className="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl">
-          <h3 className="font-semibold text-slate-800 mb-2">Branding</h3>
-          <p className="text-sm text-slate-500">Primary color: {settings?.branding?.primary_color || '#3B82F6'}</p>
-          <p className="text-sm text-slate-500 mt-1">Company name: {settings?.branding?.company_name || 'ServiceOP'}</p>
-        </div>
+        <BrandingTab />
       )}
     </div>
   );

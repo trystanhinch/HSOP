@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Mail\ProgressUpdateMail;
 use App\Models\AuditLog;
+use App\Services\BrandResolver;
 use App\Models\Invoice;
 use App\Models\Job;
 use App\Models\Quote;
@@ -211,15 +212,18 @@ class JobNotificationService
             $job->id
         );
 
+        $platformName = BrandResolver::PLATFORM_NAME;
         $this->email->send(
             $contractor->email,
-            'New Job Assignment — ServiceOP',
+            "New Job Assignment — {$platformName}",
             'emails.notification',
             [
                 'heading' => "Hi {$contractor->name},",
                 'body' => "You have been assigned: {$job->job_title}\n\nPlease submit your price when ready.",
                 'actionUrl' => $portal,
                 'actionLabel' => 'View Job',
+                // Contractor-facing email uses platform name, not operating brand
+                'brandName' => $platformName,
             ],
             'contractor_assigned',
             $contractor->id,
@@ -465,15 +469,17 @@ class JobNotificationService
             $invoice->job_id
         );
 
+        $brandName = app(BrandResolver::class)->forInvoice($invoice);
         $this->email->send(
             $invoice->job->customer?->email,
-            'Your Invoice from ServiceOP',
+            "Your Invoice from {$brandName}",
             'emails.notification',
             [
                 'heading' => "Hi {$invoice->job->customer?->name},",
                 'body' => "Your invoice {$invoice->invoice_number} for \${$invoice->amount} is ready.",
                 'actionUrl' => $portal,
                 'actionLabel' => 'View Invoice',
+                'brandName' => $brandName,
             ],
             'invoice_sent',
             $invoice->customer_id,

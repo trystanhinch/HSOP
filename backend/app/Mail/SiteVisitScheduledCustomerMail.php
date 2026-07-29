@@ -4,6 +4,7 @@ namespace App\Mail;
 
 use App\Models\Lead;
 use App\Models\SiteVisit;
+use App\Services\BrandResolver;
 use Illuminate\Bus\Queueable;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
@@ -20,7 +21,7 @@ class SiteVisitScheduledCustomerMail extends Mailable
 
     public function build()
     {
-        $company = config('app.company_name', 'ServiceOP');
+        $company = app(BrandResolver::class)->forLead($this->lead);
 
         return $this->subject("Your Site Visit with {$company} is Scheduled")
             ->view('emails.notification', [
@@ -28,6 +29,7 @@ class SiteVisitScheduledCustomerMail extends Mailable
                 'body' => "Your site visit with {$company} is scheduled for {$this->siteVisit->visit_date->format('M j, Y')} at {$this->siteVisit->visit_time}.\n\nAddress: {$this->lead->address}",
                 'actionUrl' => $this->portalUrl,
                 'actionLabel' => 'View Appointment Details',
+                'brandName' => $company,
             ]);
     }
 }

@@ -9,6 +9,7 @@ use App\Models\NextAction;
 use App\Models\ReviewFeedback;
 use App\Models\User;
 use App\Services\EmailService;
+use App\Services\BrandResolver;
 use App\Services\SmsMessageTemplates;
 use App\Services\SmsService;
 use App\Services\UploadStorage;
@@ -62,6 +63,7 @@ class ReviewRequestService
             .'/portal/'.$lead->customer_portal_token.'?tab=review';
 
         $customer = $job->customer;
+        $brandName = app(BrandResolver::class)->forJob($job);
         $body = MessageTemplate::render(
             'review_request_customer',
             [
@@ -69,7 +71,7 @@ class ReviewRequestService
                 'review_url' => $reviewUrl,
                 'address' => $job->address ?? '',
             ],
-            'Hi {{customer_name}}, thanks for choosing ServiceOP! Please rate your experience: {{review_url}}'
+            'Hi {{customer_name}}, thanks for choosing '.$brandName.'! Please rate your experience: {{review_url}}'
         );
 
         if ($customer) {
@@ -77,9 +79,9 @@ class ReviewRequestService
             if ($customer->email) {
                 $this->email->send(
                     $customer->email,
-                    'How was your ServiceOP experience?',
+                    "How was your {$brandName} experience?",
                     'emails.notification',
-                    ['body' => $body, 'title' => 'Rate your experience'],
+                    ['body' => $body, 'title' => 'Rate your experience', 'brandName' => $brandName],
                     'review_request',
                     $customer->id,
                     $job->id
@@ -182,7 +184,8 @@ class ReviewRequestService
             'escalation_rule' => 'review_feedback_follow_up',
         ]);
 
-        $msg = "ServiceOP: Customer left a {$feedback->star_rating}-star review on job #{$job->id}"
+        // Internal PM notification: platform name is appropriate here (not operating brand)
+        $msg = BrandResolver::PLATFORM_NAME.": Customer left a {$feedback->star_rating}-star review on job #{$job->id}"
             .($job->address ? " ({$job->address})" : '')
             .'. Please follow up.';
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Concerns\ResolvesEditableBrand;
 use App\Http\Controllers\Controller;
 use App\Models\Brand;
 use App\Models\BrandPageSeoOverride;
+use App\Services\BrandResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -20,6 +21,27 @@ class BrandContentController extends Controller
         $brand = $this->resolveEditableBrand($request);
 
         return response()->json($this->contentPayload($brand));
+    }
+
+    /**
+     * A-06/A-22: Brand identity preview — shows the exact sender name, invoice name,
+     * portal branding, payment descriptor, and review destination for every active brand.
+     * Owner/PM only. Used to verify brand setup before publishing changes.
+     */
+    public function preview(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! in_array($user->role, ['owner', 'pm'])) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $resolver = app(BrandResolver::class);
+
+        return response()->json([
+            'platform_name' => BrandResolver::PLATFORM_NAME,
+            'platform_note' => 'The platform name is shown only on internal pages (admin portal, contractor/PM accounts, Stripe Connect). It is never shown to customers.',
+            'brands' => $resolver->previewAll(),
+        ]);
     }
 
     public function update(Request $request): JsonResponse

@@ -80,6 +80,10 @@ Route::middleware(['auth:sanctum', 'restrict.content_editor'])->group(function (
     Route::put('/brand-content', [BrandContentController::class, 'update'])
         ->middleware('role:content_editor,owner')
         ->name('api.brand-content.update');
+    // A-06/A-22: brand identity preview — owner/PM only.
+    Route::get('/brand-preview', [BrandContentController::class, 'preview'])
+        ->middleware('role:owner,pm')
+        ->name('api.brand-preview');
 
     Route::middleware('role:content_editor,owner')->group(function () {
         Route::post('/brand-content/images', [BrandContentImageController::class, 'upload'])

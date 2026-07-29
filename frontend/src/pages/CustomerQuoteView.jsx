@@ -114,6 +114,8 @@ export default function CustomerQuoteView() {
   const pmName = quote.job?.pm_name || 'your project manager';
   const pmEmail = quote.job?.pm_email;
   const pmPhone = quote.job?.pm_phone;
+  // A-06/A-22: use resolved brand name from API (via BrandResolver), not hardcoded
+  const brandName = quote.company_name || 'Your Service Provider';
 
   return (
     <div className="min-h-screen bg-slate-50 py-8 px-4">
@@ -122,8 +124,7 @@ export default function CustomerQuoteView() {
           <div className="inline-flex items-center justify-center w-12 h-12 bg-blue-600 rounded-xl mb-3">
             <span className="text-white font-bold text-lg">SO</span>
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">ServiceOP</h1>
-          <p className="text-slate-500 text-sm mt-1">Home Service Operating Platform</p>
+          <h1 className="text-2xl font-bold text-slate-900">{brandName}</h1>
         </div>
 
         {message && (
@@ -215,7 +216,7 @@ export default function CustomerQuoteView() {
           {!done && (
             <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-sm text-slate-700">
               <p className="font-medium text-slate-800 mb-1">What happens next?</p>
-              <p>After you accept this quote, your project manager will review it and contact you to confirm scheduling. You will receive project updates through your secure ServiceOP portal.</p>
+              <p>After you accept this quote, your project manager will review it and contact you to confirm scheduling. You will receive project updates through your secure {brandName} portal.</p>
             </div>
           )}
 

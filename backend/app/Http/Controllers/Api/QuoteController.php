@@ -7,6 +7,7 @@ use App\Http\Resources\QuoteResource;
 use App\Models\Job;
 use App\Models\Quote;
 use App\Models\QuoteItem;
+use App\Services\BrandResolver;
 use App\Services\JobNotificationService;
 use App\Services\Authorization\PmAuthorizationService;
 use App\Services\LeadQuoteWorkflowService;
@@ -108,6 +109,9 @@ class QuoteController extends Controller
             return response()->json(['message' => 'Please provide contractor_price or ensure contractor price is submitted.'], 422);
         }
 
+        // A-06/A-22: snapshot brand name at creation time so historical quotes are unaffected by later brand edits.
+        $brandNameSnapshot = app(BrandResolver::class)->forJob($job);
+
         $quote = Quote::createWithUniqueQuoteNumber([
             'job_id' => $job->id,
             'company_id' => $job->company_id,
@@ -125,6 +129,7 @@ class QuoteController extends Controller
             'internal_notes' => $request->internal_notes,
             'customer_notes' => $request->customer_notes,
             'status' => 'draft',
+            'brand_name_snapshot' => $brandNameSnapshot,
         ]);
 
         if ($contractorBase > 0 && $job->contractor_price_status !== 'approved') {
@@ -305,7 +310,7 @@ class QuoteController extends Controller
         $serviceCategory = $quote->job?->service_category ?? $quote->lead?->service_category ?? '';
         $jobStatus = $quote->job?->status ?? '';
         $scopeOfWork = $quote->scope_of_work ?: ($quote->job?->scope_of_work ?? $quote->lead?->project_description ?? '');
-        $companyName = optional($quote->job?->company)->name ?? optional($quote->lead?->company)->name ?? 'ServiceOP';
+        $companyName = app(BrandResolver::class)->forQuote($quote);
         $pm = $quote->job?->pm ?? $quote->lead?->assignedPm;
 
         return response()->json([

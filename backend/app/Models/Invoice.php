@@ -38,6 +38,8 @@ class Invoice extends Model
         'stripe_transaction_id',
         'stripe_checkout_session_id',
         'stripe_payment_intent_id',
+        // A-06/A-22: snapshotted at creation time; never changes with Brand edits.
+        'brand_name_snapshot',
     ];
 
     protected function casts(): array

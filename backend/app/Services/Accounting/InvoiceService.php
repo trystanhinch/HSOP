@@ -6,6 +6,7 @@ use App\Models\Invoice;
 use App\Models\Job;
 use App\Models\Quote;
 use App\Models\Setting;
+use App\Services\BrandResolver;
 use App\Services\PricingService;
 use Illuminate\Support\Facades\DB;
 
@@ -74,6 +75,9 @@ class InvoiceService
             ?? $job->company?->name
             ?? null;
 
+        // A-06/A-22: snapshot brand name at creation time; never overwritten by later brand edits.
+        $brandNameSnapshot = app(BrandResolver::class)->forJob($job);
+
         $invoice = Invoice::create(array_merge([
             'job_id' => $job->id,
             'quote_id' => $quote?->id,
@@ -91,6 +95,7 @@ class InvoiceService
             'amount_paid' => 0,
             'status' => 'awaiting_payment',
             'due_date' => now()->addDays(30)->toDateString(),
+            'brand_name_snapshot' => $brandNameSnapshot,
         ], $overrides));
 
         app(\App\Services\Finance\FinancialLedgerService::class)->recordEntry([

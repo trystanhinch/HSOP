@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Contractor;
 use App\Models\User;
+use App\Services\BrandResolver;
 use App\Services\SmsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -71,7 +72,8 @@ class AdminUserController extends Controller
             try {
                 app(SmsService::class)->send(
                     $user->phone,
-                    "Hi {$user->name}, your ServiceOP {$roleLabel} account has been created. ".
+                    // Platform name is correct here — this is about the contractor's account on the SaaS platform.
+                    'Hi '.$user->name.', your '.BrandResolver::PLATFORM_NAME." {$roleLabel} account has been created. ".
                     'Login at: https://serviceop-vbstp.ondigitalocean.app '.
                     "Email: {$user->email} / Password: {$password}",
                     'account_created',
@@ -124,7 +126,7 @@ class AdminUserController extends Controller
             try {
                 app(SmsService::class)->send(
                     $user->phone,
-                    "Hi {$user->name}, your ServiceOP password has been reset. ".
+                    'Hi '.$user->name.', your '.BrandResolver::PLATFORM_NAME.' password has been reset. '.
                     "New password: {$newPassword} — please log in and change it.",
                     'password_reset',
                     $user->id,

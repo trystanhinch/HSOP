@@ -6,6 +6,7 @@ use App\Contracts\AiProviderInterface;
 use App\Contracts\ConversationalAiProviderInterface;
 use App\Contracts\PaymentProviderInterface;
 use App\Services\Ai\MockConversationalAiProvider;
+use App\Services\BrandResolver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -46,6 +47,9 @@ class AppServiceProvider extends ServiceProvider
 
             return $app->make($class);
         });
+
+        // A-06/A-22: single brand identity resolver for all customer-facing contexts.
+        $this->app->singleton(BrandResolver::class);
 
         $this->app->singleton(PaymentProviderInterface::class, function ($app) {
             $provider = config('payment.provider', 'mock');

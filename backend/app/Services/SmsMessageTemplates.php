@@ -7,14 +7,21 @@ use App\Models\Lead;
 use App\Models\Quote;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\BrandResolver;
 use Carbon\Carbon;
 
 class SmsMessageTemplates
 {
+    /**
+     * Platform-level fallback company name (for internal/admin SMS only).
+     * Customer-facing SMS must resolve brand via BrandResolver::forLead/forJob.
+     */
     public static function companyName(): string
     {
-        return Setting::where('key', 'company_name')->value('value')
-            ?? config('app.name', 'ServiceOP');
+        return (string) config('app.brand_name',
+            Setting::where('key', 'company_name')->value('value')
+            ?? BrandResolver::PLATFORM_NAME
+        );
     }
 
     public static function frontendUrl(string $path = ''): string
@@ -79,7 +86,9 @@ class SmsMessageTemplates
 
     public static function siteVisitCustomer(Lead $lead, string $visitDate, string $visitTime, string $portalUrl): string
     {
-        return 'Hi '.$lead->contact_name.', your site visit with '.self::companyName()
+        $brandName = app(BrandResolver::class)->forLead($lead);
+
+        return 'Hi '.$lead->contact_name.', your site visit with '.$brandName
             .' is confirmed for '.self::formatDate($visitDate)
             .' at '.self::formatTime($visitTime)
             .". Address: {$lead->address}."
@@ -97,20 +106,24 @@ class SmsMessageTemplates
 
     public static function quoteSent(User $customer, Quote $quote, string $portalUrl): string
     {
+        $brand = app(BrandResolver::class)->forQuote($quote);
+
         return \App\Models\MessageTemplate::render(
             'quote_sent',
             [
                 'customer_total' => number_format((float) $quote->customer_total, 2),
                 'portal_url' => $portalUrl,
             ],
-            'ServiceOP: Your quote is ready. Total: $'.number_format((float) $quote->customer_total, 2)
+            $brand.': Your quote is ready. Total: $'.number_format((float) $quote->customer_total, 2)
                 .'. View quote: '.$portalUrl
         );
     }
 
-    public static function quoteApprovedCustomer(string $portalUrl): string
+    public static function quoteApprovedCustomer(string $portalUrl, ?Quote $quote = null): string
     {
-        return 'ServiceOP: Your quote has been approved. Your project manager will contact you'
+        $brand = $quote ? app(BrandResolver::class)->forQuote($quote) : self::companyName();
+
+        return $brand.': Your quote has been approved. Your project manager will contact you'
             .' to schedule the project. View project: '.$portalUrl;
     }
 
@@ -137,6 +150,8 @@ class SmsMessageTemplates
 
     public static function progressUpdateCustomer(User $customer, Job $job, string $portalUrl): string
     {
+        $brand = app(BrandResolver::class)->forJob($job);
+
         return \App\Models\MessageTemplate::render(
             'progress_update_customer',
             [
@@ -144,14 +159,16 @@ class SmsMessageTemplates
                 'address' => $job->address ?? '',
                 'portal_url' => $portalUrl,
             ],
-            'ServiceOP: A progress update has been posted for your project.'
+            $brand.': A progress update has been posted for your project.'
                 .' View update: '.$portalUrl
         );
     }
 
     public static function jobCompletePendingApproval(User $customer, Job $job, string $portalUrl): string
     {
-        return 'ServiceOP: Your project has been marked complete. Please review and accept or'
+        $brand = app(BrandResolver::class)->forJob($job);
+
+        return $brand.': Your project has been marked complete. Please review and accept or'
             .' request a revision: '.$portalUrl;
     }
 

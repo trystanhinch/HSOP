@@ -9,6 +9,7 @@ use App\Models\Payout;
 use App\Models\StripeWebhookEvent;
 use App\Models\User;
 use App\Services\Accounting\InvoicePaymentService;
+use App\Services\BrandResolver;
 use App\Services\EmailService;
 use App\Services\SmsService;
 use Illuminate\Support\Facades\Log;
@@ -58,8 +59,8 @@ class StripePaymentProvider implements PaymentProviderInterface
                     'product_data' => [
                         'name' => $invoice->invoice_number ?: ('Invoice #'.$invoice->id),
                         'description' => $invoice->job?->address
-                            ? 'ServiceOP work at '.$invoice->job->address
-                            : 'ServiceOP invoice payment',
+                            ? app(BrandResolver::class)->forInvoice($invoice).' work at '.$invoice->job->address
+                            : app(BrandResolver::class)->forInvoice($invoice).' invoice payment',
                     ],
                 ],
             ]],
@@ -640,7 +641,8 @@ class StripePaymentProvider implements PaymentProviderInterface
     private function notifyPaymentFailed(Invoice $invoice): void
     {
         $invoice->loadMissing(['customer', 'job.pm']);
-        $msg = 'ServiceOP: Your card payment for invoice '
+        $brandName = app(BrandResolver::class)->forInvoice($invoice);
+        $msg = $brandName.': Your card payment for invoice '
             .($invoice->invoice_number ?: '#'.$invoice->id)
             .' did not go through. Please try again or pay by e-transfer.';
 
@@ -651,7 +653,7 @@ class StripePaymentProvider implements PaymentProviderInterface
                     $invoice->customer->email,
                     'Payment unsuccessful',
                     'emails.notification',
-                    ['body' => $msg, 'title' => 'Payment failed'],
+                    ['body' => $msg, 'title' => 'Payment failed', 'brandName' => $brandName],
                     'stripe_payment_failed',
                     $invoice->customer_id,
                     $invoice->job_id
