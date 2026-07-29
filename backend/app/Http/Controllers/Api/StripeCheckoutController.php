@@ -16,8 +16,15 @@ class StripeCheckoutController extends Controller
      */
     public function portalCheckout(Request $request, string $token, PaymentProviderInterface $payments): JsonResponse
     {
-        $lead = Lead::where('customer_portal_token', $token)->firstOrFail();
-        $job = Job::with(['invoice', 'lead'])->where('lead_id', $lead->id)->firstOrFail();
+        $lead = Lead::withTestData()->where('customer_portal_token', $token)->firstOrFail();
+        $job = Job::withTestData()
+            ->with([
+                // Invoice/Lead may also be test-flagged; eager-load must bypass ExcludeTestDataScope.
+                'invoice' => fn ($q) => $q->withTestData(),
+                'lead' => fn ($q) => $q->withTestData(),
+            ])
+            ->where('lead_id', $lead->id)
+            ->firstOrFail();
 
         if (! in_array($job->status, ['payment_pending', 'etransfer_pending_confirmation', 'completion_accepted'], true)
             && ! in_array($job->invoice?->status, ['awaiting_payment', 'invoice_sent', 'sent', 'payment_failed', 'partially_paid', 'draft'], true)) {

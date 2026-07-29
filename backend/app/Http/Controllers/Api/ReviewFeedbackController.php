@@ -101,8 +101,8 @@ class ReviewFeedbackController extends Controller
 
     private function jobFromPortalToken(string $token): Job
     {
-        $lead = Lead::where('customer_portal_token', $token)->firstOrFail();
-        $job = Job::where('lead_id', $lead->id)->latest('id')->firstOrFail();
+        $lead = Lead::withTestData()->where('customer_portal_token', $token)->firstOrFail();
+        $job = Job::withTestData()->where('lead_id', $lead->id)->latest('id')->firstOrFail();
 
         return $job;
     }
