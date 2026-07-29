@@ -15,6 +15,8 @@ class AiConversationLog extends Model
         'turn_number',
         'role',
         'content',
+        'content_preview',
+        'trace_id',
         'tool_calls',
         'tool_results',
         'ai_provider',

@@ -56,7 +56,7 @@ export const ALL_NAV_ITEMS = [
   { id: 'invoices', label: 'Invoices', icon: Receipt, path: '/invoices', roles: ['owner', 'pm'] },
   { id: 'payouts', label: 'Payouts', icon: DollarSign, path: '/payouts', roles: ['owner', 'pm', 'contractor'] },
   { id: 'accounting', label: 'Accounting', icon: Wallet, path: '/accounting', roles: ['owner'] },
-  { id: 'ai', label: 'AI Command Center', icon: Bot, path: '/ai-command-center', roles: ['owner'] },
+  { id: 'ai', label: 'AI Command Center', icon: Bot, path: '/ai-command-center', roles: ['owner', 'pm'] },
   { id: 'reports', label: 'Reports', icon: BarChart2, path: '/reports', roles: ['owner'] },
   { id: 'company-sources', label: 'Company Sources', icon: Building2, path: '/company-sources', roles: ['owner'] },
   { id: 'pricing-rules', label: 'Pricing Rules', icon: Calculator, path: '/pricing-rules', roles: ['owner'] },

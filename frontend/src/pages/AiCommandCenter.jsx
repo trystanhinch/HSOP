@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Bot, Send, Plus } from 'lucide-react';
 import api from '../api/axios';
 import PageHeader from '../components/PageHeader';
@@ -13,12 +14,26 @@ export default function AiCommandCenter() {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(null);
+  const [search, setSearch] = useState('');
+  const [savedQueries, setSavedQueries] = useState([]);
+  const [killSwitch, setKillSwitch] = useState(false);
+  const [mode, setMode] = useState('suggestion');
   const bottomRef = useRef(null);
 
-  const loadSessions = () => {
-    api.get('/command-center/sessions')
-      .then(({ data }) => setSessions(data.data || []))
+  const loadSessions = (q = search) => {
+    api.get('/command-center/sessions', { params: q ? { q } : {} })
+      .then(({ data }) => {
+        setSessions(data.data || []);
+        setKillSwitch(Boolean(data.ai_kill_switch));
+        setMode(data.mode || 'suggestion');
+      })
       .catch(() => setSessions([]));
+  };
+
+  const loadSaved = () => {
+    api.get('/command-center/saved-queries')
+      .then(({ data }) => setSavedQueries(data.data || []))
+      .catch(() => setSavedQueries([]));
   };
 
   const loadSession = (id) => {
@@ -35,7 +50,7 @@ export default function AiCommandCenter() {
       });
   };
 
-  useEffect(() => { loadSessions(); }, []);
+  useEffect(() => { loadSessions(); loadSaved(); }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -50,6 +65,46 @@ export default function AiCommandCenter() {
       loadSessions();
     } catch (e) {
       await showError(e.response?.data?.message || 'Could not start chat');
+    }
+  };
+
+  const renameSession = async (s) => {
+    const title = window.prompt('Rename conversation', s.title || '');
+    if (!title) return;
+    try {
+      await api.patch(`/command-center/sessions/${s.id}`, { title });
+      loadSessions();
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Rename failed');
+    }
+  };
+
+  const deleteSession = async (s) => {
+    const ok = await confirmAction({ title: 'Delete conversation?', text: s.title || `Chat #${s.id}`, confirmText: 'Delete' });
+    if (!ok) return;
+    try {
+      await api.delete(`/command-center/sessions/${s.id}`);
+      if (sessionId === s.id) {
+        setSessionId(null);
+        setMessages([]);
+        setPending(null);
+      }
+      loadSessions();
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Delete failed');
+    }
+  };
+
+  const saveQuery = async () => {
+    if (!input.trim()) return;
+    const name = window.prompt('Name this saved query', input.slice(0, 40));
+    if (!name) return;
+    try {
+      await api.post('/command-center/saved-queries', { name, query_text: input.trim() });
+      loadSaved();
+      await showSuccess('Saved');
+    } catch (e) {
+      await showError(e.response?.data?.message || 'Could not save query');
     }
   };
 
@@ -78,9 +133,9 @@ export default function AiCommandCenter() {
   const confirmPending = async () => {
     if (!pending || !sessionId) return;
     const ok = await confirmAction({
-      title: 'Send this message?',
-      text: pending.message,
-      confirmText: 'Yes, send',
+      title: 'Confirm sensitive AI action?',
+      text: `${pending.consequences || 'This will send a live message.'}\n\nTo: ${pending.pm_name}\n${pending.message}`,
+      confirmText: 'Yes, execute',
     });
     if (!ok) return;
     setBusy(true);
@@ -91,7 +146,7 @@ export default function AiCommandCenter() {
       });
       setPending(null);
       if (data.message) setMessages((prev) => [...prev, data.message]);
-      await showSuccess(data.result?.status === 'executed' ? 'Action executed' : 'Done');
+      await showSuccess(data.result?.status === 'executed' || data.result?.audit ? 'Action executed + audited' : 'Done');
     } catch (err) {
       await showError(err.response?.data?.message || 'Confirm failed');
     } finally {
@@ -109,29 +164,65 @@ export default function AiCommandCenter() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="AI Command Center" subtitle="Ask about live ops data — Owner only" />
+      <PageHeader title="AI Command Center" subtitle="Cited ops answers — Owner / PM (brand-scoped actions)" />
 
-      <div className="flex flex-col md:flex-row gap-4" style={{ height: 'calc(100vh - 200px)' }}>
-        <div className="md:w-64 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0">
+      {killSwitch && (
+        <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900" role="status">
+          <strong>AI kill switch is ON.</strong> Actions are blocked; queries remain read-only.
+        </div>
+      )}
+
+      <div className="flex flex-col md:flex-row gap-4" style={{ height: 'calc(100vh - 220px)' }}>
+        <div className="md:w-64 bg-white rounded-xl border border-slate-200 overflow-y-auto flex-shrink-0 flex flex-col">
           <div className="px-3 py-3 border-b border-slate-100 flex items-center justify-between">
             <p className="text-xs font-semibold text-slate-400 uppercase">Chats</p>
             <button type="button" onClick={newChat} className="text-blue-600 hover:bg-blue-50 rounded p-1" title="New chat">
               <Plus className="w-4 h-4" />
             </button>
           </div>
-          {sessions.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => loadSession(s.id)}
-              className={`w-full text-left px-4 py-3 border-b border-slate-100 hover:bg-slate-50 ${sessionId === s.id ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}
-            >
-              <p className="text-sm font-medium text-slate-800 truncate">{s.title || `Chat #${s.id}`}</p>
-              <p className="text-xs text-slate-400">{s.last_message_at ? new Date(s.last_message_at).toLocaleString() : ''}</p>
-            </button>
-          ))}
-          {sessions.length === 0 && (
-            <p className="text-sm text-slate-500 px-4 py-8 text-center">No chats yet.</p>
+          <div className="px-3 py-2 border-b border-slate-100">
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') loadSessions(search); }}
+              placeholder="Search conversations…"
+              className="w-full text-xs border border-slate-200 rounded-lg px-2 py-1.5"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {sessions.map((s) => (
+              <div
+                key={s.id}
+                className={`w-full text-left px-3 py-2 border-b border-slate-100 hover:bg-slate-50 ${sessionId === s.id ? 'bg-blue-50 border-l-2 border-l-blue-600' : ''}`}
+              >
+                <button type="button" onClick={() => loadSession(s.id)} className="w-full text-left">
+                  <p className="text-sm font-medium text-slate-800 truncate">{s.title || `Chat #${s.id}`}</p>
+                  <p className="text-xs text-slate-400">{s.last_message_at ? new Date(s.last_message_at).toLocaleString() : ''}</p>
+                </button>
+                <div className="flex gap-2 mt-1">
+                  <button type="button" className="text-[10px] text-slate-500 hover:text-blue-600" onClick={() => renameSession(s)}>Rename</button>
+                  <button type="button" className="text-[10px] text-slate-500 hover:text-red-600" onClick={() => deleteSession(s)}>Delete</button>
+                </div>
+              </div>
+            ))}
+            {sessions.length === 0 && (
+              <p className="text-sm text-slate-500 px-4 py-8 text-center">No chats yet.</p>
+            )}
+          </div>
+          {savedQueries.length > 0 && (
+            <div className="border-t border-slate-100 p-3">
+              <p className="text-[10px] uppercase text-slate-400 font-semibold mb-1">Saved queries</p>
+              {savedQueries.map((q) => (
+                <button
+                  key={q.id}
+                  type="button"
+                  className="block w-full text-left text-xs text-blue-700 hover:underline truncate py-0.5"
+                  onClick={() => setInput(q.query_text)}
+                >
+                  {q.name}
+                </button>
+              ))}
+            </div>
           )}
         </div>
 
@@ -142,7 +233,9 @@ export default function AiCommandCenter() {
             </div>
             <div>
               <p className="font-medium text-slate-800 text-sm">ServiceOP Ops Assistant</p>
-              <p className="text-xs text-slate-500">Signed in as {user?.name} (owner)</p>
+              <p className="text-xs text-slate-500">
+                {user?.name} ({user?.role}) · mode {mode}
+              </p>
             </div>
           </div>
 
@@ -166,18 +259,36 @@ export default function AiCommandCenter() {
             )}
             {messages.map((m) => {
               const mine = m.role === 'user';
+              const citations = m.meta?.citations || [];
               return (
                 <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
                   <div className={`max-w-[85%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap ${
                     mine ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-800'
                   }`}>
                     {m.content}
-                    {!mine && m.meta?.usage?.total_tokens != null && (
-                      <p className={`text-[10px] mt-1 ${mine ? 'text-blue-100' : 'text-slate-400'}`}>
-                        ~{m.meta.usage.total_tokens} tokens
-                        {m.meta.usage.estimated_cost_usd != null ? ` · ~$${m.meta.usage.estimated_cost_usd}` : ''}
-                        {m.meta.kill_switch ? ' · kill switch (read-only actions)' : ''}
-                      </p>
+                    {!mine && (
+                      <div className="mt-2 space-y-1">
+                        <p className="text-[10px] text-slate-500">
+                          {m.meta?.response_kind || 'read-only'}
+                          {m.meta?.model ? ` · ${m.meta.model}` : ''}
+                          {m.meta?.data_refreshed_at ? ` · refreshed ${new Date(m.meta.data_refreshed_at).toLocaleTimeString()}` : ''}
+                          {m.meta?.brand_scope ? ` · scope ${m.meta.brand_scope}` : ''}
+                          {m.meta?.kill_switch ? ' · kill switch' : ''}
+                        </p>
+                        {citations.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {citations.map((c) => (
+                              <Link
+                                key={`${c.type}-${c.id}`}
+                                to={c.path}
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-blue-700"
+                              >
+                                {c.type} #{c.id}: {c.label}
+                              </Link>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
@@ -185,7 +296,8 @@ export default function AiCommandCenter() {
             })}
             {pending && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
-                <p className="text-sm font-medium text-amber-900">Draft pending confirmation</p>
+                <p className="text-sm font-medium text-amber-900">Action preview — confirmation required</p>
+                <p className="text-xs text-amber-800">{pending.consequences}</p>
                 <p className="text-sm text-amber-800 whitespace-pre-wrap">To: {pending.pm_name}<br />{pending.message}</p>
                 <button
                   type="button"
@@ -208,6 +320,9 @@ export default function AiCommandCenter() {
               className="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={busy}
             />
+            <button type="button" onClick={saveQuery} className="px-2 text-slate-500 hover:text-blue-600" title="Save query">
+              <Plus className="w-4 h-4" />
+            </button>
             <button
               type="submit"
               disabled={busy || !input.trim()}

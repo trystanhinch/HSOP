@@ -100,9 +100,24 @@ class AiActionAuthorizer
             return false;
         }
 
-        $mode = $this->getModuleMode($module);
+        $mode = $this->getModuleMode($module ?: ($action['module'] ?? 'command_center'));
         $modes = $action['modes_available'] ?? [];
 
         return in_array($mode, $modes, true);
+    }
+
+    /**
+     * High-risk / hard-floor actions always need approval regardless of Autopilot.
+     */
+    public function requiresApprovalEvenInAutopilot(string $actionKey): bool
+    {
+        $action = app(AiActionRegistry::class)->find($actionKey);
+        if (! $action) {
+            return true;
+        }
+
+        return (bool) ($action['hard_approval_floor'] ?? false)
+            || (bool) ($action['requires_human_approval'] ?? false)
+            || in_array($action['risk_level'] ?? '', ['high', 'critical'], true);
     }
 }

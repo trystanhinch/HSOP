@@ -243,11 +243,20 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     Route::post('/ops-reports/generate', [\App\Http\Controllers\Api\OpsReportController::class, 'generate'])->middleware('role:owner');
     Route::get('/ops-reports/{aiOpsReport}', [\App\Http\Controllers\Api\OpsReportController::class, 'show'])->middleware('role:owner');
 
-    Route::get('/command-center/sessions', [\App\Http\Controllers\Api\CommandCenterController::class, 'sessions'])->middleware('role:owner');
-    Route::post('/command-center/sessions', [\App\Http\Controllers\Api\CommandCenterController::class, 'storeSession'])->middleware('role:owner');
-    Route::get('/command-center/sessions/{aiCommandSession}', [\App\Http\Controllers\Api\CommandCenterController::class, 'show'])->middleware('role:owner');
-    Route::post('/command-center/ask', [\App\Http\Controllers\Api\CommandCenterController::class, 'ask'])->middleware('role:owner');
-    Route::post('/command-center/confirm', [\App\Http\Controllers\Api\CommandCenterController::class, 'confirm'])->middleware('role:owner');
+    Route::get('/command-center/sessions', [\App\Http\Controllers\Api\CommandCenterController::class, 'sessions'])->middleware('role:owner,pm');
+    Route::post('/command-center/sessions', [\App\Http\Controllers\Api\CommandCenterController::class, 'storeSession'])->middleware('role:owner,pm');
+    Route::get('/command-center/sessions/{aiCommandSession}', [\App\Http\Controllers\Api\CommandCenterController::class, 'show'])->middleware('role:owner,pm');
+    Route::patch('/command-center/sessions/{aiCommandSession}', [\App\Http\Controllers\Api\CommandCenterController::class, 'rename'])->middleware('role:owner,pm');
+    Route::delete('/command-center/sessions/{aiCommandSession}', [\App\Http\Controllers\Api\CommandCenterController::class, 'destroy'])->middleware('role:owner,pm');
+    Route::post('/command-center/ask', [\App\Http\Controllers\Api\CommandCenterController::class, 'ask'])->middleware('role:owner,pm');
+    Route::post('/command-center/confirm', [\App\Http\Controllers\Api\CommandCenterController::class, 'confirm'])->middleware('role:owner,pm');
+    Route::get('/command-center/saved-queries', [\App\Http\Controllers\Api\CommandCenterController::class, 'savedQueries'])->middleware('role:owner,pm');
+    Route::post('/command-center/saved-queries', [\App\Http\Controllers\Api\CommandCenterController::class, 'storeSavedQuery'])->middleware('role:owner,pm');
+    Route::delete('/command-center/saved-queries/{savedQuery}', [\App\Http\Controllers\Api\CommandCenterController::class, 'destroySavedQuery'])->middleware('role:owner,pm');
+
+    Route::post('/ai/actions/evaluate', [\App\Http\Controllers\Api\AiActionGateController::class, 'evaluate'])->middleware('role:owner,pm');
+    Route::post('/ai/actions/run', [\App\Http\Controllers\Api\AiActionGateController::class, 'run'])->middleware('role:owner,pm');
+    Route::post('/ai/actions/{aiActionLog}/retry', [\App\Http\Controllers\Api\AiActionGateController::class, 'retry'])->middleware('role:owner,pm');
 
     Route::get('/jobs/{job}/messages', [MessageController::class, 'index']);
     Route::post('/jobs/{job}/messages', [MessageController::class, 'store']);
@@ -338,6 +347,7 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
         Route::get('/ai/action-logs/filters', [AiSettingsController::class, 'actionLogFilters']);
         Route::post('/ai/action-logs/test', [AiSettingsController::class, 'storeTestLog']);
         Route::get('/ai/conversation-logs', [AiSettingsController::class, 'conversationLogs']);
+        Route::get('/ai/conversation-logs/{id}/content', [AiSettingsController::class, 'revealConversationContent']);
 
         Route::get('/oauth/gmail/status', [GmailOAuthController::class, 'status']);
         Route::get('/oauth/gmail/initiate', [GmailOAuthController::class, 'initiate']);

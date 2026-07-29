@@ -98,6 +98,18 @@ export default function AiActivityLogViewer() {
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-slate-600">
                   <p><span className="text-slate-400">Actor:</span> {log.actor?.name || '—'} ({log.actor?.role || '—'})</p>
+                  <p><span className="text-slate-400">Trace:</span> {log.trace_id ? String(log.trace_id).slice(0, 8) : '—'}
+                    {log.grouped_retries > 0 ? ` · ${log.grouped_retries} retry event(s) grouped` : ''}
+                  </p>
+                  <p><span className="text-slate-400">Mode / risk:</span> {log.mode || '—'} / {log.risk_level || '—'}</p>
+                  <p><span className="text-slate-400">Model / cost / latency:</span> {log.ai_model || '—'}
+                    {log.cost_usd != null ? ` · $${log.cost_usd}` : ''}
+                    {log.latency_ms != null ? ` · ${log.latency_ms}ms` : ''}
+                  </p>
+                  <p><span className="text-slate-400">Outcome:</span> {log.outcome || log.decision || '—'}</p>
+                  {log.is_simulation && (
+                    <p className="text-xs text-purple-700">Simulation / proposed only</p>
+                  )}
                   <p><span className="text-slate-400">Decision:</span> {log.decision || '—'}</p>
                   <p><span className="text-slate-400">Rule:</span> {log.rule_applied || '—'}</p>
                   <p><span className="text-slate-400">Status:</span> {log.status_before || '—'} → {log.status_after || '—'}</p>

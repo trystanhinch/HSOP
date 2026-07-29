@@ -11,6 +11,9 @@ class AiActionType extends Model
         'label',
         'permission_level',
         'requires_human_approval',
+        'risk_level',
+        'module',
+        'hard_approval_floor',
         'modes_available',
         'description',
     ];
@@ -19,6 +22,7 @@ class AiActionType extends Model
     {
         return [
             'requires_human_approval' => 'boolean',
+            'hard_approval_floor' => 'boolean',
             'modes_available' => 'array',
         ];
     }

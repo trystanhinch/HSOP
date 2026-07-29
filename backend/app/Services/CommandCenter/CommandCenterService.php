@@ -82,12 +82,19 @@ class CommandCenterService
                 'usage' => $result['usage'],
                 'provider' => $result['provider'],
                 'kill_switch' => ! $allowWrites,
+                'citations' => $result['citations'] ?? [],
+                'brand_scope' => $result['brand_scope'] ?? 'all_brands',
+                'data_refreshed_at' => $result['data_refreshed_at'] ?? now()->toIso8601String(),
+                'model' => $result['usage']['model'] ?? config('ai.openai.model'),
+                'response_kind' => $result['response_kind'] ?? ($result['pending_action'] ? 'action-ready' : 'read-only'),
+                'mode' => $this->authorizer->getModuleMode('command_center'),
             ],
         ]);
 
         $session->update(['last_message_at' => now()]);
 
         AiActionLog::create([
+            'trace_id' => (string) \Illuminate\Support\Str::uuid(),
             'trigger_event' => 'admin_command_center',
             'actor_id' => $owner->id,
             'data_viewed' => [
@@ -95,9 +102,20 @@ class CommandCenterService
                 'question' => Str::limit($question, 500),
                 'tools_used' => $result['tools_used'],
                 'usage' => $result['usage'],
+                'citations' => $result['citations'] ?? [],
             ],
             'decision' => $result['pending_action'] ? 'answered_with_draft' : 'answered',
             'action_taken' => 'command_center_chat',
+            'action_key' => 'command_center_query',
+            'module' => 'command_center',
+            'mode' => $this->authorizer->getModuleMode('command_center'),
+            'risk_level' => 'low',
+            'ai_model' => $result['usage']['model'] ?? config('ai.openai.model'),
+            'prompt_version' => config('ai_actions.prompt_version'),
+            'tokens_prompt' => $result['usage']['prompt_tokens'] ?? null,
+            'tokens_completion' => $result['usage']['completion_tokens'] ?? null,
+            'cost_usd' => $result['usage']['estimated_cost_usd'] ?? null,
+            'outcome' => 'executed',
             'rule_applied' => 'openai_tool_calling + structured_queries',
             'required_human_approval' => (bool) $result['pending_action'],
         ]);
@@ -202,7 +220,7 @@ class CommandCenterService
                 // Safety: if model skipped tools on a data question, inject structured query ourselves
                 if ($round === 0 && $forcedTool) {
                     $toolResult = $this->queries->dispatch($forcedTool, []);
-                    $toolsUsed[] = ['name' => $forcedTool, 'args' => [], 'result_summary' => $this->summarizeToolResult($toolResult), 'forced' => true];
+                    $toolsUsed[] = ['name' => $forcedTool, 'args' => [], 'result' => $toolResult, 'result_summary' => $this->summarizeToolResult($toolResult), 'forced' => true];
                     $messages[] = [
                         'role' => 'assistant',
                         'content' => null,
@@ -230,6 +248,10 @@ class CommandCenterService
                     'pending_action' => $pendingAction,
                     'usage' => $usageTotal,
                     'provider' => 'openai',
+                    'citations' => $this->extractCitations($toolsUsed),
+                    'brand_scope' => 'all_brands',
+                    'data_refreshed_at' => now()->toIso8601String(),
+                    'response_kind' => $pendingAction ? 'action-ready' : 'read-only',
                 ];
             }
 
@@ -253,7 +275,12 @@ class CommandCenterService
                     }
                 }
 
-                $toolsUsed[] = ['name' => $name, 'args' => $args, 'result_summary' => $this->summarizeToolResult($toolResult)];
+                $toolsUsed[] = [
+                    'name' => $name,
+                    'args' => $args,
+                    'result' => $toolResult,
+                    'result_summary' => $this->summarizeToolResult($toolResult),
+                ];
 
                 $messages[] = [
                     'role' => 'tool',
@@ -274,7 +301,7 @@ class CommandCenterService
                 'temperature' => 0.2,
                 'messages' => array_merge($messages, [[
                     'role' => 'system',
-                    'content' => 'Provide the final concise answer for the owner now. No more tool calls.',
+                    'content' => 'Provide the final concise answer for the owner now. No more tool calls. Cite lead/job/payment ids from tool data.',
                 ]]),
             ]);
 
@@ -291,6 +318,10 @@ class CommandCenterService
             'pending_action' => $pendingAction,
             'usage' => $usageTotal,
             'provider' => 'openai',
+            'citations' => $this->extractCitations($toolsUsed),
+            'brand_scope' => 'all_brands',
+            'data_refreshed_at' => now()->toIso8601String(),
+            'response_kind' => $pendingAction ? 'action-ready' : 'read-only',
         ];
     }
 
@@ -310,11 +341,11 @@ class CommandCenterService
 
         if (str_contains($q, 'stuck')) {
             $data = $this->queries->stuckLeads();
-            $toolsUsed[] = ['name' => 'get_stuck_leads', 'result_summary' => $this->summarizeToolResult($data)];
+            $toolsUsed[] = ['name' => 'get_stuck_leads', 'result' => $data, 'result_summary' => $this->summarizeToolResult($data)];
             $content = "Stuck leads: {$data['count']}.\n".$this->formatStuck($data);
         } elseif (str_contains($q, 'payout')) {
             $data = $this->queries->jobsReadyForPayout();
-            $toolsUsed[] = ['name' => 'get_jobs_ready_for_payout', 'result_summary' => $this->summarizeToolResult($data)];
+            $toolsUsed[] = ['name' => 'get_jobs_ready_for_payout', 'result' => $data, 'result_summary' => $this->summarizeToolResult($data)];
             $content = "Jobs ready for payout: {$data['count']}.\n".$this->formatPayoutJobs($data);
         } elseif ((str_contains($q, 'message') || str_contains($q, 'text') || str_contains($q, 'sms'))
             && (str_contains($q, 'pm') || str_contains($q, 'project manager'))) {
@@ -323,7 +354,7 @@ class CommandCenterService
                 'pm_id' => $pm?->id,
                 'message' => 'Please follow up on the overdue lead today. — ServiceOP Command Center',
             ], $owner, $allowWrites);
-            $toolsUsed[] = ['name' => 'draft_message_to_pm', 'result_summary' => $this->summarizeToolResult($draft)];
+            $toolsUsed[] = ['name' => 'draft_message_to_pm', 'result' => $draft, 'result_summary' => $this->summarizeToolResult($draft)];
             $pending = $draft['pending_action'] ?? null;
             if (! $allowWrites) {
                 $content = 'Kill switch is on — I can answer questions but cannot stage or execute actions.';
@@ -332,15 +363,15 @@ class CommandCenterService
             }
         } elseif (str_contains($q, 'pm') && (str_contains($q, 'follow') || str_contains($q, 'need'))) {
             $data = $this->queries->pmFollowUps();
-            $toolsUsed[] = ['name' => 'get_pm_follow_ups', 'result_summary' => $this->summarizeToolResult($data)];
+            $toolsUsed[] = ['name' => 'get_pm_follow_ups', 'result' => $data, 'result_summary' => $this->summarizeToolResult($data)];
             $content = "PMs needing follow-up: {$data['pm_count']}.";
         } elseif (str_contains($q, 'attention') || str_contains($q, 'needs my')) {
             $data = $this->queries->ownerAttentionItems();
-            $toolsUsed[] = ['name' => 'get_owner_attention_items', 'result_summary' => $this->summarizeToolResult($data)];
+            $toolsUsed[] = ['name' => 'get_owner_attention_items', 'result' => $data, 'result_summary' => $this->summarizeToolResult($data)];
             $content = "Items needing your attention: {$data['count']}.";
         } else {
             $data = $this->queries->todayOpsSummary();
-            $toolsUsed[] = ['name' => 'get_today_ops_summary', 'result_summary' => $this->summarizeToolResult($data)];
+            $toolsUsed[] = ['name' => 'get_today_ops_summary', 'result' => $data, 'result_summary' => $this->summarizeToolResult($data)];
             $content = sprintf(
                 "Today: %d new leads, %d quotes awaiting customer, %d jobs in progress, %d invoices paid (\$%s), %d overdue next actions, %d AI errors.",
                 $data['new_leads_today'],
@@ -359,7 +390,77 @@ class CommandCenterService
             'pending_action' => $pending,
             'usage' => null,
             'provider' => 'deterministic',
+            'citations' => $this->extractCitations($toolsUsed),
+            'brand_scope' => 'all_brands',
+            'data_refreshed_at' => now()->toIso8601String(),
+            'response_kind' => $pending ? 'action-ready' : 'read-only',
         ];
+    }
+
+    /**
+     * Build concrete record citations from tool payloads (A-27).
+     *
+     * @param  list<array<string, mixed>>  $toolsUsed
+     * @return list<array{type: string, id: int|string, label: string, path: string}>
+     */
+    private function extractCitations(array $toolsUsed): array
+    {
+        $citations = [];
+        $seen = [];
+
+        foreach ($toolsUsed as $tool) {
+            $result = $tool['result'] ?? [];
+            if (! is_array($result)) {
+                continue;
+            }
+
+            foreach ($result['items'] ?? [] as $item) {
+                if (! empty($item['lead_id'])) {
+                    $key = 'lead:'.$item['lead_id'];
+                    if (! isset($seen[$key])) {
+                        $seen[$key] = true;
+                        $citations[] = [
+                            'type' => 'lead',
+                            'id' => $item['lead_id'],
+                            'label' => $item['contact_name'] ?? ('Lead #'.$item['lead_id']),
+                            'path' => '/leads/'.$item['lead_id'],
+                        ];
+                    }
+                }
+            }
+
+            foreach ($result['jobs'] ?? [] as $job) {
+                if (! empty($job['job_id'])) {
+                    $key = 'job:'.$job['job_id'];
+                    if (! isset($seen[$key])) {
+                        $seen[$key] = true;
+                        $citations[] = [
+                            'type' => 'job',
+                            'id' => $job['job_id'],
+                            'label' => $job['address'] ?? ('Job #'.$job['job_id']),
+                            'path' => '/jobs/'.$job['job_id'],
+                        ];
+                    }
+                }
+            }
+
+            foreach ($result['items'] ?? [] as $item) {
+                if (! empty($item['invoice_id'])) {
+                    $key = 'invoice:'.$item['invoice_id'];
+                    if (! isset($seen[$key])) {
+                        $seen[$key] = true;
+                        $citations[] = [
+                            'type' => 'invoice',
+                            'id' => $item['invoice_id'],
+                            'label' => 'Invoice #'.$item['invoice_id'],
+                            'path' => '/invoices',
+                        ];
+                    }
+                }
+            }
+        }
+
+        return $citations;
     }
 
     /**

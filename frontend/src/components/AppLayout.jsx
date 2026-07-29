@@ -6,6 +6,7 @@ import Header from './Header';
 import EnvironmentBadge from './EnvironmentBadge';
 import BottomTabBar from './BottomTabBar';
 import { useAuth } from '../context/AuthContext';
+import api from '../api/axios';
 import {
   usesBottomTabs,
   moreItemsForRole,
@@ -47,6 +48,7 @@ function getPageTitle(pathname, search) {
 
 export default function AppLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [aiKillSwitch, setAiKillSwitch] = useState(false);
   const { pathname, search } = useLocation();
   const { user } = useAuth();
   const title = getPageTitle(pathname, search);
@@ -57,6 +59,18 @@ export default function AppLayout() {
   useEffect(() => {
     setDrawerOpen(false);
   }, [pathname, search]);
+
+  // A-17 — persistent kill-switch banner
+  useEffect(() => {
+    if (!user || !['owner', 'pm'].includes(user.role)) return undefined;
+    let cancelled = false;
+    api.get('/command-center/sessions')
+      .then(({ data }) => {
+        if (!cancelled) setAiKillSwitch(Boolean(data.ai_kill_switch));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [user, pathname]);
 
   // Lock body scroll when drawer is open
   useEffect(() => {
@@ -136,6 +150,14 @@ export default function AppLayout() {
             fieldRole ? 'pb-[calc(4.5rem+env(safe-area-inset-bottom,0px))] md:pb-6' : 'pb-[max(1rem,env(safe-area-inset-bottom))]'
           }`}
         >
+          {aiKillSwitch && (
+            <div
+              className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900"
+              role="status"
+            >
+              <strong>AI kill switch is ON.</strong> AI writes and actions are paused. Read-only Command Center queries still work.
+            </div>
+          )}
           <Outlet />
         </main>
       </div>

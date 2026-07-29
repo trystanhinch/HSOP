@@ -235,8 +235,8 @@ class CommandCenterTest extends TestCase
         $this->assertSame('draft_message_to_pm', $pending['type']);
         $this->assertDatabaseHas('ai_action_logs', [
             'trigger_event' => 'admin_command_center',
-            'action_taken' => 'draft_message_to_pm',
-            'decision' => 'draft_pending_approval',
+            'action_key' => 'command_center_draft_pm_message',
+            'outcome' => 'approval_required',
         ]);
 
         $confirm = $this->postJson('/api/command-center/confirm', [
@@ -247,8 +247,8 @@ class CommandCenterTest extends TestCase
         $this->assertSame('executed', $confirm->json('result.status'));
         $this->assertDatabaseHas('ai_action_logs', [
             'trigger_event' => 'admin_command_center',
-            'action_taken' => 'send_pm_message',
-            'decision' => 'executed',
+            'action_key' => 'command_center_draft_pm_message',
+            'outcome' => 'executed',
         ]);
     }
 
@@ -278,7 +278,7 @@ class CommandCenterTest extends TestCase
     {
         $ctx = $this->seedStuckLeadAndEligibleJob();
 
-        foreach (['pm', 'contractor', 'customer'] as $role) {
+        foreach (['contractor', 'customer'] as $role) {
             $user = User::create([
                 'name' => "CC {$role}",
                 'email' => "cc-{$role}-".uniqid().'@test.local',
@@ -291,7 +291,17 @@ class CommandCenterTest extends TestCase
             $this->postJson('/api/command-center/ask', ['message' => 'How are things going today?'])->assertStatus(403);
         }
 
-        // Owner still OK
+        // PM may access (A-27 brand-scoped); owner still OK
+        $pm = User::create([
+            'name' => 'CC pm allowed',
+            'email' => 'cc-pm-ok-'.uniqid().'@test.local',
+            'password' => bcrypt('password'),
+            'role' => 'pm',
+            'status' => 'active',
+        ]);
+        $this->actingAs($pm, 'sanctum');
+        $this->getJson('/api/command-center/sessions')->assertOk();
+
         $this->actingAs($ctx['owner'], 'sanctum');
         $this->getJson('/api/command-center/sessions')->assertOk();
     }

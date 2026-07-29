@@ -168,6 +168,9 @@ export default function Settings() {
   const [aiSettings, setAiSettings] = useState(null);
   const [aiForm, setAiForm] = useState({
     ai_kill_switch: false,
+    ai_simulation_mode: false,
+    ai_daily_action_limit: 200,
+    ai_daily_cost_usd_limit: 25,
     ai_conversation_retention_days: 365,
     module_modes: {},
   });
@@ -285,6 +288,9 @@ export default function Settings() {
         setAiSettings(data);
         setAiForm({
           ai_kill_switch: data.ai_kill_switch ?? false,
+          ai_simulation_mode: data.ai_simulation_mode ?? false,
+          ai_daily_action_limit: data.ai_daily_action_limit ?? 200,
+          ai_daily_cost_usd_limit: data.ai_daily_cost_usd_limit ?? 25,
           ai_conversation_retention_days: data.ai_conversation_retention_days ?? 365,
           module_modes: data.module_modes || {},
         });
@@ -753,6 +759,9 @@ export default function Settings() {
         setAiSettings(data);
         setAiForm({
           ai_kill_switch: data.ai_kill_switch ?? false,
+          ai_simulation_mode: data.ai_simulation_mode ?? false,
+          ai_daily_action_limit: data.ai_daily_action_limit ?? 200,
+          ai_daily_cost_usd_limit: data.ai_daily_cost_usd_limit ?? 25,
           ai_conversation_retention_days: data.ai_conversation_retention_days ?? 365,
           module_modes: data.module_modes || {},
         });
@@ -1618,6 +1627,31 @@ export default function Settings() {
                 className="rounded border-slate-300" />
               <span><strong>AI Kill Switch</strong> — when on, all AI operations are paused</span>
             </label>
+            {aiForm.ai_kill_switch && (
+              <div className="rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900">
+                Kill switch is active — a persistent banner also appears across the app.
+              </div>
+            )}
+            <label className="flex items-center gap-3 text-sm">
+              <input type="checkbox" checked={aiForm.ai_simulation_mode}
+                onChange={(e) => setAiForm({ ...aiForm, ai_simulation_mode: e.target.checked })}
+                className="rounded border-slate-300" />
+              <span><strong>Simulation mode</strong> — propose actions only; no live data changes</span>
+            </label>
+            <div className="flex flex-wrap gap-4 text-sm">
+              <label className="space-y-1">
+                <span className="font-medium text-slate-700">Daily action limit</span>
+                <input type="number" min={1} value={aiForm.ai_daily_action_limit ?? 200}
+                  onChange={(e) => setAiForm({ ...aiForm, ai_daily_action_limit: Number(e.target.value) || 200 })}
+                  className="block border border-slate-300 rounded-lg px-3 py-1.5 w-32" />
+              </label>
+              <label className="space-y-1">
+                <span className="font-medium text-slate-700">Daily cost limit (USD)</span>
+                <input type="number" min={0} step="0.01" value={aiForm.ai_daily_cost_usd_limit ?? 25}
+                  onChange={(e) => setAiForm({ ...aiForm, ai_daily_cost_usd_limit: Number(e.target.value) || 0 })}
+                  className="block border border-slate-300 rounded-lg px-3 py-1.5 w-32" />
+              </label>
+            </div>
             <label className="block text-sm space-y-1">
               <span className="font-medium text-slate-700">AI conversation log retention (days)</span>
               <input
@@ -1633,12 +1667,22 @@ export default function Settings() {
               />
               <p className="text-xs text-slate-500">
                 Full chat transcripts in <code>ai_conversation_logs</code> are purged after this many days
-                (default {aiSettings?.ai_conversation_retention_default ?? 365}). Owner-only; not exposed on the public API.
-                Cold-storage archive is not built yet — purge is the practical default.
+                (default {aiSettings?.ai_conversation_retention_default ?? 365}). Last purge:{' '}
+                {aiSettings?.ai_conversation_last_purge_at || 'never'}
+                {aiSettings?.ai_conversation_last_purge_count != null
+                  ? ` (${aiSettings.ai_conversation_last_purge_count} rows)`
+                  : ''}.
               </p>
             </label>
             <div className="space-y-3">
               <p className="text-sm font-medium text-slate-700">Per-module operating mode</p>
+              {aiSettings?.mode_definitions && (
+                <ul className="text-xs text-slate-600 space-y-1 bg-slate-50 rounded-lg p-3">
+                  {Object.entries(aiSettings.mode_definitions).map(([key, def]) => (
+                    <li key={key}><strong>{def.label || key}:</strong> {def.summary}</li>
+                  ))}
+                </ul>
+              )}
               {(aiSettings?.modules || []).map((module) => (
                 <div key={module} className="flex items-center gap-3">
                   <span className="text-sm text-slate-600 w-40 capitalize">{module.replace(/_/g, ' ')}</span>
@@ -1649,7 +1693,9 @@ export default function Settings() {
                     })}
                     className="border border-slate-300 rounded-lg px-3 py-1.5 text-sm">
                     {(aiSettings?.available_modes || ['suggestion', 'assisted', 'autopilot']).map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                      <option key={m} value={m}>
+                        {aiSettings?.mode_definitions?.[m]?.label || m}
+                      </option>
                     ))}
                   </select>
                 </div>

@@ -78,7 +78,7 @@ export default function App() {
               <Route path="/invoices" element={<RoleGuard roles={['owner', 'pm']}><Invoices /></RoleGuard>} />
               <Route path="/payouts" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><Payouts /></RoleGuard>} />
               <Route path="/accounting" element={<RoleGuard roles={['owner']}><Accounting /></RoleGuard>} />
-              <Route path="/ai-command-center" element={<RoleGuard roles={['owner']}><AiCommandCenter /></RoleGuard>} />
+              <Route path="/ai-command-center" element={<RoleGuard roles={['owner', 'pm']}><AiCommandCenter /></RoleGuard>} />
               <Route path="/reports" element={<RoleGuard roles={['owner']}><Reports /></RoleGuard>} />
               <Route path="/ledger" element={<RoleGuard roles={['owner']}><Ledger /></RoleGuard>} />
               <Route path="/company-sources" element={<RoleGuard roles={['owner']}><CompanySources /></RoleGuard>} />

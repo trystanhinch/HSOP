@@ -31,6 +31,9 @@ class AiActionRegistry
                     'requires_human_approval' => $def['requires_human_approval'] ?? true,
                     'modes_available' => $def['modes_available'] ?? ['suggestion'],
                     'description' => $def['description'] ?? null,
+                    'risk_level' => $def['risk_level'] ?? 'medium',
+                    'module' => $def['module'] ?? null,
+                    'hard_approval_floor' => (bool) ($def['hard_approval_floor'] ?? false),
                 ]
             );
         }
@@ -43,6 +46,9 @@ class AiActionRegistry
             'label' => $def['label'] ?? $key,
             'permission_level' => $def['permission_level'] ?? 'ai_super_admin',
             'requires_human_approval' => (bool) ($def['requires_human_approval'] ?? true),
+            'hard_approval_floor' => (bool) ($def['hard_approval_floor'] ?? false),
+            'risk_level' => $def['risk_level'] ?? 'medium',
+            'module' => $def['module'] ?? null,
             'modes_available' => $def['modes_available'] ?? ['suggestion'],
             'description' => $def['description'] ?? null,
         ];

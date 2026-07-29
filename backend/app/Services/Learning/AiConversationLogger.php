@@ -81,6 +81,7 @@ class AiConversationLogger
                 'turn_number' => (int) $turnNumber,
                 'role' => $payload['role'],
                 'content' => $payload['content'] ?? null,
+                'content_preview' => \Illuminate\Support\Str::limit((string) ($payload['content'] ?? ''), 80) ?: null,
                 'tool_calls' => $payload['tool_calls'] ?? null,
                 'tool_results' => $payload['tool_results'] ?? null,
                 'ai_provider' => $payload['ai_provider'] ?? null,
@@ -119,8 +120,13 @@ class AiConversationLogger
         $days = self::retentionDays();
         $cutoff = now()->subDays($days);
 
-        return AiConversationLog::query()
+        $count = AiConversationLog::query()
             ->where('created_at', '<', $cutoff)
             ->delete();
+
+        Setting::set('ai_conversation_last_purge_at', now()->toIso8601String());
+        Setting::set('ai_conversation_last_purge_count', (string) $count);
+
+        return $count;
     }
 }
