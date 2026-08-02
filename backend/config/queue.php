@@ -38,7 +38,8 @@ return [
         'database' => [
             'driver' => 'database',
             'connection' => env('DB_QUEUE_CONNECTION'),
-            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            // Must NOT be `jobs` — that is ServiceOP's domain work-order table.
+            'table' => env('DB_QUEUE_TABLE', 'queue_jobs'),
             'queue' => env('DB_QUEUE', 'default'),
             'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
             'after_commit' => false,
