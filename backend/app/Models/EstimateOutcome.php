@@ -41,6 +41,17 @@ class EstimateOutcome extends Model
         'embedding_vector',
         // Reserved for future weather/env data — intentionally left null (no weather API yet).
         'environmental_context',
+        'learning_eligibility_status',
+        'learning_eligibility_reason',
+        'learning_eligibility_reviewed_by',
+        'learning_eligibility_reviewed_at',
+        'learning_recommended_status',
+        'learning_recommended_by',
+        'learning_recommended_at',
+        'learning_recommendation_reason',
+        'learning_recommendation_missing_actuals',
+        'learning_approved_by',
+        'learning_approved_at',
     ];
 
     protected function casts(): array
@@ -60,6 +71,10 @@ class EstimateOutcome extends Model
             'embedding_vector' => 'array',
             'environmental_context' => 'array',
             'estimated_at' => 'datetime',
+            'learning_eligibility_reviewed_at' => 'datetime',
+            'learning_recommended_at' => 'datetime',
+            'learning_recommendation_missing_actuals' => 'array',
+            'learning_approved_at' => 'datetime',
         ];
     }
 
@@ -81,6 +96,29 @@ class EstimateOutcome extends Model
     public function actor(): BelongsTo
     {
         return $this->belongsTo(User::class, 'actor_id');
+    }
+
+    public function learningEligibilityReviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'learning_eligibility_reviewed_by');
+    }
+
+    public function learningRecommendedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'learning_recommended_by');
+    }
+
+    public function learningApprovedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'learning_approved_by');
+    }
+
+    /**
+     * Production learning corpus — Verified only. Recommendations never qualify.
+     */
+    public function scopeProductionLearningSet($query)
+    {
+        return $query->where('learning_eligibility_status', 'verified');
     }
 
     public function supersedes(): BelongsTo

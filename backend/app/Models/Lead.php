@@ -23,6 +23,7 @@ class Lead extends Model
         'phone',
         'email',
         'address',
+        'property_id',
         'service_category',
         'source',
         'intake_channel',
@@ -92,6 +93,11 @@ class Lead extends Model
     public function brand(): BelongsTo
     {
         return $this->belongsTo(Brand::class);
+    }
+
+    public function property(): BelongsTo
+    {
+        return $this->belongsTo(Property::class);
     }
 
     public function customer(): BelongsTo

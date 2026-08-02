@@ -24,11 +24,23 @@ class Job extends Model
         'company_listing',
         'service_category',
         'address',
+        'property_id',
         'status',
         'job_title',
         'scope_of_work',
         'actual_labour_hours',
         'materials_used',
+        'learning_eligibility_status',
+        'learning_eligibility_reason',
+        'learning_eligibility_reviewed_by',
+        'learning_eligibility_reviewed_at',
+        'learning_recommended_status',
+        'learning_recommended_by',
+        'learning_recommended_at',
+        'learning_recommendation_reason',
+        'learning_recommendation_missing_actuals',
+        'learning_approved_by',
+        'learning_approved_at',
         'internal_notes',
         'contractor_submitted_price',
         'contractor_price_status',
@@ -78,6 +90,10 @@ class Job extends Model
             'split_contractor_pct' => 'decimal:2',
             'split_pm_pct' => 'decimal:2',
             'split_company_pct' => 'decimal:2',
+            'learning_eligibility_reviewed_at' => 'datetime',
+            'learning_recommended_at' => 'datetime',
+            'learning_recommendation_missing_actuals' => 'array',
+            'learning_approved_at' => 'datetime',
         ];
     }
 
@@ -89,6 +105,11 @@ class Job extends Model
     public function lead(): BelongsTo
     {
         return $this->belongsTo(Lead::class);
+    }
+
+    public function property(): BelongsTo
+    {
+        return $this->belongsTo(Property::class);
     }
 
     public function customer(): BelongsTo
