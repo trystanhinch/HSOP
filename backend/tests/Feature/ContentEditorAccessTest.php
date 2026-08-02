@@ -34,10 +34,11 @@ class ContentEditorAccessTest extends TestCase
     public function test_content_editor_can_login_and_read_assigned_brand_content(): void
     {
         $editor = $this->contentEditor();
+        $password = (string) env('DEMO_SEED_PASSWORD', 'password');
 
         $login = $this->postJson('/api/login', [
             'email' => $editor->email,
-            'password' => 'password',
+            'password' => $password,
         ]);
 
         $login->assertOk()
@@ -353,7 +354,7 @@ class ContentEditorAccessTest extends TestCase
         return User::create([
             'name' => 'Acutera Content Editor',
             'email' => 'content@hsop.com',
-            'password' => Hash::make('password'),
+            'password' => Hash::make((string) env('DEMO_SEED_PASSWORD', 'password')),
             'role' => 'content_editor',
             'brand_id' => $acuteraId,
             'status' => 'active',

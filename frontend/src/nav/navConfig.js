@@ -22,6 +22,10 @@ import {
   Bot,
   Calculator,
   MoreHorizontal,
+  Shield,
+  Brain,
+  ClipboardList,
+  HeartPulse,
 } from 'lucide-react';
 
 export const ROLE_LABEL = {
@@ -57,6 +61,10 @@ export const ALL_NAV_ITEMS = [
   { id: 'payouts', label: 'Payouts', icon: DollarSign, path: '/payouts', roles: ['owner', 'pm', 'contractor'] },
   { id: 'accounting', label: 'Accounting', icon: Wallet, path: '/accounting', roles: ['owner'] },
   { id: 'ai', label: 'AI Command Center', icon: Bot, path: '/ai-command-center', roles: ['owner', 'pm'] },
+  { id: 'review-center', label: 'Review Center', icon: Shield, path: '/review-center', roles: ['owner'] },
+  { id: 'system-health', label: 'System Health', icon: HeartPulse, path: '/system-health', roles: ['owner'] },
+  { id: 'learning-gateway', label: 'Learning Gateway', icon: Brain, path: '/learning-gateway', roles: ['owner'] },
+  { id: 'learning-eligibility', label: 'Learning Eligibility', icon: ClipboardList, path: '/learning-eligibility', roles: ['owner', 'pm'] },
   { id: 'reports', label: 'Reports', icon: BarChart2, path: '/reports', roles: ['owner'] },
   { id: 'company-sources', label: 'Company Sources', icon: Building2, path: '/company-sources', roles: ['owner'] },
   { id: 'pricing-rules', label: 'Pricing Rules', icon: Calculator, path: '/pricing-rules', roles: ['owner'] },

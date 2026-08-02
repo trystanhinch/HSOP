@@ -10,6 +10,7 @@ class AiActionLog extends Model
 {
     protected $fillable = [
         'trace_id',
+        'correlation_id',
         'parent_log_id',
         'trigger_event',
         'actor_id',

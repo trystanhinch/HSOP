@@ -32,5 +32,7 @@
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>
+        <!-- Interactive demo users in Milestone4Seeder/DemoSeeder — never hardcoded in seeder source -->
+        <env name="DEMO_SEED_PASSWORD" value="phpunit-demo-seed-only" force="true"/>
     </php>
 </phpunit>

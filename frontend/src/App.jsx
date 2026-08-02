@@ -26,6 +26,10 @@ import Invoices from './pages/Invoices';
 import Payouts from './pages/Payouts';
 import Accounting from './pages/Accounting';
 import AiCommandCenter from './pages/AiCommandCenter';
+import ReviewCenter from './pages/ReviewCenter';
+import SystemHealth from './pages/SystemHealth';
+import LearningGateway from './pages/LearningGateway';
+import LearningEligibility from './pages/LearningEligibility';
 import Reports from './pages/Reports';
 import Ledger from './pages/Ledger';
 import CompanySources from './pages/CompanySources';
@@ -80,6 +84,10 @@ export default function App() {
               <Route path="/payouts" element={<RoleGuard roles={['owner', 'pm', 'contractor']}><Payouts /></RoleGuard>} />
               <Route path="/accounting" element={<RoleGuard roles={['owner']}><Accounting /></RoleGuard>} />
               <Route path="/ai-command-center" element={<RoleGuard roles={['owner', 'pm']}><AiCommandCenter /></RoleGuard>} />
+              <Route path="/review-center" element={<RoleGuard roles={['owner']}><ReviewCenter /></RoleGuard>} />
+              <Route path="/system-health" element={<RoleGuard roles={['owner']}><SystemHealth /></RoleGuard>} />
+              <Route path="/learning-gateway" element={<RoleGuard roles={['owner']}><LearningGateway /></RoleGuard>} />
+              <Route path="/learning-eligibility" element={<RoleGuard roles={['owner', 'pm']}><LearningEligibility /></RoleGuard>} />
               <Route path="/reports" element={<RoleGuard roles={['owner']}><Reports /></RoleGuard>} />
               <Route path="/ledger" element={<RoleGuard roles={['owner']}><Ledger /></RoleGuard>} />
               <Route path="/company-sources" element={<RoleGuard roles={['owner']}><CompanySources /></RoleGuard>} />

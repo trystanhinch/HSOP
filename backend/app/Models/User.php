@@ -34,6 +34,7 @@ class User extends Authenticatable
         'invitation_status',
         'suspended_at',
         'is_developer',
+        'can_finalize_learning_eligibility',
     ];
 
     protected $hidden = [
@@ -52,6 +53,7 @@ class User extends Authenticatable
             'invited_at' => 'datetime',
             'suspended_at' => 'datetime',
             'is_developer' => 'boolean',
+            'can_finalize_learning_eligibility' => 'boolean',
         ];
     }
 
@@ -102,6 +104,15 @@ class User extends Authenticatable
         return $this->role === 'owner';
     }
 
+    /**
+     * Milestone 6B Phase 3 — final learning eligibility authority.
+     * Owners always can; named delegates via can_finalize_learning_eligibility (owner-settable).
+     */
+    public function canFinalizeLearningEligibility(): bool
+    {
+        return $this->isOwner() || (bool) $this->can_finalize_learning_eligibility;
+    }
+
     public function isDeveloper(): bool
     {
         return $this->isOwner() && (bool) $this->is_developer;
@@ -122,9 +133,29 @@ class User extends Authenticatable
         return $this->role === 'ai_super_admin';
     }
 
+    public function isExternalReviewAi(): bool
+    {
+        return $this->role === 'external_review_ai';
+    }
+
+    public function isLearningAi(): bool
+    {
+        return $this->role === 'learning_ai';
+    }
+
     public static function aiSuperAdmin(): ?self
     {
         return static::where('role', 'ai_super_admin')->first();
+    }
+
+    public static function externalReviewAi(): ?self
+    {
+        return static::where('role', 'external_review_ai')->first();
+    }
+
+    public static function learningAi(): ?self
+    {
+        return static::where('role', 'learning_ai')->first();
     }
 
     /**
@@ -142,6 +173,8 @@ class User extends Authenticatable
             'status' => $this->status,
             'brand_id' => $this->brand_id,
             'is_developer' => (bool) $this->is_developer,
+            'can_finalize_learning_eligibility' => (bool) $this->can_finalize_learning_eligibility,
+            'can_finalize_learning' => $this->canFinalizeLearningEligibility(),
             'brand' => $this->relationLoaded('brand') && $this->brand
                 ? [
                     'id' => $this->brand->id,

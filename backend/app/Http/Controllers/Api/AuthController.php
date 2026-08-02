@@ -60,7 +60,7 @@ class AuthController extends Controller
 
         $user = Auth::user();
 
-        if ($user->role === 'ai_super_admin') {
+        if (in_array($user->role, ['ai_super_admin', 'external_review_ai', 'learning_ai'], true)) {
             Auth::logout();
 
             return response()->json(['message' => 'This account cannot be used for interactive login.'], 403);

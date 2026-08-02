@@ -6,14 +6,19 @@ use App\Models\CompanySource;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\AiActionRegistry;
+use Database\Seeders\Concerns\GuardsDemoSeedExecution;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 class Milestone4Seeder extends Seeder
 {
+    use GuardsDemoSeedExecution;
+
     public function run(): void
     {
+        $this->assertDemoSeedAllowed();
+
         User::updateOrCreate(
             ['email' => 'ai-super-admin@serviceop.system'],
             [
@@ -25,9 +30,45 @@ class Milestone4Seeder extends Seeder
             ]
         );
 
+        // Dedicated External Review AI principal (6A Phase 4) — random unusable password; tokens only.
+        User::updateOrCreate(
+            ['email' => config('review_gateway.actor_email', 'external-review-ai@serviceop.system')],
+            [
+                'name' => 'External Review AI',
+                'password' => Hash::make(Str::random(64)),
+                'role' => 'external_review_ai',
+                'status' => 'active',
+                'sms_enabled' => false,
+            ]
+        );
+
         if (! Setting::where('key', 'ai_kill_switch')->exists()) {
             Setting::setBool('ai_kill_switch', false);
         }
+
+        // 6A Phase 1 — review gateway kill switch (independent of ai_kill_switch).
+        $rgKey = config('review_gateway.kill_switch_setting_key', 'review_gateway_kill_switch');
+        if (! Setting::where('key', $rgKey)->exists()) {
+            Setting::setBool($rgKey, false);
+        }
+
+        // 6B Phase 1 — learning gateway kill switch (independent of review + ops AI).
+        $lgKey = config('learning_ai.kill_switch_setting_key', 'learning_gateway_kill_switch');
+        if (! Setting::where('key', $lgKey)->exists()) {
+            Setting::setBool($lgKey, false);
+        }
+
+        // Dedicated Learning AI principal (6B Phase 1) — random unusable password; tokens only.
+        User::updateOrCreate(
+            ['email' => config('learning_ai.actor_email', 'learning-ai@serviceop.system')],
+            [
+                'name' => 'Learning AI',
+                'password' => Hash::make(Str::random(64)),
+                'role' => 'learning_ai',
+                'status' => 'active',
+                'sms_enabled' => false,
+            ]
+        );
 
         foreach (config('ai_actions.modules', []) as $module) {
             $key = "ai_mode_{$module}";
@@ -102,7 +143,7 @@ class Milestone4Seeder extends Seeder
             ['email' => 'content@hsop.com'],
             [
                 'name' => 'Acutera Content Editor',
-                'password' => Hash::make('password'),
+                'password' => Hash::make($this->demoSeedPassword()),
                 'role' => 'content_editor',
                 'brand_id' => $acuteraId,
                 'status' => 'active',

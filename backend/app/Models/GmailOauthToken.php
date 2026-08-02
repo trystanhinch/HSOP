@@ -17,6 +17,7 @@ class GmailOauthToken extends Model
         'connected_by',
         'connected_at',
         'last_fetched_at',
+        'staleness_alerted',
     ];
 
     protected $hidden = [
@@ -30,6 +31,7 @@ class GmailOauthToken extends Model
             'access_token_expires_at' => 'datetime',
             'connected_at' => 'datetime',
             'last_fetched_at' => 'datetime',
+            'staleness_alerted' => 'boolean',
         ];
     }
 

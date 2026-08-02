@@ -188,7 +188,7 @@ class AdminUserController extends Controller
 
     public function suspend(Request $request, User $user): JsonResponse
     {
-        if (in_array($user->role, ['owner', 'ai_super_admin'], true)) {
+        if (in_array($user->role, ['owner', 'ai_super_admin', 'external_review_ai', 'learning_ai'], true)) {
             return response()->json(['message' => 'Cannot suspend this account type'], 422);
         }
 
@@ -230,7 +230,7 @@ class AdminUserController extends Controller
 
     public function reactivate(Request $request, User $user): JsonResponse
     {
-        if (in_array($user->role, ['owner', 'ai_super_admin'], true)) {
+        if (in_array($user->role, ['owner', 'ai_super_admin', 'external_review_ai', 'learning_ai'], true)) {
             return response()->json(['message' => 'Cannot change this account type'], 422);
         }
 
@@ -264,7 +264,7 @@ class AdminUserController extends Controller
 
     public function resendInvite(Request $request, User $user): JsonResponse
     {
-        if (in_array($user->role, ['owner', 'ai_super_admin'], true)) {
+        if (in_array($user->role, ['owner', 'ai_super_admin', 'external_review_ai', 'learning_ai'], true)) {
             return response()->json(['message' => 'Cannot invite this account type'], 422);
         }
 
@@ -346,7 +346,7 @@ class AdminUserController extends Controller
 
     public function resetPassword(Request $request, User $user): JsonResponse
     {
-        if (in_array($user->role, ['owner', 'ai_super_admin'], true)) {
+        if (in_array($user->role, ['owner', 'ai_super_admin', 'external_review_ai', 'learning_ai'], true)) {
             return response()->json(['message' => 'Cannot reset password for this account type'], 422);
         }
 

@@ -126,7 +126,10 @@ class GmailInboxFetcher
 
         GmailOauthToken::query()
             ->where('mailbox_email', $mailboxEmail)
-            ->update(['last_fetched_at' => now()]);
+            ->update([
+                'last_fetched_at' => now(),
+                'staleness_alerted' => false,
+            ]);
 
         return $stats;
     }

@@ -13,6 +13,10 @@ Schedule::command('gmail:fetch-leads')
     ->withoutOverlapping()
     ->when(fn () => (bool) config('gmail.enabled', true));
 
+Schedule::command('monitoring:check-gmail-staleness')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
+
 Schedule::command('workflow:escalation-sweep')
     ->everyFifteenMinutes()
     ->withoutOverlapping();
@@ -40,4 +44,8 @@ Schedule::command('booking:release-expired-holds')
 
 Schedule::command('learning:purge-ai-conversation-logs')
     ->dailyAt('03:20')
+    ->withoutOverlapping();
+
+Schedule::command('review-ai:flag-expiring-tokens')
+    ->dailyAt('06:30')
     ->withoutOverlapping();

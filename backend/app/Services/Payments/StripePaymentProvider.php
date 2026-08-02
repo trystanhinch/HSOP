@@ -12,6 +12,7 @@ use App\Services\Accounting\InvoicePaymentService;
 use App\Services\BrandResolver;
 use App\Services\EmailService;
 use App\Services\SmsService;
+use App\Support\CorrelationId;
 use Illuminate\Support\Facades\Log;
 use Stripe\Event;
 use Stripe\Exception\ApiErrorException;
@@ -66,15 +67,15 @@ class StripePaymentProvider implements PaymentProviderInterface
             ]],
             'customer_email' => $invoice->customer?->email,
             'client_reference_id' => (string) $invoice->id,
-            'metadata' => [
+            'metadata' => $this->withCorrelationMeta([
                 'invoice_id' => (string) $invoice->id,
                 'job_id' => (string) ($invoice->job_id ?? ''),
-            ],
+            ]),
             'payment_intent_data' => [
-                'metadata' => [
+                'metadata' => $this->withCorrelationMeta([
                     'invoice_id' => (string) $invoice->id,
                     'job_id' => (string) ($invoice->job_id ?? ''),
-                ],
+                ]),
             ],
             'success_url' => $successUrl,
             'cancel_url' => $cancelUrl,
@@ -174,10 +175,10 @@ class StripePaymentProvider implements PaymentProviderInterface
                 'transfers' => ['requested' => true],
             ],
             'business_type' => $accountData['business_type'] ?? 'individual',
-            'metadata' => [
+            'metadata' => $this->withCorrelationMeta([
                 'user_id' => (string) $user->id,
                 'role' => $user->role,
-            ],
+            ]),
         ]);
 
         $user->update([
@@ -266,12 +267,12 @@ class StripePaymentProvider implements PaymentProviderInterface
                 'currency' => 'cad',
                 'destination' => $payee->stripe_account_id,
                 'transfer_group' => 'job_'.($payout->job_id ?: '0'),
-                'metadata' => [
+                'metadata' => $this->withCorrelationMeta([
                     'payout_id' => (string) $payout->id,
                     'job_id' => (string) ($payout->job_id ?? ''),
                     'split_type' => (string) $split,
                     'user_id' => (string) $payee->id,
-                ],
+                ]),
             ], [
                 'idempotency_key' => 'payout_transfer_'.$payout->id,
             ]);
@@ -705,5 +706,19 @@ class StripePaymentProvider implements PaymentProviderInterface
         }
 
         throw $lastSignatureError;
+    }
+
+    /**
+     * @param  array<string, string>  $meta
+     * @return array<string, string>
+     */
+    private function withCorrelationMeta(array $meta): array
+    {
+        $cid = CorrelationId::current();
+        if ($cid) {
+            $meta['correlation_id'] = $cid;
+        }
+
+        return $meta;
     }
 }

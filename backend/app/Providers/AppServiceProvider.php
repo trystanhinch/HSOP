@@ -70,6 +70,23 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->mergeBrandCorsOrigins();
 
+        // Milestone 6A.2 — fail-closed if staging_mode + live Stripe key
+        if (config('app.staging_mode')) {
+            app(\App\Services\Staging\StagingIsolationGuard::class)->assertBootSafe();
+        }
+
+        // JobFailed → DispatchAlertOnJobFailed is registered via Laravel listener
+        // auto-discovery only. Do NOT also Event::listen() here — that doubled alerts
+        // (verified: `php artisan event:list` showed the listener twice; regression
+        // test fails with count=2 when this manual listen is restored).
+
+        // Milestone 6A Phase 10 — wire remaining monitoring alert signals
+        \App\Models\SmsLog::observe(\App\Observers\SmsLogMonitoringObserver::class);
+        \App\Models\EmailLog::observe(\App\Observers\EmailLogMonitoringObserver::class);
+        \App\Models\AiActionLog::observe(\App\Observers\AiActionLogMonitoringObserver::class);
+        \App\Models\StripeWebhookEvent::observe(\App\Observers\StripeWebhookEventMonitoringObserver::class);
+        \App\Models\WorkflowEscalationLog::observe(\App\Observers\WorkflowEscalationLogMonitoringObserver::class);
+
         RateLimiter::for('public-intake', function (Request $request) {
             return Limit::perMinute(120)->by($request->ip());
         });

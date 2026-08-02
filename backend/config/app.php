@@ -30,6 +30,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Staging Mode (Milestone 6A.2)
+    |--------------------------------------------------------------------------
+    |
+    | Explicit second guard beyond APP_ENV. Staging App Platform apps MUST set
+    | STAGING_MODE=true. staging:reset and isolation checks refuse to run
+    | without this flag — typos like APP_ENV=staging on a prod box alone are
+    | not enough to unlock destructive tooling.
+    |
+    */
+    'staging_mode' => (bool) env('STAGING_MODE', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Debug Mode
     |--------------------------------------------------------------------------
     |

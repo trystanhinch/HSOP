@@ -53,7 +53,7 @@ class UserController extends Controller
         }
 
         return response()->json(
-            User::whereNot('role', 'ai_super_admin')
+            User::whereNotIn('role', ['ai_super_admin', 'external_review_ai', 'learning_ai'])
                 ->orderBy('role')->orderBy('name')
                 ->get(['id', 'name', 'email', 'role', 'status', 'created_at'])
         );
@@ -107,5 +107,37 @@ class UserController extends Controller
         $user->update(['sms_enabled' => ! $user->sms_enabled]);
 
         return response()->json(['sms_enabled' => $user->sms_enabled]);
+    }
+
+    /**
+     * Owner-only: grant/revoke can_finalize_learning_eligibility (delegation hook for named PMs).
+     */
+    public function setCanFinalizeLearning(Request $request, User $user): JsonResponse
+    {
+        if (auth()->user()->role !== 'owner') {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'enabled' => ['required', 'boolean'],
+        ]);
+
+        if ($user->role === 'owner') {
+            return response()->json([
+                'message' => 'Owners already have finalization authority via role; flag is for named non-owner delegates.',
+                'can_finalize_learning_eligibility' => (bool) $user->can_finalize_learning_eligibility,
+                'can_finalize_learning' => $user->canFinalizeLearningEligibility(),
+            ]);
+        }
+
+        $user->update([
+            'can_finalize_learning_eligibility' => (bool) $data['enabled'],
+        ]);
+
+        return response()->json([
+            'id' => $user->id,
+            'can_finalize_learning_eligibility' => (bool) $user->can_finalize_learning_eligibility,
+            'can_finalize_learning' => $user->fresh()->canFinalizeLearningEligibility(),
+        ]);
     }
 }

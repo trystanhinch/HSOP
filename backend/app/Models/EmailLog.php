@@ -28,6 +28,7 @@ class EmailLog extends Model
         'attempt_count',
         'retry_of_id',
         'idempotency_key',
+        'correlation_id',
         'correction_path',
         'is_critical',
         'is_test_data',

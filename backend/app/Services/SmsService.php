@@ -10,6 +10,7 @@ use App\Services\Messaging\DeliveryErrorTranslator;
 use App\Services\Messaging\NotificationChannelHealthService;
 use App\Services\Messaging\NotificationFailureEscalationService;
 use App\Services\TestData\TestDataGuard;
+use App\Support\CorrelationId;
 use Illuminate\Support\Facades\Log;
 
 class SmsService
@@ -142,6 +143,14 @@ class SmsService
         }
 
         try {
+            // Twilio Message create has no durable metadata map — correlation lives on SmsLog + log context.
+            $cid = CorrelationId::current();
+            Log::info('SMS send attempt', [
+                'to' => $toPhone,
+                'trigger_event' => $triggerEvent,
+                'correlation_id' => $cid,
+            ]);
+
             $result = $this->client->messages->create($toPhone, [
                 'from' => $this->from,
                 'body' => $message,
@@ -155,7 +164,11 @@ class SmsService
 
             return ['success' => true, 'sid' => $result->sid];
         } catch (\Exception $e) {
-            Log::error('SMS send failed', ['error' => $e->getMessage(), 'to' => $toPhone]);
+            Log::error('SMS send failed', [
+                'error' => $e->getMessage(),
+                'to' => $toPhone,
+                'correlation_id' => CorrelationId::current(),
+            ]);
             $t = $translator->translate('send_failed', $e->getMessage());
             $this->writeLog($this->logPayload($toPhone, $userId, $triggerEvent, $jobId, $message, 'failed', $t, $meta));
             $this->escalateIfNeeded($triggerEvent, $t['plain'], $jobId, $meta['related_lead_id'] ?? null, $userId, $isCritical);

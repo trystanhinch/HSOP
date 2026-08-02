@@ -16,13 +16,19 @@ use App\Models\Payout;
 use App\Models\Quote;
 use App\Models\QuoteItem;
 use App\Models\User;
+use Database\Seeders\Concerns\GuardsDemoSeedExecution;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
 class DemoSeeder extends Seeder
 {
+    use GuardsDemoSeedExecution;
+
     public function run(): void
     {
+        $this->assertDemoSeedAllowed();
+        $seedPassword = $this->demoSeedPassword();
+
         $company = Company::firstOrCreate(['slug' => 'hsop-drywall'], [
             'name' => 'HSOP Drywall & Paint',
             'service_type' => 'drywall_paint',
@@ -34,19 +40,19 @@ class DemoSeeder extends Seeder
         ]);
 
         $admin = User::firstOrCreate(['email' => 'admin@hsop.com'], [
-            'name' => 'Trystan Owner', 'password' => Hash::make('password'), 'role' => 'owner', 'status' => 'active',
+            'name' => 'Trystan Owner', 'password' => Hash::make($seedPassword), 'role' => 'owner', 'status' => 'active',
         ]);
         $pm = User::firstOrCreate(['email' => 'pm@hsop.com'], [
-            'name' => 'Jordan PM', 'password' => Hash::make('password'), 'role' => 'pm', 'status' => 'active',
+            'name' => 'Jordan PM', 'password' => Hash::make($seedPassword), 'role' => 'pm', 'status' => 'active',
         ]);
         $contractorUser = User::firstOrCreate(['email' => 'contractor@hsop.com'], [
-            'name' => 'Mike Contractor', 'password' => Hash::make('password'), 'role' => 'contractor', 'status' => 'active',
+            'name' => 'Mike Contractor', 'password' => Hash::make($seedPassword), 'role' => 'contractor', 'status' => 'active',
         ]);
         $sarah = User::firstOrCreate(['email' => 'sarah@example.com'], [
-            'name' => 'Sarah Johnson', 'password' => Hash::make('password'), 'role' => 'customer', 'status' => 'active',
+            'name' => 'Sarah Johnson', 'password' => Hash::make($seedPassword), 'role' => 'customer', 'status' => 'active',
         ]);
         $david = User::firstOrCreate(['email' => 'david@example.com'], [
-            'name' => 'David Chen', 'password' => Hash::make('password'), 'role' => 'customer', 'status' => 'active',
+            'name' => 'David Chen', 'password' => Hash::make($seedPassword), 'role' => 'customer', 'status' => 'active',
         ]);
 
         Contractor::updateOrCreate(['user_id' => $contractorUser->id], [

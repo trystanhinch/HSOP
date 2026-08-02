@@ -10,6 +10,7 @@ use App\Services\Messaging\DeliveryErrorTranslator;
 use App\Services\Messaging\NotificationChannelHealthService;
 use App\Services\Messaging\NotificationFailureEscalationService;
 use App\Services\TestData\TestDataGuard;
+use App\Support\CorrelationId;
 use Illuminate\Mail\Mailable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -32,7 +33,9 @@ class EmailService
         return $this->dispatch(
             $toEmail,
             $subject,
-            fn () => Mail::to($toEmail)->send(new HsopNotificationMail($subject, $view, $viewData)),
+            fn () => Mail::to($toEmail)->send(
+                $this->withCorrelationHeader(new HsopNotificationMail($subject, $view, $viewData))
+            ),
             $triggerEvent,
             $userId,
             $jobId,
@@ -57,7 +60,7 @@ class EmailService
         return $this->dispatch(
             $toEmail,
             $meta['subject'] ?? class_basename($mailable),
-            fn () => Mail::to($toEmail)->send($mailable),
+            fn () => Mail::to($toEmail)->send($this->withCorrelationHeader($mailable)),
             $triggerEvent,
             $userId,
             $jobId,
@@ -146,6 +149,11 @@ class EmailService
         }
 
         try {
+            Log::info('Email send attempt', [
+                'to' => $toEmail,
+                'trigger_event' => $triggerEvent,
+                'correlation_id' => CorrelationId::current(),
+            ]);
             $sender();
             $this->writeLog($this->logPayload($toEmail, $normalized, $userId, $triggerEvent, $jobId, 'sent', [
                 'code' => null,
@@ -155,7 +163,11 @@ class EmailService
 
             return ['success' => true];
         } catch (\Exception $e) {
-            Log::error('Email send failed', ['error' => $e->getMessage(), 'to' => $toEmail]);
+            Log::error('Email send failed', [
+                'error' => $e->getMessage(),
+                'to' => $toEmail,
+                'correlation_id' => CorrelationId::current(),
+            ]);
             $t = $translator->translate('send_failed', $e->getMessage(), 'email');
             $this->writeLog($this->logPayload($toEmail, $normalized, $userId, $triggerEvent, $jobId, 'failed', $t, $meta));
             $this->escalateIfNeeded($triggerEvent, $t['plain'], $jobId, $meta['related_lead_id'] ?? null, $userId, $isCritical);
@@ -223,6 +235,18 @@ class EmailService
                 'to' => $data['to_email'] ?? null,
             ]);
         }
+    }
+
+    private function withCorrelationHeader(Mailable $mailable): Mailable
+    {
+        $cid = CorrelationId::current();
+        if (! $cid) {
+            return $mailable;
+        }
+
+        return $mailable->withSymfonyMessage(function ($message) use ($cid) {
+            $message->getHeaders()->addTextHeader('X-Correlation-Id', $cid);
+        });
     }
 
     private function escalateIfNeeded(string $triggerEvent, string $plain, $jobId, $leadId, $userId, bool $isCritical): void

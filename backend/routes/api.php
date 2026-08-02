@@ -74,6 +74,73 @@ Route::post('/portal/{token}/review', [\App\Http\Controllers\Api\ReviewFeedbackC
 Route::post('/portal/{token}/stripe/checkout', [\App\Http\Controllers\Api\StripeCheckoutController::class, 'portalCheckout']);
 Route::post('/stripe/webhook', \App\Http\Controllers\Api\StripeWebhookController::class);
 
+/*
+|--------------------------------------------------------------------------
+| Milestone 6A — External Review AI gateway
+| Data + source tools are GET-only. Phase 5 deliberately adds TWO POST write
+| tools under review:evidence-write (evaluation-run, evaluation-finding).
+| No other write methods may be registered under review-gateway.
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth:sanctum', 'active.user', 'review.gateway.log'])
+    ->prefix('review-gateway')
+    ->group(function () {
+        Route::middleware(['review.ai'])->group(function () {
+            Route::get('/tools/lead-journey/{leadId}', [\App\Http\Controllers\Api\ReviewGatewayController::class, 'leadJourney'])
+                ->whereNumber('leadId')
+                ->name('api.review-gateway.lead-journey');
+            Route::get('/tools/search', [\App\Http\Controllers\Api\ReviewGatewayController::class, 'search'])
+                ->name('api.review-gateway.search');
+            Route::get('/tools/ai-conversation-log/{conversationId}', [\App\Http\Controllers\Api\ReviewGatewayController::class, 'aiConversationLog'])
+                ->whereNumber('conversationId')
+                ->name('api.review-gateway.ai-conversation-log');
+        });
+
+        // Phase 2 — source/code tools require review:code-read (not review:read).
+        Route::middleware(['review.ai:review:code-read'])->group(function () {
+            Route::get('/tools/source-file', [\App\Http\Controllers\Api\ReviewGatewayController::class, 'sourceFile'])
+                ->name('api.review-gateway.source-file');
+            Route::get('/tools/source-search', [\App\Http\Controllers\Api\ReviewGatewayController::class, 'sourceSearch'])
+                ->name('api.review-gateway.source-search');
+        });
+
+        // Phase 5 — narrow write exception: evaluation harness only (review:evidence-write).
+        Route::middleware(['review.ai:review:evidence-write'])->group(function () {
+            Route::post('/tools/evaluation-run', [\App\Http\Controllers\Api\ReviewGatewayController::class, 'evaluationRun'])
+                ->name('api.review-gateway.evaluation-run');
+            Route::post('/tools/evaluation-finding', [\App\Http\Controllers\Api\ReviewGatewayController::class, 'evaluationFinding'])
+                ->name('api.review-gateway.evaluation-finding');
+        });
+    });
+
+/*
+|--------------------------------------------------------------------------
+| Milestone 6B Phase 4 — Learning AI gateway write tools
+| Separate principal from review-gateway and ai_super_admin.
+| evidence-write → normalized-record + evidence; eligibility-write → recommend only (never approve).
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth:sanctum', 'active.user', 'learning.gateway.log'])
+    ->prefix('learning-gateway')
+    ->group(function () {
+        Route::middleware(['learning.ai'])->group(function () {
+            Route::get('/ping', [\App\Http\Controllers\Api\LearningGatewayController::class, 'ping'])
+                ->name('api.learning-gateway.ping');
+        });
+
+        Route::middleware(['learning.ai:learning:evidence-write'])->group(function () {
+            Route::post('/tools/normalized-record', [\App\Http\Controllers\Api\LearningGatewayController::class, 'normalizedRecord'])
+                ->name('api.learning-gateway.normalized-record');
+            Route::post('/tools/evidence', [\App\Http\Controllers\Api\LearningGatewayController::class, 'evidence'])
+                ->name('api.learning-gateway.evidence');
+        });
+
+        Route::middleware(['learning.ai:learning:eligibility-write'])->group(function () {
+            Route::post('/tools/recommendation', [\App\Http\Controllers\Api\LearningGatewayController::class, 'recommendation'])
+                ->name('api.learning-gateway.recommendation');
+        });
+    });
+
 Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->group(function () {
     Route::post('/logout', [AuthController::class, 'logout'])->name('api.logout');
     Route::get('/me', [AuthController::class, 'me'])->name('api.me');
@@ -288,6 +355,22 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
     Route::get('/reviews', [\App\Http\Controllers\Api\ReviewFeedbackController::class, 'index'])->middleware('role:owner,pm');
     Route::put('/reviews/{reviewFeedback}/follow-up', [\App\Http\Controllers\Api\ReviewFeedbackController::class, 'updateFollowUp'])->middleware('role:owner,pm');
 
+    // Milestone 6B Phase 3 — recommend vs finalize (direct PATCH removed)
+    Route::get('/admin/learning-eligibility', [\App\Http\Controllers\Api\LearningEligibilityController::class, 'index'])
+        ->middleware('role:owner,pm');
+    Route::patch('/admin/learning-eligibility/{estimateOutcomeId}/recommend', [\App\Http\Controllers\Api\LearningEligibilityController::class, 'recommend'])
+        ->whereNumber('estimateOutcomeId')
+        ->middleware('role:owner,pm');
+    Route::patch('/admin/learning-eligibility/{estimateOutcomeId}/approve', [\App\Http\Controllers\Api\LearningEligibilityController::class, 'approve'])
+        ->whereNumber('estimateOutcomeId')
+        ->middleware('role:owner,pm');
+    Route::patch('/admin/learning-eligibility/jobs/{job}/recommend', [\App\Http\Controllers\Api\LearningEligibilityController::class, 'recommendJob'])
+        ->middleware('role:owner,pm');
+    Route::patch('/admin/learning-eligibility/jobs/{job}/approve', [\App\Http\Controllers\Api\LearningEligibilityController::class, 'approveJob'])
+        ->middleware('role:owner,pm');
+    Route::patch('/users/{user}/can-finalize-learning', [\App\Http\Controllers\Api\UserController::class, 'setCanFinalizeLearning'])
+        ->middleware('role:owner');
+
     Route::get('/ops-reports', [\App\Http\Controllers\Api\OpsReportController::class, 'index'])->middleware('role:owner');
     Route::post('/ops-reports/generate', [\App\Http\Controllers\Api\OpsReportController::class, 'generate'])->middleware('role:owner');
     Route::get('/ops-reports/{aiOpsReport}', [\App\Http\Controllers\Api\OpsReportController::class, 'show'])->middleware('role:owner');
@@ -458,6 +541,36 @@ Route::middleware(['auth:sanctum', 'active.user', 'restrict.content_editor'])->g
         Route::post('/users/{user}/resend-invite', [AdminUserController::class, 'resendInvite']);
         Route::post('/users/{user}/reset-password', [AdminUserController::class, 'resetPassword']);
         Route::post('/users/{user}/developer', [AdminUserController::class, 'setDeveloper']);
+
+        // Milestone 6A Phase 3 — Owner Review Center (not External Review AI tools)
+        Route::get('/review-gateway/summary', [\App\Http\Controllers\Api\AdminReviewGatewayController::class, 'summary']);
+        Route::get('/review-gateway/access-logs', [\App\Http\Controllers\Api\AdminReviewGatewayController::class, 'accessLogs']);
+        Route::get('/review-gateway/tokens', [\App\Http\Controllers\Api\AdminReviewGatewayController::class, 'tokens']);
+        Route::post('/review-gateway/tokens/{id}/revoke', [\App\Http\Controllers\Api\AdminReviewGatewayController::class, 'revokeToken'])
+            ->whereNumber('id');
+        Route::patch('/review-gateway/kill-switch', [\App\Http\Controllers\Api\AdminReviewGatewayController::class, 'updateKillSwitch']);
+        Route::get('/review-gateway/evaluation-runs', [\App\Http\Controllers\Api\AdminReviewGatewayController::class, 'evaluationRuns']);
+        Route::get('/review-gateway/evaluation-runs/{id}/findings', [\App\Http\Controllers\Api\AdminReviewGatewayController::class, 'evaluationFindings'])
+            ->whereNumber('id');
+
+        // Milestone 6A.4 — Owner System Health / monitoring
+        Route::get('/monitoring/summary', [\App\Http\Controllers\Api\AdminMonitoringController::class, 'summary']);
+        Route::get('/monitoring/failed-jobs', [\App\Http\Controllers\Api\AdminMonitoringController::class, 'failedJobs']);
+        Route::post('/monitoring/failed-jobs/{id}/retry', [\App\Http\Controllers\Api\AdminMonitoringController::class, 'retryFailedJob'])
+            ->whereNumber('id');
+        Route::delete('/monitoring/failed-jobs/{id}', [\App\Http\Controllers\Api\AdminMonitoringController::class, 'dismissFailedJob'])
+            ->whereNumber('id');
+        Route::get('/monitoring/alerts', [\App\Http\Controllers\Api\AdminMonitoringController::class, 'alerts']);
+        Route::patch('/monitoring/alerts/{id}/acknowledge', [\App\Http\Controllers\Api\AdminMonitoringController::class, 'acknowledgeAlert'])
+            ->whereNumber('id');
+
+        // Milestone 6B Phase 1 — Owner Learning Gateway admin (backend only; UI later)
+        Route::get('/learning-gateway/summary', [\App\Http\Controllers\Api\AdminLearningGatewayController::class, 'summary']);
+        Route::get('/learning-gateway/access-logs', [\App\Http\Controllers\Api\AdminLearningGatewayController::class, 'accessLogs']);
+        Route::get('/learning-gateway/tokens', [\App\Http\Controllers\Api\AdminLearningGatewayController::class, 'tokens']);
+        Route::post('/learning-gateway/tokens/{id}/revoke', [\App\Http\Controllers\Api\AdminLearningGatewayController::class, 'revokeToken'])
+            ->whereNumber('id');
+        Route::patch('/learning-gateway/kill-switch', [\App\Http\Controllers\Api\AdminLearningGatewayController::class, 'updateKillSwitch']);
 
         Route::get('/pm-brand-assignments', [PmBrandAssignmentController::class, 'index']);
         Route::get('/pm-brand-assignments/{user}', [PmBrandAssignmentController::class, 'show']);

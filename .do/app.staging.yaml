@@ -1,0 +1,269 @@
+# DigitalOcean App Platform — STAGING (Milestone 6A.2)
+#
+# THIS MUST BE A SEPARATE DO APP — do not use a preview/branch deploy of production.
+# Provision under the owner-controlled DigitalOcean account (not developer-owned).
+#
+# Create with:
+#   doctl apps create --spec .do/app.staging.yaml
+# Or paste this spec into the DO App Platform UI ("Create App" → "App Spec").
+#
+# Secrets: use DO encrypted env bindings / UI — NEVER commit real values.
+# After create: attach a SEPARATE managed MySQL and a SEPARATE Spaces bucket,
+# then set STAGING_MODE=true and run:
+#   php artisan staging:verify-isolation
+#   php artisan staging:reset --force
+#
+# Cost target (owner-approved): ~$32–50/month (small app + managed DB + Spaces).
+
+name: serviceop-staging
+region: tor
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+
+features:
+  - buildpack-stack=ubuntu-22
+
+services:
+  - name: api
+    environment_slug: php
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    http_port: 8080
+    # Adjust source to your GitHub repo / branch used for staging deploys.
+    github:
+      repo: usmantsz/ServiceHOP
+      branch: milestone-5-dev
+      deploy_on_push: true
+    source_dir: /backend
+    build_command: |
+      composer install --no-dev --optimize-autoloader
+      php artisan config:clear
+    run_command: heroku-php-apache2 public/
+    health_check:
+      http_path: /up
+      initial_delay_seconds: 30
+      period_seconds: 30
+    envs:
+      - key: APP_ENV
+        value: staging
+        scope: RUN_TIME
+      - key: STAGING_MODE
+        value: "true"
+        scope: RUN_TIME
+      - key: APP_DEBUG
+        value: "true"
+        scope: RUN_TIME
+      - key: APP_KEY
+        type: SECRET
+        scope: RUN_TIME
+      - key: APP_URL
+        value: ${APP_URL}
+        scope: RUN_TIME
+      - key: FRONTEND_URL
+        value: ${FRONTEND_URL}
+        scope: RUN_TIME
+      # Database — bind to the SEPARATE managed MySQL (not production)
+      - key: DB_CONNECTION
+        value: mysql
+        scope: RUN_TIME
+      - key: DB_HOST
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_PORT
+        value: "25060"
+        scope: RUN_TIME
+      - key: DB_DATABASE
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_USERNAME
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_PASSWORD
+        type: SECRET
+        scope: RUN_TIME
+      # Providers — mock / test only
+      - key: PAYMENT_PROVIDER
+        value: stripe
+        scope: RUN_TIME
+      - key: STRIPE_SECRET_KEY
+        type: SECRET
+        scope: RUN_TIME
+        # MUST be sk_test_* — boot fails closed on sk_live_*
+      - key: STRIPE_PUBLISHABLE_KEY
+        type: SECRET
+        scope: RUN_TIME
+      - key: STRIPE_WEBHOOK_SECRET
+        type: SECRET
+        scope: RUN_TIME
+      - key: AI_PROVIDER
+        value: mock
+        scope: RUN_TIME
+      - key: SMS_ENABLED
+        value: "false"
+        scope: RUN_TIME
+      - key: MAIL_MAILER
+        value: log
+        scope: RUN_TIME
+      - key: DEMO_SEED_PASSWORD
+        type: SECRET
+        scope: RUN_TIME
+      - key: STAGING_BASIC_AUTH_USER
+        type: SECRET
+        scope: RUN_TIME
+      - key: STAGING_BASIC_AUTH_PASSWORD
+        type: SECRET
+        scope: RUN_TIME
+      - key: STAGING_FORBIDDEN_PROD_DB_NAMES
+        value: hsop_job_command,serviceop_production,serviceop_prod
+        scope: RUN_TIME
+      - key: STAGING_FORBIDDEN_PROD_DB_HOSTS
+        type: SECRET
+        scope: RUN_TIME
+      # Spaces — SEPARATE bucket from production
+      - key: FILESYSTEM_DISK
+        value: s3
+        scope: RUN_TIME
+      - key: AWS_ACCESS_KEY_ID
+        type: SECRET
+        scope: RUN_TIME
+      - key: AWS_SECRET_ACCESS_KEY
+        type: SECRET
+        scope: RUN_TIME
+      - key: AWS_DEFAULT_REGION
+        value: tor1
+        scope: RUN_TIME
+      - key: AWS_BUCKET
+        type: SECRET
+        scope: RUN_TIME
+      - key: AWS_ENDPOINT
+        type: SECRET
+        scope: RUN_TIME
+      - key: AWS_USE_PATH_STYLE_ENDPOINT
+        value: "false"
+        scope: RUN_TIME
+
+workers:
+  - name: queue-worker
+    environment_slug: php
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    github:
+      repo: usmantsz/ServiceHOP
+      branch: milestone-5-dev
+      deploy_on_push: true
+    source_dir: /backend
+    build_command: composer install --no-dev --optimize-autoloader
+    run_command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
+    envs:
+      - key: APP_ENV
+        value: staging
+        scope: RUN_TIME
+      - key: STAGING_MODE
+        value: "true"
+        scope: RUN_TIME
+      - key: APP_KEY
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_CONNECTION
+        value: mysql
+        scope: RUN_TIME
+      - key: DB_HOST
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_PORT
+        value: "25060"
+        scope: RUN_TIME
+      - key: DB_DATABASE
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_USERNAME
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_PASSWORD
+        type: SECRET
+        scope: RUN_TIME
+      - key: QUEUE_CONNECTION
+        value: database
+        scope: RUN_TIME
+      - key: DB_QUEUE_TABLE
+        value: queue_jobs
+        scope: RUN_TIME
+      - key: PAYMENT_PROVIDER
+        value: stripe
+        scope: RUN_TIME
+      - key: STRIPE_SECRET_KEY
+        type: SECRET
+        scope: RUN_TIME
+      - key: SMS_ENABLED
+        value: "false"
+        scope: RUN_TIME
+      - key: MAIL_MAILER
+        value: log
+        scope: RUN_TIME
+      - key: AI_PROVIDER
+        value: mock
+        scope: RUN_TIME
+
+jobs:
+  - name: scheduler
+    kind: PRE_DEPLOY
+    # Prefer a dedicated worker running `php artisan schedule:work` if DO plan allows.
+    # This placeholder documents that staging MUST have its OWN scheduler — never share
+    # the production scheduler process.
+    environment_slug: php
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    github:
+      repo: usmantsz/ServiceHOP
+      branch: milestone-5-dev
+      deploy_on_push: false
+    source_dir: /backend
+    run_command: php artisan schedule:work
+    envs:
+      - key: APP_ENV
+        value: staging
+        scope: RUN_TIME
+      - key: STAGING_MODE
+        value: "true"
+        scope: RUN_TIME
+      - key: APP_KEY
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_CONNECTION
+        value: mysql
+        scope: RUN_TIME
+      - key: DB_HOST
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_DATABASE
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_USERNAME
+        type: SECRET
+        scope: RUN_TIME
+      - key: DB_PASSWORD
+        type: SECRET
+        scope: RUN_TIME
+      - key: SMS_ENABLED
+        value: "false"
+        scope: RUN_TIME
+      - key: MAIL_MAILER
+        value: log
+        scope: RUN_TIME
+
+# Optional static site for the SPA (or host frontend separately with VITE_STAGING_MODE=true)
+# static_sites:
+#   - name: spa
+#     github:
+#       repo: usmantsz/ServiceHOP
+#       branch: milestone-5-dev
+#     source_dir: /frontend
+#     build_command: npm ci && npm run build
+#     output_dir: dist
+#     envs:
+#       - key: VITE_STAGING_MODE
+#         value: "true"
+#       - key: VITE_API_URL
+#         value: ${api.PUBLIC_URL}

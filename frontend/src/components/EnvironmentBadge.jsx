@@ -5,14 +5,18 @@ import { useAuth } from '../context/AuthContext';
  */
 export default function EnvironmentBadge({ className = '' }) {
   const { user } = useAuth();
+  const viteStaging = String(import.meta.env.VITE_STAGING_MODE || '').toLowerCase() === 'true';
   const raw = (user?.app_env || import.meta.env.MODE || 'production').toLowerCase();
 
   let label = 'PRODUCTION';
   let tone = 'production';
-  if (raw === 'local' || raw === 'development' || raw === 'dev') {
+  if (viteStaging || raw === 'staging' || raw === 'stage') {
+    label = 'STAGING';
+    tone = 'staging';
+  } else if (raw === 'local' || raw === 'development' || raw === 'dev') {
     label = 'LOCAL';
     tone = 'local';
-  } else if (raw === 'staging' || raw === 'stage' || raw === 'testing' || raw === 'test') {
+  } else if (raw === 'testing' || raw === 'test') {
     label = 'STAGING';
     tone = 'staging';
   } else if (raw !== 'production' && raw !== 'prod') {
